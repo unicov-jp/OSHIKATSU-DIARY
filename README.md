@@ -19,11 +19,41 @@ npx serve .
 python3 -m http.server 8000
 ```
 
+## クラウド同期（Supabase）とログイン
+
+ログインすると記録が Supabase に保存され、複数の端末で同期されます。未ログイン時や、`index.html` をファイルとして直接開いた場合は、これまで通りこの端末の `localStorage` だけに保存します（ゲストモード）。
+
+- **ログイン方法**：メールアドレス＋パスワード（新規登録・パスワード再設定あり）、Googleアカウント
+- **接続情報**：`api/config.js`（Vercel Serverless Function）が、Vercel の環境変数 `NEXT_PUBLIC_SUPABASE_URL` と `NEXT_PUBLIC_SUPABASE_ANON_KEY`（または `..._PUBLISHABLE_KEY`）を `/api/config` で返します。service_role / secret キーは返さないようにしています。
+- **ライブラリ**：`vendor/supabase-js-2.117.2.js`（@supabase/supabase-js の UMD 版を同梱。CDN には依存しません）
+- **テーブル**：`supabase/migrations/20260925000000_create_oshikatsu_records.sql`
+  - `oshikatsu_records(user_id, kind, id, data jsonb, deleted, created_at, updated_at)`
+  - `kind` は `oshi` / `live` / `cheki` / `goods` / `settings`。1件の推し・記録・設定が1行です。
+  - RLS により、本人の行しか読み書きできません。削除は `deleted=true` の論理削除で、ほかの端末にも反映されます。
+
+### 同期の仕組み
+
+- 端末側は、ユーザーごとのキャッシュ（`oshikatsu_diary_v1:u:<userId>`）と同期メタ情報（`oshikatsu_sync_v1:<userId>`）を `localStorage` に持ちます。
+- `saveLocal()` が呼ばれると、「最後にクラウドと一致していた内容のハッシュ」と比べて、変更・追加・削除された行だけを送信します（0.8秒のデバウンス）。
+- 受信は `updated_at` による差分取得です。画面に戻ったとき、オンラインに復帰したとき、1分ごと、「今すぐ同期」を押したときに行います。
+- 同じ行を複数の端末で編集した場合は、後から保存した方が残ります。
+- ログイン前にその端末で付けていた記録は、初回ログイン時に確認のうえアカウントへ取り込めます。
+- ログアウトすると、その端末のユーザー別キャッシュは削除されます。
+
+### Supabase / Google 側の設定
+
+1. SQL Editor で上記マイグレーションの SQL を実行する（または Supabase の GitHub 連携で適用する）。
+2. Authentication → URL Configuration
+   - Site URL：`https://oshikatsu-diary.vercel.app`
+   - Redirect URLs：`https://oshikatsu-diary.vercel.app/**`（プレビュー環境も使う場合は `https://*-minatani-01s-projects.vercel.app/**` も追加）
+3. Authentication → Sign In / Providers → Google を有効にし、Google Cloud Console で発行した OAuth クライアントID・シークレットを登録する。
+   - Google 側の「承認済みのリダイレクト URI」には、Supabase の Google 設定画面に表示される Callback URL（`https://<project-ref>.supabase.co/auth/v1/callback`）を登録します。
+
 ## 技術構成
 
-- **1ファイル完結**：`index.html` の中にCSS（`<style>`）とJS（`<script>`）がすべて内包されています。外部ライブラリ・ビルドツールは一切使用していません（vanilla JS / vanilla CSS）。
-- **データ保存**：ブラウザの `localStorage` のみ。サーバー同期はありません。
-  - キー: `oshikatsu_diary_v1`
+- **1ファイル完結**：`index.html` の中にCSS（`<style>`）とJS（`<script>`）がすべて内包されています。ビルドツールは使用していません（vanilla JS / vanilla CSS）。外部ライブラリは同梱の supabase-js のみです。
+- **データ保存**：ゲストモードはブラウザの `localStorage` のみ。ログイン中は Supabase と同期します（上記参照）。
+  - キー: `oshikatsu_diary_v1`（ゲスト）、`oshikatsu_diary_v1:u:<userId>`（ログイン中のキャッシュ）
   - 中身: `{ oshis, live, cheki, goods, activeOshiId, headerLogo }`
 - **画像**：アップロードされた写真はすべて `dataURL`（base64）としてlocalStorageに直接保存されます。ファイルアップロードは `resizeImageFile`（JPEG化・不透明画像用）と `resizeImageFilePreserveAlpha`（PNG化・透過を保持したい画像用、ヘッダーロゴなど）の2種類のリサイズ関数を使い分けています。
 
@@ -68,6 +98,7 @@ python3 -m http.server 8000
 - 統計（推し別／イベント別／期間別／カレンダー）
 - ヘッダーへの推しグループロゴのアップロード（透過PNG対応）
 - お気に入り推しの切り替え（トップバーのドロップダウン）
+- メールアドレス / Googleアカウントでのログインと、複数端末でのクラウド同期（マイページ →「アカウント・同期」）
 
 ## Claude Codeでの作業にあたって
 

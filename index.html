@@ -405,7 +405,7 @@
   .sheet h2{font-size:17px;margin:0 0 14px;color:var(--heading);}
   .field{margin-bottom:13px;}
   .field label{display:block;font-size:11.5px;color:var(--ink-soft);margin-bottom:5px;font-weight:600;}
-  .field input[type=text],.field input[type=number],.field input[type=date],.field input[type=url],.field select,.field textarea{
+  .field input[type=text],.field input[type=number],.field input[type=date],.field input[type=url],.field input[type=email],.field input[type=password],.field select,.field textarea{
     width:100%;border:1px solid var(--line-strong);border-radius:3px;background:var(--paper);
     padding:10px 11px;font-size:16px;color:var(--text);font-family:inherit;
   }
@@ -416,6 +416,28 @@
   .field-hint{font-size:10.5px;color:var(--ink-soft);margin-top:5px;line-height:1.6;}
   .sheet-actions{display:flex;gap:10px;margin-top:18px;}
   .sheet-actions .btn{flex:1;}
+
+  /* ---------- account / cloud sync ---------- */
+  .account-card{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:14px;margin-bottom:6px;}
+  .account-note{margin:0 0 12px;font-size:12.5px;line-height:1.7;color:var(--ink-soft);}
+  .account-line{display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:8px;word-break:break-all;}
+  .account-label{font-size:11px;color:var(--ink-soft);flex:none;}
+  .sync-dot{width:8px;height:8px;border-radius:50%;background:#3E9B6B;flex:none;}
+  .sync-dot.syncing{background:#D9A036;}
+  .sync-dot.error,.sync-dot.offline{background:#B23A3A;}
+  .account-actions{display:flex;gap:10px;margin-top:12px;}
+  .account-actions .btn{flex:1;}
+  .btn.google-btn{background:#FFFFFF;color:#1F1F1F;border-color:var(--line-strong);gap:10px;padding:11px 16px;}
+  .btn.google-btn .google-icon{width:18px;height:18px;flex:none;stroke:none;}
+  .btn:disabled{opacity:.55;cursor:default;}
+  .auth-or{display:flex;align-items:center;gap:10px;font-size:11.5px;color:var(--ink-soft);margin:16px 0 14px;}
+  .auth-or::before,.auth-or::after{content:"";flex:1;height:1px;background:var(--line);}
+  .auth-msg{font-size:12px;line-height:1.7;margin:2px 0 0;color:var(--ink-soft);}
+  .auth-msg:empty{display:none;}
+  .auth-msg.error{color:#B23A3A;}
+  .auth-msg.ok{color:#2F7A55;}
+  .auth-links{display:flex;flex-direction:column;align-items:center;gap:6px;margin-top:16px;}
+  .link-btn{background:none;border:none;color:var(--accent);font-size:12.5px;cursor:pointer;padding:4px;text-decoration:underline;font-family:inherit;}
 
   .group-card{
     border:1px solid var(--line-strong);border-radius:8px;padding:8px 10px;background:var(--card);
@@ -711,6 +733,7 @@
   </div>
 </div>
 
+<script src="vendor/supabase-js-2.117.2.js"></script>
 <script>
 (function(){
 "use strict";
@@ -1110,39 +1133,623 @@ var PhotoEditor = (function(){
   return { init: init, open: open };
 })();
 
+/* ============ storage: localStorage cache + optional Supabase cloud sync ============
+   ゲスト（未ログイン）: これまで通り localStorage の LOCAL_KEY にだけ保存する。
+   ログイン中: localStorage にユーザー別キャッシュを持ちつつ、Supabase の
+   oshikatsu_records テーブルと同期する。1件の推し/記録/設定 = 1行（data に JSON）。
+   同期は「最後にクラウドと一致していた内容のハッシュ(cloud.hashes)」との差分で
+   変更・削除を検出するため、saveLocal() を呼ぶ既存コードはそのまま同期対象になる。 */
+var GUEST_KEY = LOCAL_KEY;
+var CLOUD_CONFIG_KEY = "oshikatsu_cloud_config_v1";
+var CLOUD_TABLE = "oshikatsu_records";
+var CLOUD_PAGE = 500;              // 1回の取得件数
+var CLOUD_CHUNK_BYTES = 1500000;   // 1回のアップロードの目安サイズ（写真入り記録を考慮）
+var CLOUD_PULL_OVERLAP_MS = 30000; // 差分取得の取りこぼし防止用の重なり
+var sb = null;                     // Supabase client（未設定なら null）
+var cloud = {
+  configured:false,
+  user:null,          // {id,email}
+  status:"idle",      // idle | syncing | error | offline
+  lastSyncedAt:null,
+  hashes:{},          // "kind:id" -> クラウドと一致している内容のハッシュ
+  lastPulledAt:null,  // 取得済みの最新 updated_at
+  timer:null,
+  busy:false,
+  again:false
+};
+
+function userCacheKey(uid){ return LOCAL_KEY+":u:"+uid; }
+function userSyncKey(uid){ return "oshikatsu_sync_v1:"+uid; }
+function currentDataKey(){ return cloud.user ? userCacheKey(cloud.user.id) : GUEST_KEY; }
+
+function readStored(key){
+  try{
+    var raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  }catch(e){ return null; }
+}
+function applyStored(data){
+  data = data || {};
+  state.oshis = data.oshis||[];
+  state.live = data.live||[];
+  state.cheki = data.cheki||[];
+  state.goods = data.goods||[];
+  state.activeOshiId = data.activeOshiId||null;
+  state.headerLogo = data.headerLogo||null;
+}
+function snapshotData(){
+  return {
+    oshis:state.oshis, live:state.live, cheki:state.cheki, goods:state.goods,
+    activeOshiId:state.activeOshiId, headerLogo:state.headerLogo
+  };
+}
+function hasContent(data){
+  if(!data) return false;
+  return (data.oshis&&data.oshis.length) || (data.live&&data.live.length)
+    || (data.cheki&&data.cheki.length) || (data.goods&&data.goods.length) || !!data.headerLogo;
+}
+
 function loadLocal(){
   try{
-    var raw = localStorage.getItem(LOCAL_KEY);
-    if(raw){
-      var data = JSON.parse(raw);
-      state.oshis = data.oshis||[];
-      state.live = data.live||[];
-      state.cheki = data.cheki||[];
-      state.goods = data.goods||[];
-      state.activeOshiId = data.activeOshiId||null;
-      state.headerLogo = data.headerLogo||null;
-    }
+    var raw = localStorage.getItem(currentDataKey());
+    applyStored(raw ? JSON.parse(raw) : null);
   }catch(e){
+    applyStored(null);
     toast("保存データの読み込みに失敗しました");
   }
 }
-function saveLocal(){
+/* ログイン中はクラウドが正本なので、端末キャッシュの書き込みに失敗しても
+   同期で保存されるためエラー表示しない。 */
+function writeCache(){
   try{
-    localStorage.setItem(LOCAL_KEY, JSON.stringify({
-      oshis:state.oshis, live:state.live, cheki:state.cheki, goods:state.goods,
-      activeOshiId:state.activeOshiId, headerLogo:state.headerLogo
-    }));
+    localStorage.setItem(currentDataKey(), JSON.stringify(snapshotData()));
     return true;
+  }catch(e){ return false; }
+}
+function saveLocal(){
+  var ok = writeCache();
+  if(cloud.user){
+    scheduleSync();
+    return true;
+  }
+  if(!ok) toast("保存に失敗しました（ストレージの空き容量やブラウザ設定をご確認ください）");
+  return ok;
+}
+
+/* ---------- hashing (キー順に依存しない比較。jsonb はキー順を並べ替えるため) ---------- */
+function stableStringify(v){
+  if(v===undefined || v===null || typeof v==="function") return "null";
+  if(typeof v==="number") return isFinite(v) ? String(v) : "null";
+  if(typeof v!=="object") return JSON.stringify(v);
+  if(Array.isArray(v)) return "["+v.map(stableStringify).join(",")+"]";
+  var keys = Object.keys(v).filter(function(k){ return v[k]!==undefined && typeof v[k]!=="function"; }).sort();
+  return "{"+keys.map(function(k){ return JSON.stringify(k)+":"+stableStringify(v[k]); }).join(",")+"}";
+}
+function hashString(str){
+  var h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for(var i=0;i<str.length;i++){
+    var ch = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1>>>16), 2246822507) ^ Math.imul(h2 ^ (h2>>>13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2>>>16), 2246822507) ^ Math.imul(h1 ^ (h1>>>13), 3266489909);
+  return (h2>>>0).toString(16)+(h1>>>0).toString(16)+":"+str.length;
+}
+function hashOf(data){ return hashString(stableStringify(data)); }
+
+/* 現在の state を「kind:id -> 行」の形にする。推しの並び順は _order で持つ。 */
+function localRowMap(){
+  var m = {};
+  state.oshis.forEach(function(o,i){
+    if(!o || !o.id) return;
+    m["oshi:"+o.id] = {kind:"oshi", id:o.id, data:Object.assign({}, o, {_order:i})};
+  });
+  ["live","cheki","goods"].forEach(function(t){
+    state[t].forEach(function(r){
+      if(!r || !r.id) return;
+      m[t+":"+r.id] = {kind:t, id:r.id, data:r};
+    });
+  });
+  m["settings:main"] = {kind:"settings", id:"main", data:{
+    activeOshiId:state.activeOshiId||null, headerLogo:state.headerLogo||null
+  }};
+  return m;
+}
+function hasPendingChanges(){
+  if(!cloud.user) return false;
+  var map = localRowMap();
+  var k;
+  for(k in map){ if(cloud.hashes[k]!==hashOf(map[k].data)) return true; }
+  for(k in cloud.hashes){ if(!map[k]) return true; }
+  return false;
+}
+
+function saveSyncMeta(){
+  if(!cloud.user) return;
+  try{
+    localStorage.setItem(userSyncKey(cloud.user.id), JSON.stringify({
+      hashes:cloud.hashes, lastPulledAt:cloud.lastPulledAt,
+      lastSyncedAt:cloud.lastSyncedAt ? cloud.lastSyncedAt.toISOString() : null
+    }));
+  }catch(e){}
+}
+function scheduleSync(delay){
+  if(!sb || !cloud.user) return;
+  clearTimeout(cloud.timer);
+  cloud.timer = setTimeout(syncNow, delay==null ? 800 : delay);
+}
+
+function syncStatusText(){
+  if(cloud.status==="syncing") return "同期中…";
+  if(cloud.status==="offline") return "オフラインです（接続が戻ると自動で同期します）";
+  if(cloud.status==="error") return "同期に失敗しました（自動で再試行します）";
+  if(cloud.lastSyncedAt){
+    var d = cloud.lastSyncedAt;
+    return "同期済み "+(d.getMonth()+1)+"/"+d.getDate()+" "+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");
+  }
+  return "未同期";
+}
+function setSyncStatus(s){
+  cloud.status = s;
+  var t = document.getElementById("syncStatusText");
+  if(t) t.textContent = syncStatusText();
+  var dot = document.getElementById("syncStatusDot");
+  if(dot) dot.className = "sync-dot "+s;
+}
+
+async function pushChanges(uid){
+  var map = localRowMap();
+  var items = [];
+  Object.keys(map).forEach(function(k){
+    var h = hashOf(map[k].data);
+    if(cloud.hashes[k]!==h){
+      items.push({key:k, hash:h, row:{
+        user_id:uid, kind:map[k].kind, id:map[k].id,
+        data:JSON.parse(JSON.stringify(map[k].data)), deleted:false
+      }});
+    }
+  });
+  Object.keys(cloud.hashes).forEach(function(k){
+    if(map[k]) return;
+    var p = k.indexOf(":");
+    items.push({key:k, hash:null, row:{user_id:uid, kind:k.slice(0,p), id:k.slice(p+1), data:{}, deleted:true}});
+  });
+  var i = 0;
+  while(i<items.length){
+    var chunk = [], bytes = 0;
+    while(i<items.length && (chunk.length===0 || bytes<CLOUD_CHUNK_BYTES)){
+      bytes += JSON.stringify(items[i].row.data).length;
+      chunk.push(items[i]); i++;
+    }
+    var res = await sb.from(CLOUD_TABLE).upsert(chunk.map(function(c){ return c.row; }), {onConflict:"user_id,kind,id"});
+    if(res.error) throw res.error;
+    if(!cloud.user || cloud.user.id!==uid) return;
+    chunk.forEach(function(c){
+      if(c.hash===null) delete cloud.hashes[c.key];
+      else cloud.hashes[c.key] = c.hash;
+    });
+    saveSyncMeta();
+  }
+}
+
+function putIntoState(kind, data){
+  if(kind==="settings"){
+    state.activeOshiId = data.activeOshiId||null;
+    state.headerLogo = data.headerLogo||null;
+    return;
+  }
+  var arr = kind==="oshi" ? state.oshis : state[kind];
+  var idx = arr.findIndex(function(r){ return r.id===data.id; });
+  if(idx>=0) arr[idx] = data; else arr.push(data);
+}
+function removeFromState(kind, id){
+  if(kind==="settings") return;
+  if(kind==="oshi") state.oshis = state.oshis.filter(function(o){ return o.id!==id; });
+  else state[kind] = state[kind].filter(function(r){ return r.id!==id; });
+}
+
+/* remoteWins: その端末で初めて同期するとき。端末側の空の状態でクラウドを
+   上書きしないよう、クラウドの内容を優先して取り込む。 */
+async function pullChanges(uid, remoteWins){
+  var since = null;
+  if(cloud.lastPulledAt){
+    since = new Date(new Date(cloud.lastPulledAt).getTime() - CLOUD_PULL_OVERLAP_MS).toISOString();
+  }
+  var rows = [], from = 0;
+  while(true){
+    var q = sb.from(CLOUD_TABLE)
+      .select("kind,id,data,deleted,updated_at")
+      .eq("user_id", uid)
+      .order("updated_at", {ascending:true})
+      .order("kind", {ascending:true})
+      .order("id", {ascending:true})
+      .range(from, from+CLOUD_PAGE-1);
+    if(since) q = q.gte("updated_at", since);
+    var res = await q;
+    if(res.error) throw res.error;
+    if(!cloud.user || cloud.user.id!==uid) return;
+    rows = rows.concat(res.data||[]);
+    if(!res.data || res.data.length<CLOUD_PAGE) break;
+    from += CLOUD_PAGE;
+  }
+  if(!rows.length) return;
+
+  // 並び順は _order で表すので、先に今の並びを反映しておく
+  state.oshis.forEach(function(o,i){ o._order = i; });
+  var map = localRowMap();
+  var changed = false;
+  var maxTs = cloud.lastPulledAt;
+  rows.forEach(function(r){
+    var k = r.kind+":"+r.id;
+    var local = map[k];
+    if(!maxTs || r.updated_at>maxTs) maxTs = r.updated_at;
+    if(!remoteWins){
+      // 端末側で未送信の変更がある行は端末側を優先（直後の送信で反映）
+      var pending = local ? cloud.hashes[k]!==hashOf(local.data) : (k in cloud.hashes);
+      if(pending) return;
+    }
+    if(r.deleted){
+      if(local){ removeFromState(r.kind, r.id); changed = true; }
+      delete cloud.hashes[k];
+    } else {
+      var h = hashOf(r.data);
+      if(!local || hashOf(local.data)!==h){ putIntoState(r.kind, r.data); changed = true; }
+      cloud.hashes[k] = h;
+    }
+  });
+  cloud.lastPulledAt = maxTs;
+  if(changed){
+    state.oshis.sort(function(a,b){ return (a._order==null?1e9:a._order) - (b._order==null?1e9:b._order); });
+    writeCache();
+    if(state.ready) render();
+  }
+  saveSyncMeta();
+}
+
+async function syncNow(){
+  if(!sb || !cloud.user) return;
+  if(cloud.busy){ cloud.again = true; return; }
+  clearTimeout(cloud.timer);
+  cloud.busy = true;
+  setSyncStatus("syncing");
+  var uid = cloud.user.id;
+  try{
+    if(!cloud.lastPulledAt) await pullChanges(uid, true);
+    await pushChanges(uid);
+    await pullChanges(uid, false);
+    if(cloud.user && cloud.user.id===uid){
+      cloud.lastSyncedAt = new Date();
+      saveSyncMeta();
+      setSyncStatus("idle");
+    }
   }catch(e){
-    toast("保存に失敗しました（ストレージの空き容量やブラウザ設定をご確認ください）");
-    return false;
+    console.error("sync failed", e);
+    if(cloud.user && cloud.user.id===uid){
+      setSyncStatus(navigator.onLine===false ? "offline" : "error");
+      clearTimeout(cloud.timer);
+      cloud.timer = setTimeout(syncNow, 30000);
+    }
+  }finally{
+    cloud.busy = false;
+    if(cloud.again){ cloud.again = false; scheduleSync(300); }
+  }
+}
+
+/* ログイン前にこの端末で付けていた記録を、アカウントに追加する（同じIDは上書きしない） */
+function mergeGuestData(guest){
+  var ids = {};
+  state.oshis.forEach(function(o){ ids["oshi:"+o.id] = true; });
+  (guest.oshis||[]).forEach(function(o){ if(o && o.id && !ids["oshi:"+o.id]) state.oshis.push(o); });
+  ["live","cheki","goods"].forEach(function(t){
+    var have = {};
+    state[t].forEach(function(r){ have[r.id] = true; });
+    (guest[t]||[]).forEach(function(r){ if(r && r.id && !have[r.id]) state[t].push(r); });
+  });
+  if(!state.activeOshiId && guest.activeOshiId) state.activeOshiId = guest.activeOshiId;
+  if(!state.headerLogo && guest.headerLogo) state.headerLogo = guest.headerLogo;
+}
+
+async function enterUserMode(user){
+  if(cloud.user && cloud.user.id===user.id){
+    cloud.user.email = user.email||cloud.user.email;
+    return;
+  }
+  cloud.user = {id:user.id, email:user.email||""};
+  var meta = readStored(userSyncKey(user.id)) || {};
+  cloud.hashes = meta.hashes || {};
+  cloud.lastPulledAt = meta.lastPulledAt || null;
+  cloud.lastSyncedAt = meta.lastSyncedAt ? new Date(meta.lastSyncedAt) : null;
+  cloud.status = "idle";
+  loadLocal();
+  state.ready = true;
+  render();
+  await syncNow();
+  if(!cloud.user || cloud.user.id!==user.id) return;
+
+  var guest = readStored(GUEST_KEY);
+  if(hasContent(guest)){
+    var ok = confirm("ログイン前にこの端末で記録したデータがあります。\nアカウントに取り込んで、ほかの端末とも同期しますか？\n（取り込まない場合は、ログアウト後にこの端末で引き続き見られます）");
+    if(ok){
+      mergeGuestData(guest);
+      try{ localStorage.removeItem(GUEST_KEY); }catch(e){}
+      saveLocal();
+      render();
+      toast("この端末の記録をアカウントに取り込みました");
+    }
+  }
+}
+function leaveUserMode(){
+  clearTimeout(cloud.timer);
+  cloud.user = null;
+  cloud.hashes = {};
+  cloud.lastPulledAt = null;
+  cloud.lastSyncedAt = null;
+  cloud.status = "idle";
+  loadLocal();
+  state.ready = true;
+  render();
+}
+
+async function logout(){
+  if(!sb || !cloud.user) return;
+  if(!confirm("ログアウトしますか？")) return;
+  await syncNow();
+  if(hasPendingChanges()){
+    if(!confirm("まだクラウドに送れていない変更があります。\nログアウトすると、その変更はこの端末から消えます。ログアウトしますか？")) return;
+  }
+  var uid = cloud.user.id;
+  try{ await sb.auth.signOut({scope:"local"}); }catch(e){ console.error(e); }
+  try{
+    localStorage.removeItem(userCacheKey(uid));
+    localStorage.removeItem(userSyncKey(uid));
+  }catch(e){}
+  leaveUserMode();
+  toast("ログアウトしました");
+}
+
+/* 接続情報は Vercel の環境変数から /api/config 経由で受け取る。
+   前回の値をキャッシュしておき、2回目以降は待たずに起動する。 */
+async function fetchCloudConfig(){
+  try{
+    var ctrl = window.AbortController ? new AbortController() : null;
+    var timer = setTimeout(function(){ if(ctrl) ctrl.abort(); }, 4000);
+    var res = await fetch("/api/config", {cache:"no-store", signal:ctrl?ctrl.signal:undefined});
+    clearTimeout(timer);
+    if(!res.ok) return null;
+    var cfg = await res.json();
+    if(cfg && cfg.supabaseUrl && cfg.supabaseAnonKey){
+      try{ localStorage.setItem(CLOUD_CONFIG_KEY, JSON.stringify(cfg)); }catch(e){}
+      return cfg;
+    }
+    try{ localStorage.removeItem(CLOUD_CONFIG_KEY); }catch(e){}
+    return null;
+  }catch(e){ return null; }
+}
+async function loadCloudConfig(){
+  if(location.protocol==="file:") return null;
+  var cached = readStored(CLOUD_CONFIG_KEY);
+  if(cached && cached.supabaseUrl && cached.supabaseAnonKey){
+    fetchCloudConfig();
+    return cached;
+  }
+  return await fetchCloudConfig();
+}
+function appUrl(){ return location.origin + location.pathname; }
+
+function handleAuthEvent(event, session){
+  if(event==="PASSWORD_RECOVERY"){
+    if(session && session.user) enterUserMode(session.user);
+    openNewPasswordSheet();
+    return;
+  }
+  if(session && session.user){
+    enterUserMode(session.user);
+  } else if(event==="SIGNED_OUT" || (event==="INITIAL_SESSION" && cloud.user)){
+    if(cloud.user) leaveUserMode();
   }
 }
 
 async function initStorage(){
-  loadLocal();
-  state.ready = true;
-  render();
+  var cfg = await loadCloudConfig();
+  if(cfg && window.supabase && window.supabase.createClient){
+    try{
+      sb = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, {
+        auth:{ persistSession:true, autoRefreshToken:true, detectSessionInUrl:true, flowType:"implicit" }
+      });
+      cloud.configured = true;
+    }catch(e){
+      console.error(e);
+      sb = null;
+    }
+  }
+  if(!sb){
+    loadLocal();
+    state.ready = true;
+    render();
+    return;
+  }
+  var session = null;
+  try{
+    var r = await sb.auth.getSession();
+    session = r && r.data ? r.data.session : null;
+  }catch(e){ console.error(e); }
+  if(session && session.user){
+    enterUserMode(session.user);
+  } else {
+    loadLocal();
+    state.ready = true;
+    render();
+  }
+  // Supabase の推奨どおり、コールバック内では await せず次のタスクで処理する
+  sb.auth.onAuthStateChange(function(event, s){
+    setTimeout(function(){ handleAuthEvent(event, s); }, 0);
+  });
+
+  document.addEventListener("visibilitychange", function(){
+    if(document.visibilityState==="visible" && cloud.user) syncNow();
+  });
+  window.addEventListener("online", function(){ if(cloud.user) syncNow(); });
+  setInterval(function(){
+    if(cloud.user && document.visibilityState==="visible") syncNow();
+  }, 60000);
+}
+
+/* ============ account UI (login / signup / password reset) ============ */
+var GOOGLE_ICON = '<svg class="google-icon" viewBox="0 0 48 48" aria-hidden="true">'
+  + '<path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>'
+  + '<path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>'
+  + '<path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>'
+  + '<path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>'
+  + '</svg>';
+
+function accountSectionHtml(){
+  var html = '<div class="section-label">アカウント・同期</div><div class="account-card">';
+  if(!cloud.configured){
+    html += '<p class="account-note">クラウド同期は利用できません。記録はこの端末（ブラウザ）にのみ保存されます。</p>';
+  } else if(!cloud.user){
+    html += '<p class="account-note">ログインすると記録がクラウドに保存され、スマホやPCなど複数の端末で同じ記録を見られます。</p>'
+      + '<button class="btn primary block" data-action="open-login">ログイン / 新規登録</button>';
+  } else {
+    html += '<div class="account-line"><span class="account-label">ログイン中</span><b>'+escapeHtml(cloud.user.email||"")+'</b></div>'
+      + '<div class="account-line"><span class="sync-dot '+cloud.status+'" id="syncStatusDot"></span><span id="syncStatusText">'+escapeHtml(syncStatusText())+'</span></div>'
+      + '<div class="account-actions">'
+      +   '<button class="btn" data-action="sync-now">今すぐ同期</button>'
+      +   '<button class="btn ghost" data-action="logout">ログアウト</button>'
+      + '</div>';
+  }
+  return html + '</div>';
+}
+
+function authErrorMessage(err){
+  var m = (err && err.message) ? String(err.message) : "";
+  if(/Invalid login credentials/i.test(m)) return "メールアドレスまたはパスワードが正しくありません。";
+  if(/Email not confirmed/i.test(m)) return "メールアドレスの確認が済んでいません。届いたメールのリンクを開いてください。";
+  if(/already registered|already been registered/i.test(m)) return "このメールアドレスはすでに登録されています。ログインしてください。";
+  if(/Password should be/i.test(m)) return "パスワードは6文字以上で入力してください。";
+  if(/rate limit|security purposes|too many/i.test(m)) return "短時間に操作が集中しました。しばらく待ってからもう一度お試しください。";
+  if(/provider is not enabled|Unsupported provider/i.test(m)) return "Googleログインが有効になっていません。管理者にお問い合わせください。";
+  if(/Failed to fetch|NetworkError|network/i.test(m)) return "通信に失敗しました。ネット接続を確認してください。";
+  return "エラーが発生しました"+(m ? "（"+m+"）" : "")+"。";
+}
+
+function openAuthSheet(mode){
+  if(!sb){ toast("クラウド同期が設定されていません"); return; }
+  mode = mode || "login";
+  var title = mode==="signup" ? "新規登録" : (mode==="reset" ? "パスワードの再設定" : "ログイン");
+  var submitLabel = mode==="signup" ? "登録する" : (mode==="reset" ? "再設定メールを送る" : "ログイン");
+  var html = '<h2 class="mincho">'+title+'</h2>';
+  if(mode!=="reset"){
+    html += '<button type="button" class="btn block google-btn" data-auth="google">'+GOOGLE_ICON+'<span>Googleアカウントで'+(mode==="signup"?"登録":"ログイン")+'</span></button>'
+      + '<div class="auth-or">またはメールアドレスで</div>';
+  } else {
+    html += '<p class="account-note">登録したメールアドレスに、新しいパスワードを設定するためのリンクを送ります。</p>';
+  }
+  html += '<form id="authForm" novalidate>'
+    + '<div class="field"><label for="authEmail">メールアドレス</label>'
+    +   '<input type="email" id="authEmail" autocomplete="email" inputmode="email" placeholder="you@example.com" required></div>';
+  if(mode!=="reset"){
+    html += '<div class="field"><label for="authPassword">パスワード'+(mode==="signup"?"（6文字以上）":"")+'</label>'
+      + '<input type="password" id="authPassword" autocomplete="'+(mode==="signup"?"new-password":"current-password")+'" minlength="6" required></div>';
+  }
+  html += '<p class="auth-msg" id="authMsg"></p>'
+    + '<div class="sheet-actions">'
+    +   '<button type="button" class="btn ghost" data-auth="cancel">キャンセル</button>'
+    +   '<button type="submit" class="btn primary" id="authSubmit">'+submitLabel+'</button>'
+    + '</div></form>'
+    + '<div class="auth-links">';
+  if(mode==="login"){
+    html += '<button type="button" class="link-btn" data-auth-mode="signup">アカウントをお持ちでない方は新規登録</button>'
+      + '<button type="button" class="link-btn" data-auth-mode="reset">パスワードをお忘れの方</button>';
+  } else {
+    html += '<button type="button" class="link-btn" data-auth-mode="login">ログイン画面に戻る</button>';
+  }
+  html += '</div>';
+  openSheet(html);
+
+  var form = document.getElementById("authForm");
+  var msg = document.getElementById("authMsg");
+  var submitBtn = document.getElementById("authSubmit");
+  function showMsg(text, kind){ msg.textContent = text; msg.className = "auth-msg "+(kind||""); }
+
+  sheetEl.querySelectorAll("[data-auth-mode]").forEach(function(b){
+    b.addEventListener("click", function(){ openAuthSheet(b.getAttribute("data-auth-mode")); });
+  });
+  sheetEl.querySelector('[data-auth="cancel"]').addEventListener("click", closeSheet);
+  var googleBtn = sheetEl.querySelector('[data-auth="google"]');
+  if(googleBtn){
+    googleBtn.addEventListener("click", async function(){
+      googleBtn.disabled = true;
+      var res = await sb.auth.signInWithOAuth({provider:"google", options:{redirectTo:appUrl()}});
+      if(res.error){ googleBtn.disabled = false; showMsg(authErrorMessage(res.error), "error"); }
+    });
+  }
+  form.addEventListener("submit", async function(e){
+    e.preventDefault();
+    var email = document.getElementById("authEmail").value.trim();
+    var pwEl = document.getElementById("authPassword");
+    var password = pwEl ? pwEl.value : "";
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ showMsg("メールアドレスを正しく入力してください。", "error"); return; }
+    if(mode!=="reset" && password.length<6){ showMsg("パスワードは6文字以上で入力してください。", "error"); return; }
+    submitBtn.disabled = true;
+    showMsg("送信中…", "");
+    var res;
+    try{
+      if(mode==="login"){
+        res = await sb.auth.signInWithPassword({email:email, password:password});
+        if(res.error) throw res.error;
+        closeSheet();
+        toast("ログインしました");
+        return;
+      }
+      if(mode==="signup"){
+        res = await sb.auth.signUp({email:email, password:password, options:{emailRedirectTo:appUrl()}});
+        if(res.error) throw res.error;
+        if(res.data && res.data.session){
+          closeSheet();
+          toast("登録してログインしました");
+          return;
+        }
+        showMsg("確認メールを送りました。メール内のリンクを開くと登録が完了し、ログインできます。", "ok");
+        return;
+      }
+      res = await sb.auth.resetPasswordForEmail(email, {redirectTo:appUrl()});
+      if(res.error) throw res.error;
+      showMsg("再設定用のメールを送りました。メール内のリンクを開いて、新しいパスワードを設定してください。", "ok");
+    }catch(err){
+      showMsg(authErrorMessage(err), "error");
+    }finally{
+      submitBtn.disabled = false;
+    }
+  });
+}
+
+function openNewPasswordSheet(){
+  var html = '<h2 class="mincho">新しいパスワードを設定</h2>'
+    + '<form id="newPwForm" novalidate>'
+    + '<div class="field"><label for="newPw1">新しいパスワード（6文字以上）</label><input type="password" id="newPw1" autocomplete="new-password" minlength="6" required></div>'
+    + '<div class="field"><label for="newPw2">確認のためもう一度</label><input type="password" id="newPw2" autocomplete="new-password" minlength="6" required></div>'
+    + '<p class="auth-msg" id="newPwMsg"></p>'
+    + '<div class="sheet-actions">'
+    +   '<button type="button" class="btn ghost" id="newPwCancel">あとで</button>'
+    +   '<button type="submit" class="btn primary" id="newPwSubmit">設定する</button>'
+    + '</div></form>';
+  openSheet(html);
+  var msg = document.getElementById("newPwMsg");
+  document.getElementById("newPwCancel").addEventListener("click", closeSheet);
+  document.getElementById("newPwForm").addEventListener("submit", async function(e){
+    e.preventDefault();
+    var p1 = document.getElementById("newPw1").value, p2 = document.getElementById("newPw2").value;
+    if(p1.length<6){ msg.textContent = "パスワードは6文字以上で入力してください。"; msg.className = "auth-msg error"; return; }
+    if(p1!==p2){ msg.textContent = "2つのパスワードが一致しません。"; msg.className = "auth-msg error"; return; }
+    var btn = document.getElementById("newPwSubmit");
+    btn.disabled = true;
+    var res = await sb.auth.updateUser({password:p1});
+    btn.disabled = false;
+    if(res.error){ msg.textContent = authErrorMessage(res.error); msg.className = "auth-msg error"; return; }
+    closeSheet();
+    toast("パスワードを変更しました");
+  });
 }
 
 async function persistOshi(oshi){
@@ -1909,6 +2516,7 @@ function shareSummaryImage(){
 /* ============ rendering: MY PAGE (oshi registration & app settings) ============ */
 function renderOshiPage(){
   var html = '<div class="page-head"><h1 class="mincho">マイページ</h1></div>';
+  html += accountSectionHtml();
   html += '<div class="section-label">推しの管理</div>';
   html += '<button class="btn primary block" data-action="add-oshi" style="margin-bottom:18px;">＋ 新しい推しを登録</button>';
 
@@ -2810,6 +3418,9 @@ function onAppClick(e){
   var action = el.getAttribute("data-action");
 
   if(action==="add-oshi"){ openOshiSheet(null); return; }
+  if(action==="open-login"){ openAuthSheet("login"); return; }
+  if(action==="sync-now"){ syncNow(); return; }
+  if(action==="logout"){ logout(); return; }
   if(action==="edit-oshi"){ openOshiSheet(getOshi(el.getAttribute("data-id"))); return; }
   if(action==="set-active"){ setActiveOshi(el.getAttribute("data-id")).then(render); return; }
   if(action==="move-oshi"){ moveOshiStep(el.getAttribute("data-id"), el.getAttribute("data-dir")); return; }
