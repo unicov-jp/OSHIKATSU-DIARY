@@ -46,6 +46,7 @@ python3 -m http.server 8000
 
 - メールアドレス：ログイン中のアカウント
 - パスワード：設定済み／未設定と「変更」「設定」ボタン。Googleだけで登録した人も、ここでパスワードを設定するとメールアドレスでログインできます（`sb.auth.updateUser`）。
+  - Google で登録した人がパスワードを追加しても Supabase のユーザー情報には現れないため、設定・変更時に `user_metadata.has_password = true` を保存して「設定済み」の判定に使います。すでに同じパスワードがある（Supabase が「前と同じ」と返す）場合も目印だけ付けます。
 - Google認証：連携済み／未連携と「連携する」「解除」ボタン（`sb.auth.linkIdentity` / `unlinkIdentity`）。ログイン方法が1つしかない場合は解除できません。
   - 「連携する」を使うには、Supabase の Authentication → Sign In / Providers で **Allow manual linking** を有効にする必要があります。
 - ログアウト

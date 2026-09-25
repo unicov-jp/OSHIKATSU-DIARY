@@ -1521,6 +1521,9 @@ function applyAuthInfo(user){
   if(user.identities) cloud.user.identities = user.identities;
   var providers = (user.app_metadata && user.app_metadata.providers) || [];
   if(providers.length) cloud.user.providers = providers;
+  // Googleで登録した人があとからパスワードを設定しても、Supabaseのユーザー情報には
+  // それが現れないため、設定時に user_metadata.has_password を立てて判定に使う
+  if(user.user_metadata && user.user_metadata.has_password) cloud.user.passwordSet = true;
 }
 function userHasGoogle(){
   return !!(cloud.user && (cloud.user.identities||[]).some(function(i){ return i.provider==="google"; }));
@@ -2044,7 +2047,11 @@ function openNewPasswordSheet(mode){
     if(p1!==p2){ msg.textContent = "2つのパスワードが一致しません。"; msg.className = "auth-msg error"; return; }
     var btn = document.getElementById("newPwSubmit");
     btn.disabled = true;
-    var res = await sb.auth.updateUser({password:p1});
+    var res = await sb.auth.updateUser({password:p1, data:{has_password:true}});
+    // 「前と同じパスワード」で断られた＝すでにパスワードがあるので、目印だけ付けて成功扱いにする
+    if(res.error && /different from the old password/i.test(res.error.message||"")){
+      res = await sb.auth.updateUser({data:{has_password:true}});
+    }
     btn.disabled = false;
     if(res.error){ msg.textContent = authErrorMessage(res.error); msg.className = "auth-msg error"; return; }
     if(cloud.user) cloud.user.passwordSet = true;
