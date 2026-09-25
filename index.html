@@ -3255,7 +3255,7 @@ function oshiFormHtml(oshi){
       +         '</div>'
       +       '</div>'
       +     '</div>'
-      +     '<input type="text" class="group-name-input" data-group-idx="'+i+'" value="'+escapeHtml(g.name||"")+'" placeholder="グループ名" maxlength="40">'
+      +     '<input type="text" class="group-name-input" data-group-idx="'+i+'" list="groupNameOptions" autocomplete="off" value="'+escapeHtml(g.name||"")+'" placeholder="グループ名" maxlength="40">'
       +     '<div class="group-sns-inline">'+snsIconPickerHtml("grp"+i, g.name||"グループ", function(k){ return g["sns_"+k]; }, GROUP_SNS_KEYS)+'</div>'
       +     '<div class="group-order-btns">'
       +       '<button type="button" class="group-order-btn" data-group-move="'+i+'" data-dir="up" title="上に移動" aria-label="上に移動" '+(i===0?"disabled":"")+'>'
@@ -3272,8 +3272,22 @@ function oshiFormHtml(oshi){
       + '</div>';
   }).join("");
 
+  /* 所属・グループ名の候補（登録済みの値）。入力欄の list 属性で使う */
+  function uniqueSorted(list){
+    var seen = {}, out = [];
+    list.forEach(function(v){ v = (v||"").trim(); if(v && !seen[v]){ seen[v] = true; out.push(v); } });
+    return out.sort(function(a,b){ return a.localeCompare(b, "ja"); });
+  }
+  var agencyOptions = uniqueSorted(state.oshis.map(function(o){ return o.agency; }));
+  var groupNameOptions = uniqueSorted([].concat.apply([], state.oshis.map(function(o){ return oshiGroupsList(o).map(function(g){ return g.name; }); })));
+  function datalistHtml(id, values){
+    return '<datalist id="'+id+'">'+values.map(function(v){ return '<option value="'+escapeHtml(v)+'"></option>'; }).join("")+'</datalist>';
+  }
+
   return ''
     + '<h2 class="mincho">'+((oshi&&oshi.id)?"推しを編集":"推しを登録")+'</h2>'
+    + datalistHtml("agencyOptions", agencyOptions)
+    + datalistHtml("groupNameOptions", groupNameOptions)
     + '<form id="oshiForm">'
     +   '<div class="field">'
     +     '<div class="identity-duo">'
@@ -3306,7 +3320,7 @@ function oshiFormHtml(oshi){
     +     '</div>'
     +     '<div class="field-hint">年を空欄にすると年齢は非公開になります</div>'
     +   '</div>'
-    +   '<div class="field"><label>所属</label><input type="text" name="agency" maxlength="40" value="'+(oshi?escapeHtml(oshi.agency||""):"")+'"></div>'
+    +   '<div class="field"><label>所属</label><input type="text" name="agency" maxlength="40" list="agencyOptions" autocomplete="off" value="'+(oshi?escapeHtml(oshi.agency||""):"")+'"></div>'
     +   '<div class="field"><label>グループ</label>'
     +     '<div class="group-card-list">'+groupCardsHtml+'</div>'
     +     '<button type="button" class="btn ghost block" id="addGroupBtn" style="margin-top:'+(groupsList.length?"10px":"0")+';">＋ グループを追加</button>'
@@ -3655,9 +3669,11 @@ function bindOshiForm(existingOshi){
     var clearBtn = form.querySelector('[data-sns-clear="'+combo+'"]');
     if(clearBtn) clearBtn.style.display = value ? "block" : "none";
   }
-  form.addEventListener("change", function(e){
+  function onGroupNameCommitted(e){
     var inp = e.target.closest(".group-name-input");
     if(!inp) return;
+    // 候補から選んだとき（insertReplacementText、または inputType なし）もその場で反映する
+    if(e.type==="input" && e.inputType && e.inputType!=="insertReplacementText") return;
     var name = inp.value.trim();
     if(!name) return;
     var idx = inp.getAttribute("data-group-idx");
@@ -3668,7 +3684,9 @@ function bindOshiForm(existingOshi){
       if(found[k] && !chosenSns[combo]){ setSnsValue(combo, found[k]); filled++; }
     });
     if(filled) toast("「"+name+"」のSNS情報を反映しました");
-  });
+  }
+  form.addEventListener("change", onGroupNameCommitted);
+  form.addEventListener("input", onGroupNameCommitted);
 
   snsCombos.forEach(function(combo){
     var btn = form.querySelector('[data-sns-btn="'+combo+'"]');
