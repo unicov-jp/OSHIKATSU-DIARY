@@ -2604,7 +2604,7 @@ function ticketHtml(type,r,withOshiTag){
   }
   // 推しは1行目、会場などの詳細は次の行に分けて表示する
   var oshiLineHtml = "";
-  if(withOshiTag && oshi && state.filterOshiId==="all"){
+  if(withOshiTag && oshi){
     var tags = recOshiEntries(r).map(function(e){
       var o = getOshi(e.oshiId);
       return o ? '<span style="color:'+o.color+';font-weight:700;">'+escapeHtml(oshiFullLabel(o))+'</span>' : '';
