@@ -2570,12 +2570,14 @@ function ticketHtml(type,r,withOshiTag){
     if(r.item) metaBits.push(escapeHtml(r.item));
     metaBits.push((Number(r.qty)||1)+"点");
   }
+  // 推しは1行目、会場などの詳細は次の行に分けて表示する
+  var oshiLineHtml = "";
   if(withOshiTag && oshi && state.filterOshiId==="all"){
     var tags = recOshiEntries(r).map(function(e){
       var o = getOshi(e.oshiId);
       return o ? '<span style="color:'+o.color+';font-weight:700;">'+escapeHtml(oshiFullLabel(o))+'</span>' : '';
     }).filter(Boolean);
-    metaBits.unshift(tags.join(" ／ "));
+    if(tags.length) oshiLineHtml = '<div class="meta meta-oshi">'+tags.join(" ／ ")+'</div>';
   }
   var streamLinkHtml = (type==="live" && r.streamUrl)
     ? '<a href="'+escapeHtml(r.streamUrl)+'" target="_blank" rel="noopener noreferrer" class="stream-link">配信を見る</a>'
@@ -2588,6 +2590,7 @@ function ticketHtml(type,r,withOshiTag){
     + '<div class="main">'
     +   '<div class="kind"><span class="stamp">'+kindIcon(type)+KIND_LABEL[type]+'</span>'+(r.tag?'<span class="tag-chip">'+escapeHtml(r.tag)+'</span>':'')+(streamLinkHtml? '<span class="stream-link-wrap">'+streamLinkHtml+'</span>' : '')+'</div>'
     +   '<div class="title">'+escapeHtml(titleText)+'</div>'
+    +   oshiLineHtml
     +   (metaBits.length? '<div class="meta">'+metaBits.join(" ・ ")+'</div>' : '')
     +   (r.memo? '<div class="memo">'+escapeHtml(r.memo)+'</div>' : '')
     + '</div>'
