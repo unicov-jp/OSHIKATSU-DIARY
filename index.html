@@ -693,6 +693,15 @@
   .editor-quick-actions{display:flex;gap:10px;margin-top:8px;}
   .editor-quick-actions .btn{flex:1;padding:9px;font-size:12.5px;}
 
+  /* ---------- avatar cropper（プロフィール写真の位置合わせ） ---------- */
+  .avatar-crop-stage{
+    position:relative;width:100%;max-width:300px;aspect-ratio:1/1;margin:0 auto;background:#111;border-radius:8px;
+    overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none;cursor:grab;
+  }
+  .avatar-crop-stage.dragging{cursor:grabbing;}
+  .avatar-crop-stage img{position:absolute;left:0;top:0;max-width:none;transform-origin:0 0;pointer-events:none;}
+  .avatar-crop-mask{position:absolute;inset:0;border-radius:50%;box-shadow:0 0 0 999px rgba(0,0,0,.55);border:2px solid rgba(255,255,255,.85);pointer-events:none;}
+
   /* ---------- desktop / mouse presentation ---------- */
   @media (hover:hover) and (pointer:fine){
     .btn:hover{filter:brightness(0.96);}
@@ -783,6 +792,31 @@
   <div class="sheet" id="sheet"></div>
 </div>
 <div class="toast" id="toast"></div>
+<div class="editor-bg" id="avatarCropBg">
+  <div class="editor-panel">
+    <div class="editor-head">
+      <span class="mincho">写真の位置を調整</span>
+      <button type="button" class="editor-close" id="avatarCropClose" aria-label="閉じる">
+        <svg viewBox="0 0 24 24"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>
+      </button>
+    </div>
+    <p class="editor-hint">ドラッグで位置、スライダーで大きさを合わせてください</p>
+    <div class="avatar-crop-stage" id="avatarCropStage">
+      <img id="avatarCropImg" alt="" draggable="false">
+      <div class="avatar-crop-mask"></div>
+    </div>
+    <div class="editor-controls">
+      <div class="editor-slider-row">
+        <label for="avatarCropZoom">拡大</label>
+        <input type="range" id="avatarCropZoom" min="100" max="400" value="100">
+      </div>
+    </div>
+    <div class="sheet-actions">
+      <button type="button" class="btn ghost" id="avatarCropCancel">キャンセル</button>
+      <button type="button" class="btn primary" id="avatarCropApply">適用する</button>
+    </div>
+  </div>
+</div>
 <div class="photo-menu stream-menu" id="streamMenu" style="display:none;"></div>
 <div class="photo-viewer" id="photoViewer" hidden role="dialog" aria-modal="true" aria-label="写真">
   <button type="button" class="photo-viewer-close" id="photoViewerClose" aria-label="閉じる">
@@ -3301,6 +3335,7 @@ function oshiFormHtml(oshi){
     +           '</button>'
     +           '<div class="photo-menu" id="photoMenu" style="display:none;">'
     +             '<label class="photo-menu-item" style="cursor:pointer;">画像を選ぶ<input type="file" name="photo" accept="image/*" style="display:none;"></label>'
+    +             '<button type="button" class="photo-menu-item" id="adjustPhotoBtn" style="display:none;">位置を調整</button>'
     +             '<button type="button" class="photo-menu-item danger" id="clearPhotoBtn" style="display:none;">写真を削除</button>'
     +           '</div>'
     +         '</div>'
@@ -3427,6 +3462,8 @@ function bindOshiForm(existingOshi){
   var form = document.getElementById("oshiForm");
   var preset = PALETTE[state.oshis.length % PALETTE.length];
   var chosenPhoto = existingOshi ? (existingOshi.photo || null) : null;
+  // 位置を後から調整し直せるよう、切り抜く前の画像（縮小済み）も持っておく
+  var chosenPhotoOriginal = existingOshi ? (existingOshi.photoOriginal || null) : null;
   var draftGroups = existingOshi ? oshiGroupsList(existingOshi) : [];
 
   var elName = form.querySelector('[name="name"]');
@@ -3502,6 +3539,7 @@ function bindOshiForm(existingOshi){
       agency: elAgency.value,
       name: elName.value,
       photo: chosenPhoto,
+      photoOriginal: chosenPhotoOriginal,
       color: effectiveColor(groups),
       birthMonth: elBirthMonth.value,
       birthDay: elBirthDay.value,
@@ -3521,14 +3559,25 @@ function bindOshiForm(existingOshi){
       elPhotoImg.style.display = "block";
       elPhotoPlaceholder.style.display = "none";
       elClearPhotoBtn.style.display = "block";
+      elAdjustPhotoBtn.style.display = "block";
     } else {
       elPhotoImg.style.display = "none";
       elPhotoImg.src = "";
       elPhotoPlaceholder.style.display = "block";
       elClearPhotoBtn.style.display = "none";
+      elAdjustPhotoBtn.style.display = "none";
     }
   }
+  var elAdjustPhotoBtn = form.querySelector("#adjustPhotoBtn");
   refreshPhotoPreview();
+  elAdjustPhotoBtn.addEventListener("click", function(){
+    AvatarCropper.open(chosenPhotoOriginal || chosenPhoto, function(cropped){
+      if(!cropped) return;
+      if(!chosenPhotoOriginal) chosenPhotoOriginal = chosenPhoto;
+      chosenPhoto = cropped;
+      refreshPhotoPreview();
+    });
+  });
 
   function closeAllPickers(){
     form.querySelectorAll(".photo-menu").forEach(function(m){ m.style.display = "none"; });
@@ -3734,15 +3783,21 @@ function bindOshiForm(existingOshi){
     var file = elPhotoInput.files && elPhotoInput.files[0];
     if(!file) return;
     if(file.type.indexOf("image/")!==0){ toast("画像ファイルを選択してください"); return; }
-    resizeImageFile(file, 480, 0.85).then(function(dataUrl){
-      chosenPhoto = dataUrl;
-      refreshPhotoPreview();
+    resizeImageFile(file, 1000, 0.85).then(function(original){
+      elPhotoInput.value = "";
+      AvatarCropper.open(original, function(cropped){
+        if(!cropped) return;
+        chosenPhotoOriginal = original;
+        chosenPhoto = cropped;
+        refreshPhotoPreview();
+      });
     }).catch(function(){
       toast("画像の読み込みに失敗しました");
     });
   });
   elClearPhotoBtn.addEventListener("click", function(){
     chosenPhoto = null;
+    chosenPhotoOriginal = null;
     elPhotoInput.value = "";
     refreshPhotoPreview();
   });
@@ -3771,6 +3826,7 @@ function bindOshiForm(existingOshi){
       groups: groups,
       name: name,
       photo: chosenPhoto,
+      photoOriginal: chosenPhoto ? chosenPhotoOriginal : null,
       color: effectiveColor(groups),
       birthMonth: elBirthMonth.value ? Number(elBirthMonth.value) : null,
       birthDay: elBirthDay.value ? Number(elBirthDay.value) : null,
@@ -4096,6 +4152,101 @@ function openRecordSheet(type,rec){
   bindRecordForm(type,rec);
 }
 
+/* ============ avatar cropper ============
+   プロフィール写真を丸枠に合わせて切り抜く。open(元画像dataURL, 完了時コールバック) で開き、
+   ドラッグで位置、スライダー（PCはホイールも）で拡大率を変える。
+   適用すると 480x480 の正方形JPEGを返す（キャンセル時は null）。 */
+var AvatarCropper = (function(){
+  var bg, stage, imgEl, zoomEl, img = null, onDone = null;
+  var S = 0, base = 1, zoom = 1, ox = 0, oy = 0, drag = null;
+
+  function scale(){ return base*zoom; }
+  function clamp(){
+    var dw = img.naturalWidth*scale(), dh = img.naturalHeight*scale();
+    ox = Math.min(0, Math.max(S-dw, ox));
+    oy = Math.min(0, Math.max(S-dh, oy));
+  }
+  function draw(){
+    clamp();
+    imgEl.style.transform = "translate("+ox+"px,"+oy+"px) scale("+scale()+")";
+  }
+  // 画面上の中心を保ったまま拡大率を変える
+  function setZoom(z){
+    z = Math.max(1, Math.min(4, z));
+    var cx = (S/2 - ox)/scale(), cy = (S/2 - oy)/scale();
+    zoom = z;
+    ox = S/2 - cx*scale(); oy = S/2 - cy*scale();
+    zoomEl.value = Math.round(zoom*100);
+    draw();
+  }
+  function layout(){
+    S = stage.clientWidth;
+    base = S / Math.min(img.naturalWidth, img.naturalHeight);
+  }
+  function close(result){
+    bg.classList.remove("show");
+    var cb = onDone; onDone = null; img = null; imgEl.src = "";
+    if(cb) cb(result);
+  }
+  function apply(){
+    var out = 480, sc = scale();
+    var c = document.createElement("canvas");
+    c.width = out; c.height = out;
+    c.getContext("2d").drawImage(img, -ox/sc, -oy/sc, S/sc, S/sc, 0, 0, out, out);
+    var url = null;
+    try{ url = c.toDataURL("image/jpeg", 0.88); }catch(e){ toast("画像の書き出しに失敗しました"); }
+    close(url);
+  }
+  function init(){
+    bg = document.getElementById("avatarCropBg");
+    stage = document.getElementById("avatarCropStage");
+    imgEl = document.getElementById("avatarCropImg");
+    zoomEl = document.getElementById("avatarCropZoom");
+    zoomEl.addEventListener("input", function(){ if(img) setZoom(Number(zoomEl.value)/100); });
+    stage.addEventListener("pointerdown", function(e){
+      if(!img) return;
+      drag = {id:e.pointerId, x:e.clientX, y:e.clientY, ox:ox, oy:oy};
+      stage.setPointerCapture(e.pointerId);
+      stage.classList.add("dragging");
+    });
+    stage.addEventListener("pointermove", function(e){
+      if(!drag || e.pointerId!==drag.id) return;
+      ox = drag.ox + (e.clientX-drag.x);
+      oy = drag.oy + (e.clientY-drag.y);
+      draw();
+    });
+    function endDrag(e){ if(drag && e.pointerId===drag.id){ drag = null; stage.classList.remove("dragging"); } }
+    stage.addEventListener("pointerup", endDrag);
+    stage.addEventListener("pointercancel", endDrag);
+    stage.addEventListener("wheel", function(e){
+      if(!img) return;
+      e.preventDefault();
+      setZoom(zoom * (e.deltaY<0 ? 1.08 : 1/1.08));
+    }, {passive:false});
+    document.getElementById("avatarCropApply").addEventListener("click", apply);
+    document.getElementById("avatarCropCancel").addEventListener("click", function(){ close(null); });
+    document.getElementById("avatarCropClose").addEventListener("click", function(){ close(null); });
+  }
+  function open(src, cb){
+    onDone = cb;
+    var im = new Image();
+    im.onload = function(){
+      img = im;
+      imgEl.src = src;
+      bg.classList.add("show");
+      layout();
+      zoom = 1;
+      zoomEl.value = 100;
+      ox = (S - img.naturalWidth*scale())/2;
+      oy = (S - img.naturalHeight*scale())/2;
+      draw();
+    };
+    im.onerror = function(){ toast("画像の読み込みに失敗しました"); close(null); };
+    im.src = src;
+  }
+  return { init:init, open:open };
+})();
+
 /* ============ photo viewer ============ */
 function openPhotoViewer(src){
   if(!src) return;
@@ -4270,6 +4421,7 @@ document.addEventListener("DOMContentLoaded", function(){
   });
 
   PhotoEditor.init();
+  AvatarCropper.init();
   initStorage();
 });
 })();

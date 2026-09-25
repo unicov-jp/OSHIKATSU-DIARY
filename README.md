@@ -78,9 +78,10 @@ python3 -m http.server 8000
     { id, name, color, sns_web, sns_instagram, sns_x, sns_tiktok, sns_youtube }
   ],
   sns_person_instagram, sns_person_x, sns_person_tiktok, sns_person_youtube,
-  mode: "pale", order, hidden, createdAt
+  photoOriginal, mode: "pale", order, hidden, createdAt
 }
 ```
+- プロフィール写真は `AvatarCropper` で丸枠に合わせて切り抜いた 480x480 のJPEGを `photo` に、切り抜く前の画像（長辺1000pxに縮小）を `photoOriginal` に保存する。写真メニューの「位置を調整」で、`photoOriginal` から何度でも調整し直せる（以前に登録した写真は `photo` から調整）。
 - `hidden: true` の推しは非表示。推しの切り替え・記録一覧の絞り込み・記録フォームの推し選択に出さない（`visibleOshis()`）。記録や集計には残り、マイページの「非表示の推し」から戻せる。お気に入りの推しを非表示にすると、表示中のほかの推しがお気に入りになる。
 - `groups` は配列の**並び順がそのまま「メイン所属／サブ所属」を表す**（先頭＝メイン）。専用のフラグは持たない。
 - 推しの登録・編集で、所属（`#agencyOptions`）とグループ名（`#groupNameOptions`）の入力欄には、登録済みの値を `datalist` で候補表示する。グループ名を候補から選んだときも、下のSNS自動入力がその場で働く。
