@@ -411,6 +411,18 @@
   }
   .field textarea{resize:vertical;min-height:56px;line-height:1.6;}
   .field .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .rec-oshi-row{display:flex;align-items:center;gap:8px;}
+  .rec-oshi-row + .rec-oshi-row{margin-top:8px;}
+  .field .rec-oshi-row select{flex:1 1 0;min-width:0;width:auto;}
+  .rec-oshi-remove{
+    flex:none;width:34px;height:34px;border-radius:50%;border:1px solid var(--line-strong);
+    background:var(--paper);color:var(--ink-soft);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;
+  }
+  .rec-oshi-remove svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;}
+  .add-rec-oshi-btn{
+    display:block;width:100%;margin-top:8px;padding:9px 12px;border:1px dashed var(--line-strong);border-radius:3px;
+    background:transparent;color:var(--ink-soft);font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;
+  }
   .field .row3{display:grid;grid-template-columns:1fr 1fr 1.2fr;gap:6px;}
   .field .row3 select,.field .row3 input{padding-left:6px;padding-right:4px;font-size:16px;}
   .field-hint{font-size:10.5px;color:var(--ink-soft);margin-top:5px;line-height:1.6;}
@@ -2111,11 +2123,33 @@ function recAmount(type,r){
   if(type==="goods") return (Number(r.price)||0)*(Number(r.qty)||1);
   return 0;
 }
+/* 記録に紐づく推し。先頭が oshiId/groupId、対バンなどで追加した推しは
+   extraOshis: [{oshiId, groupId}] に入る（LIVEのみ）。 */
+function recOshiEntries(r){
+  var out = [], seen = {};
+  function add(oshiId, groupId){
+    if(!oshiId || seen[oshiId]) return;
+    seen[oshiId] = true;
+    out.push({oshiId:oshiId, groupId:groupId||""});
+  }
+  add(r.oshiId, r.groupId);
+  (r.extraOshis||[]).forEach(function(e){ if(e) add(e.oshiId, e.groupId); });
+  return out;
+}
+function recHasOshi(r, oshiId){
+  if(r.oshiId===oshiId) return true;
+  return (r.extraOshis||[]).some(function(e){ return e && e.oshiId===oshiId; });
+}
+/* 推しごとの金額。複数の推しに紐づく記録（対バン）は人数で均等に割る */
+function recAmountForOshi(type, r, oshiId){
+  if(!recHasOshi(r, oshiId)) return 0;
+  return recAmount(type, r) / recOshiEntries(r).length;
+}
 function allRecordsForOshi(oshiId){
   var out=[];
-  state.live.forEach(function(r){ if(oshiId==="all"||r.oshiId===oshiId) out.push({type:"live",r:r}); });
-  state.cheki.forEach(function(r){ if(oshiId==="all"||r.oshiId===oshiId) out.push({type:"cheki",r:r}); });
-  state.goods.forEach(function(r){ if(oshiId==="all"||r.oshiId===oshiId) out.push({type:"goods",r:r}); });
+  state.live.forEach(function(r){ if(oshiId==="all"||recHasOshi(r,oshiId)) out.push({type:"live",r:r}); });
+  state.cheki.forEach(function(r){ if(oshiId==="all"||recHasOshi(r,oshiId)) out.push({type:"cheki",r:r}); });
+  state.goods.forEach(function(r){ if(oshiId==="all"||recHasOshi(r,oshiId)) out.push({type:"goods",r:r}); });
   out.sort(function(a,b){ return (b.r.date||"").localeCompare(a.r.date||""); });
   return out;
 }
@@ -2124,11 +2158,11 @@ function allRecordsFlat(){
 }
 function aggregateByOshi(){
   return state.oshis.map(function(o){
-    var recs = allRecordsFlat().filter(function(item){ return item.r.oshiId===o.id; });
+    var recs = allRecordsFlat().filter(function(item){ return recHasOshi(item.r, o.id); });
     var liveN = recs.filter(function(i){return i.type==="live";}).length;
     var chekiN = recs.filter(function(i){return i.type==="cheki";}).reduce(function(s,i){return s+(Number(i.r.count)||1);},0);
     var goodsN = recs.filter(function(i){return i.type==="goods";}).reduce(function(s,i){return s+(Number(i.r.qty)||1);},0);
-    var total = recs.reduce(function(s,i){ return s+recAmount(i.type,i.r); },0);
+    var total = Math.round(recs.reduce(function(s,i){ return s+recAmountForOshi(i.type,i.r,o.id); },0));
     return {oshi:o, liveN:liveN, chekiN:chekiN, goodsN:goodsN, total:total, itemCount:recs.length};
   }).sort(function(a,b){ return b.total-a.total; });
 }
@@ -2218,10 +2252,10 @@ function renderHome(){
   }
 
   var recs = allRecordsForOshi(oshi.id);
-  var liveN = state.live.filter(function(r){return r.oshiId===oshi.id;}).length;
-  var chekiN = state.cheki.filter(function(r){return r.oshiId===oshi.id;}).reduce(function(s,r){return s+(Number(r.count)||1);},0);
-  var goodsN = state.goods.filter(function(r){return r.oshiId===oshi.id;}).reduce(function(s,r){return s+(Number(r.qty)||1);},0);
-  var total = recs.reduce(function(s,item){ return s+recAmount(item.type,item.r); },0);
+  var liveN = state.live.filter(function(r){return recHasOshi(r,oshi.id);}).length;
+  var chekiN = state.cheki.filter(function(r){return recHasOshi(r,oshi.id);}).reduce(function(s,r){return s+(Number(r.count)||1);},0);
+  var goodsN = state.goods.filter(function(r){return recHasOshi(r,oshi.id);}).reduce(function(s,r){return s+(Number(r.qty)||1);},0);
+  var total = Math.round(recs.reduce(function(s,item){ return s+recAmountForOshi(item.type,item.r,oshi.id); },0));
 
   var subLabel = oshiSubLabel(oshi) || "推し活中";
   var bday = oshiBirthdayLabel(oshi);
@@ -2326,7 +2360,7 @@ function renderListPage(type){
   }
 
   var fullList = state[type].filter(function(r){
-    return state.filterOshiId==="all" || r.oshiId===state.filterOshiId;
+    return state.filterOshiId==="all" || recHasOshi(r, state.filterOshiId);
   });
   var hiddenCount = fullList.filter(function(r){ return r.hidden; }).length;
   if(hiddenCount>0){
@@ -2378,7 +2412,11 @@ function ticketHtml(type,r,withOshiTag){
     metaBits.push((Number(r.qty)||1)+"点");
   }
   if(withOshiTag && oshi && state.filterOshiId==="all"){
-    metaBits.unshift('<span style="color:'+oshi.color+';font-weight:700;">'+escapeHtml(oshiFullLabel(oshi))+'</span>');
+    var tags = recOshiEntries(r).map(function(e){
+      var o = getOshi(e.oshiId);
+      return o ? '<span style="color:'+o.color+';font-weight:700;">'+escapeHtml(oshiFullLabel(o))+'</span>' : '';
+    }).filter(Boolean);
+    metaBits.unshift(tags.join(" ／ "));
   }
   var streamLinkHtml = (type==="live" && r.streamUrl)
     ? '<a href="'+escapeHtml(r.streamUrl)+'" target="_blank" rel="noopener noreferrer" class="stream-link">配信を見る</a>'
@@ -3003,15 +3041,10 @@ function recordPhotoFieldHtml(labelText){
 function recordFormHtml(type,rec){
   var info = labelForType(type);
   var today = new Date().toISOString().slice(0,10);
-  var oshiOptions = state.oshis.map(function(o){
-    var sel = (rec? rec.oshiId===o.id : o.id===state.activeOshiId) ? "selected":"";
-    return '<option value="'+o.id+'" '+sel+'>'+escapeHtml(o.name)+'</option>';
-  }).join("");
-
   var fields = "";
   fields += '<div class="field"><label>推し</label>'
-    + '<select name="oshiId" id="recOshiSelect">'+oshiOptions+'</select>'
-    + '<select name="groupId" id="recGroupSelect" style="margin-top:8px;"></select>'
+    + '<div id="recOshiRows"></div>'
+    + ((type==="live" && state.oshis.length>1) ? '<button type="button" class="add-rec-oshi-btn" id="addRecOshiBtn">＋ 推しを追加（対バン）</button>' : '')
     + '</div>';
   fields += '<div class="field"><label>日付</label><input type="date" name="date" value="'+(rec?rec.date:today)+'" required></div>';
 
@@ -3421,29 +3454,78 @@ function bindRecordForm(type,existingRec){
   elFavToggle.addEventListener("click", function(){ favOn = !favOn; refreshToggles(); });
   elHideToggle.addEventListener("click", function(){ hideOn = !hideOn; refreshToggles(); });
 
-  /* The group select always mirrors whichever oshi is currently picked: its
-     options are rebuilt from scratch when the oshi changes, defaulting to
-     that oshi's main (top) group unless editing a record that already has
-     a specific group saved on it. */
-  var elOshiSelect = form.querySelector("#recOshiSelect");
-  var elGroupSelect = form.querySelector("#recGroupSelect");
-  function refreshGroupOptions(){
-    var oshi = getOshi(elOshiSelect.value);
-    var groups = oshi ? oshiGroupsList(oshi) : [];
-    if(!groups.length){
-      elGroupSelect.innerHTML = "";
-      elGroupSelect.style.display = "none";
-      return;
-    }
-    var keepSelected = existingRec && oshi && existingRec.oshiId===oshi.id ? existingRec.groupId : null;
-    elGroupSelect.innerHTML = groups.map(function(g,i){
-      var isSel = keepSelected ? (g.id===keepSelected) : (i===0);
-      return '<option value="'+g.id+'" '+(isSel?"selected":"")+'>'+escapeHtml(g.name||"（名称未設定）")+'</option>';
-    }).join("");
-    elGroupSelect.style.display = "block";
+  /* 推しとグループを横並びの1行で選ぶ。LIVEは「推しを追加」で対バンの
+     推しを複数行にできる（1行目が oshiId/groupId、2行目以降が extraOshis）。
+     グループの選択肢は推しを変えるたびに作り直し、既定はメイングループ。 */
+  var elOshiRows = form.querySelector("#recOshiRows");
+  var elAddOshiBtn = form.querySelector("#addRecOshiBtn");
+  var oshiRows = existingRec ? recOshiEntries(existingRec) : [];
+  if(type!=="live") oshiRows = oshiRows.slice(0,1);
+  oshiRows = oshiRows.filter(function(e){ return getOshi(e.oshiId); });
+  if(!oshiRows.length){
+    var firstOshi = getOshi(state.activeOshiId) || state.oshis[0];
+    oshiRows = [{oshiId:firstOshi.id, groupId:""}];
   }
-  refreshGroupOptions();
-  elOshiSelect.addEventListener("change", refreshGroupOptions);
+  function defaultGroupId(oshiId){
+    var o = getOshi(oshiId);
+    var gs = o ? oshiGroupsList(o) : [];
+    return gs.length ? gs[0].id : "";
+  }
+  oshiRows.forEach(function(row){
+    var o = getOshi(row.oshiId);
+    var gs = o ? oshiGroupsList(o) : [];
+    if(!gs.some(function(g){ return g.id===row.groupId; })) row.groupId = defaultGroupId(row.oshiId);
+  });
+  function renderOshiRows(){
+    elOshiRows.innerHTML = oshiRows.map(function(row, i){
+      var o = getOshi(row.oshiId);
+      var gs = o ? oshiGroupsList(o) : [];
+      var oshiOpts = state.oshis.map(function(x){
+        var usedElsewhere = oshiRows.some(function(r2, j){ return j!==i && r2.oshiId===x.id; });
+        if(usedElsewhere) return "";
+        return '<option value="'+x.id+'" '+(x.id===row.oshiId?"selected":"")+'>'+escapeHtml(x.name)+'</option>';
+      }).join("");
+      var groupSel = gs.length
+        ? '<select class="rec-group-sel" data-row="'+i+'" aria-label="グループ">'+gs.map(function(g){
+            return '<option value="'+g.id+'" '+(g.id===row.groupId?"selected":"")+'>'+escapeHtml(g.name||"（名称未設定）")+'</option>';
+          }).join("")+'</select>'
+        : '';
+      return '<div class="rec-oshi-row">'
+        + '<select class="rec-oshi-sel" data-row="'+i+'" aria-label="推し">'+oshiOpts+'</select>'
+        + groupSel
+        + (i>0 ? '<button type="button" class="rec-oshi-remove" data-remove-row="'+i+'" title="この推しを外す" aria-label="この推しを外す"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>' : '')
+        + '</div>';
+    }).join("");
+    if(elAddOshiBtn){
+      elAddOshiBtn.style.display = oshiRows.length < state.oshis.length ? "" : "none";
+    }
+  }
+  elOshiRows.addEventListener("change", function(e){
+    var t = e.target;
+    var i = Number(t.getAttribute("data-row"));
+    if(t.classList.contains("rec-oshi-sel")){
+      oshiRows[i].oshiId = t.value;
+      oshiRows[i].groupId = defaultGroupId(t.value);
+      renderOshiRows();
+    } else if(t.classList.contains("rec-group-sel")){
+      oshiRows[i].groupId = t.value;
+    }
+  });
+  elOshiRows.addEventListener("click", function(e){
+    var btn = e.target.closest("[data-remove-row]");
+    if(!btn) return;
+    oshiRows.splice(Number(btn.getAttribute("data-remove-row")), 1);
+    renderOshiRows();
+  });
+  if(elAddOshiBtn){
+    elAddOshiBtn.addEventListener("click", function(){
+      var next = state.oshis.find(function(o){ return !oshiRows.some(function(r){ return r.oshiId===o.id; }); });
+      if(!next){ toast("追加できる推しがいません"); return; }
+      oshiRows.push({oshiId:next.id, groupId:defaultGroupId(next.id)});
+      renderOshiRows();
+    });
+  }
+  renderOshiRows();
 
   var hasPhotoField = (type==="cheki" || type==="live");
   if(hasPhotoField){
@@ -3518,6 +3600,11 @@ function bindRecordForm(type,existingRec){
     if(rec.price!==undefined) rec.price = rec.price===""?0:Number(rec.price);
     if(rec.count!==undefined) rec.count = rec.count===""?1:Number(rec.count);
     if(rec.qty!==undefined) rec.qty = rec.qty===""?1:Number(rec.qty);
+    rec.oshiId = oshiRows[0].oshiId;
+    rec.groupId = oshiRows[0].groupId || "";
+    if(type==="live"){
+      rec.extraOshis = oshiRows.slice(1).map(function(r){ return {oshiId:r.oshiId, groupId:r.groupId||""}; });
+    }
     if(hasPhotoField){ rec.photo = chosenPhoto; }
     rec.favorite = favOn;
     rec.hidden = hideOn;

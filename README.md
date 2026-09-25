@@ -90,7 +90,10 @@ python3 -m http.server 8000
 `{ id, oshiId, groupId, date, memo, tag, favorite, hidden, ... }`
 （`groupId` はその記録がどのグループ活動かを表す任意フィールド。フォームでは推しを選ぶとメイングループがデフォルト選択される）
 
-- live固有: `title, venue, streamUrl, ticketType, seat, price, photo`
+- live固有: `title, venue, streamUrl, ticketType, seat, price, photo, extraOshis`
+  - `extraOshis`：対バンなどで一緒に記録する2人目以降の推し `[{ oshiId, groupId }]`。1人目は従来どおり `oshiId` / `groupId`。
+  - 推し別の集計（参戦回数・金額）では、`recHasOshi()` で `oshiId` と `extraOshis` の両方を対象にし、金額は `recAmountForOshi()` で人数に均等に割ります（合計の二重計上を防ぐため）。
+  - フォームでは推しとグループを横並びで選び、LIVEのみ「＋ 推しを追加（対バン）」で行を増やせます。
 - cheki固有: `title, count, price, content, photo`
 - goods固有: `title, item, price, qty`
 
