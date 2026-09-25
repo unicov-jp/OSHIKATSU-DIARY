@@ -3203,7 +3203,7 @@ function recordFormHtml(type,rec){
   var fields = "";
   fields += '<div class="field"><label>推し</label>'
     + '<div id="recOshiRows"></div>'
-    + ((type==="live" && state.oshis.length>1) ? '<button type="button" class="add-rec-oshi-btn" id="addRecOshiBtn">＋ 推しを追加（対バン）</button>' : '')
+    + ((type==="live" && state.oshis.length>1) ? '<button type="button" class="add-rec-oshi-btn" id="addRecOshiBtn">＋ 推しを追加</button>' : '')
     + '</div>';
   fields += '<div class="field"><label>日付</label><input type="date" name="date" value="'+(rec?rec.date:today)+'" required></div>';
 
