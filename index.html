@@ -1912,8 +1912,9 @@ var SNS_META = {
   }}
 };
 var SNS_KEYS = ["instagram","x","tiktok","youtube"];
-/* グループは先頭に「公式HP」（IDではなくURLを保存）を持つ */
-var GROUP_SNS_KEYS = ["web"].concat(SNS_KEYS);
+/* グループは末尾に「公式HP」（IDではなくURLを保存）を持つ。
+   個人SNSと同じ並びのアイコンが縦にそろうよう、共通の4つを先に並べる。 */
+var GROUP_SNS_KEYS = SNS_KEYS.concat(["web"]);
 /* 公式HPのURLを http(s) のみに正規化する。スキーム省略時は https:// を補う。
    javascript: など http(s) 以外は空文字にしてリンクにしない。 */
 function safeWebUrl(v){
