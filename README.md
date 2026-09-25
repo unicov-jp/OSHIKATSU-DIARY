@@ -94,7 +94,7 @@ python3 -m http.server 8000
 （`groupId` はその記録がどのグループ活動かを表す任意フィールド。フォームでは推しを選ぶとメイングループがデフォルト選択される）
 
 - live固有: `title, venue, streamUrl, ticketType, seat, price, photo, extraOshis`
-  - `streamUrls`：配信URLの配列（http(s) のみ）。互換のため1件目は `streamUrl` にも入れる。以前の記録は `streamUrl` だけでも表示できる（`recStreamUrls()`）。一覧では1件なら「配信を見る」、複数なら「配信1」「配信2」…のリンク。
+  - `streamUrls`：配信URLの配列（http(s) のみ）。互換のため1件目は `streamUrl` にも入れる。以前の記録は `streamUrl` だけでも表示できる（`recStreamUrls()`）。一覧のリンク表記は件数に関係なく「配信を見る」。複数あるときは押すとメニュー（`#streamMenu`）が開き、「配信1（ドメイン）」「配信2（ドメイン）」…から選ぶ。
   - `venuePlace`：会場を Google マップの候補から選んだときの場所 `{ placeId, name, address, lat, lng }`。手入力のままなら `null`（遠征マップ用）。
   - `extraOshis`：対バンなどで一緒に記録する2人目以降の推し `[{ oshiId, groupId }]`。1人目は従来どおり `oshiId` / `groupId`。
   - 推し別の集計（参戦回数・金額）では、`recHasOshi()` で `oshiId` と `extraOshis` の両方を対象にし、金額は `recAmountForOshi()` で人数に均等に割ります（合計の二重計上を防ぐため）。

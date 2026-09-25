@@ -468,7 +468,9 @@
   .stream-url-row{display:flex;align-items:center;gap:8px;}
   .stream-url-row + .stream-url-row{margin-top:8px;}
   .field .stream-url-row input{flex:1;min-width:0;width:auto;}
-  .ticket .stream-link-wrap .stream-link + .stream-link{margin-left:8px;}
+  .ticket .stream-link-btn{background:none;border:none;padding:0;cursor:pointer;font-family:inherit;}
+  .stream-menu a.photo-menu-item{text-decoration:none;}
+  .stream-menu .host{display:block;font-size:10.5px;font-weight:500;color:var(--ink-soft);margin-top:2px;}
   .add-rec-oshi-btn{
     display:block;width:100%;margin-top:8px;padding:9px 12px;border:1px dashed var(--line-strong);border-radius:3px;
     background:transparent;color:var(--ink-soft);font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;
@@ -781,6 +783,7 @@
   <div class="sheet" id="sheet"></div>
 </div>
 <div class="toast" id="toast"></div>
+<div class="photo-menu stream-menu" id="streamMenu" style="display:none;"></div>
 <div class="photo-viewer" id="photoViewer" hidden role="dialog" aria-modal="true" aria-label="写真">
   <button type="button" class="photo-viewer-close" id="photoViewerClose" aria-label="閉じる">
     <svg viewBox="0 0 24 24"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>
@@ -2658,11 +2661,13 @@ function ticketHtml(type,r,withOshiTag){
   // 配信URL（LIVE）・ONLINE物販のURL（物販）は http(s) のときだけリンクにする
   var streamLinkHtml = "";
   if(type==="live"){
+    // 表記は件数に関係なく「配信を見る」。複数あるときは押すとメニューから選ぶ
     var sUrls = recStreamUrls(r);
-    streamLinkHtml = sUrls.map(function(u, i){
-      var label = sUrls.length>1 ? "配信"+(i+1) : "配信を見る";
-      return '<a href="'+escapeHtml(u)+'" target="_blank" rel="noopener noreferrer" class="stream-link">'+label+'</a>';
-    }).join(" ");
+    if(sUrls.length===1){
+      streamLinkHtml = '<a href="'+escapeHtml(sUrls[0])+'" target="_blank" rel="noopener noreferrer" class="stream-link">配信を見る</a>';
+    } else if(sUrls.length>1){
+      streamLinkHtml = '<button type="button" class="stream-link stream-link-btn" data-action="stream-menu" data-id="'+r.id+'">配信を見る</button>';
+    }
   } else if(type==="goods" && safeWebUrl(r.shopUrl)){
     streamLinkHtml = '<a href="'+escapeHtml(safeWebUrl(r.shopUrl))+'" target="_blank" rel="noopener noreferrer" class="stream-link">購入ページを見る</a>';
   }
@@ -4111,6 +4116,20 @@ function onAppClick(e){
     return;
   }
   if(action==="share-summary"){ shareSummaryImage(); return; }
+  if(action==="stream-menu"){
+    var sr = state.live.find(function(r){ return r.id===el.getAttribute("data-id"); });
+    var menu = document.getElementById("streamMenu");
+    var wasOpen = menu.style.display==="block" && menu.getAttribute("data-for")===el.getAttribute("data-id");
+    menu.style.display = "none";
+    if(!sr || wasOpen) return;
+    menu.innerHTML = recStreamUrls(sr).map(function(u, i){
+      var host = u; try{ host = new URL(u).hostname.replace(/^www\./, ""); }catch(err){}
+      return '<a class="photo-menu-item" href="'+escapeHtml(u)+'" target="_blank" rel="noopener noreferrer">配信'+(i+1)+'<span class="host">'+escapeHtml(host)+'</span></a>';
+    }).join("");
+    menu.setAttribute("data-for", el.getAttribute("data-id"));
+    openPopoverNear(el, menu);
+    return;
+  }
   if(action==="view-photo"){
     var pr = (state[el.getAttribute("data-type")]||[]).find(function(r){ return r.id===el.getAttribute("data-id"); });
     if(pr) openPhotoViewer(pr.photo);
@@ -4216,6 +4235,13 @@ document.addEventListener("DOMContentLoaded", function(){
   });
 
   sheetBg.addEventListener("click", function(e){ if(e.target===sheetBg) closeSheet(); });
+
+  var streamMenu = document.getElementById("streamMenu");
+  document.addEventListener("click", function(e){
+    if(!e.target.closest("#streamMenu") && !e.target.closest('[data-action="stream-menu"]')) streamMenu.style.display = "none";
+    else if(e.target.closest("#streamMenu a")) streamMenu.style.display = "none";
+  });
+  window.addEventListener("scroll", function(){ streamMenu.style.display = "none"; }, {passive:true});
 
   var photoViewer = document.getElementById("photoViewer");
   photoViewer.addEventListener("click", function(e){
