@@ -3552,6 +3552,46 @@ function bindOshiForm(existingOshi){
     });
   });
 
+  /* グループ名が、ほかの推しのグループ名と完全に一致したら、そのグループの
+     SNS（公式HP含む）を空欄にだけ自動で入れる（同じグループの別メンバー登録用） */
+  function findSameGroupSns(name){
+    var found = {};
+    state.oshis.forEach(function(o){
+      if(existingOshi && o.id===existingOshi.id) return;
+      oshiGroupsList(o).forEach(function(g){
+        if((g.name||"").trim()!==name) return;
+        GROUP_SNS_KEYS.forEach(function(k){
+          if(!found[k] && g["sns_"+k]) found[k] = g["sns_"+k];
+        });
+      });
+    });
+    return found;
+  }
+  function setSnsValue(combo, value){
+    chosenSns[combo] = value;
+    var k = combo.slice(combo.lastIndexOf("_")+1);
+    var input = form.querySelector('[data-sns-input="'+combo+'"]');
+    if(input) input.value = SNS_META[k].isUrl ? value : snsIdForEdit(value);
+    var btn = form.querySelector('[data-sns-btn="'+combo+'"]');
+    if(btn) btn.classList.toggle("filled", !!value);
+    var clearBtn = form.querySelector('[data-sns-clear="'+combo+'"]');
+    if(clearBtn) clearBtn.style.display = value ? "block" : "none";
+  }
+  form.addEventListener("change", function(e){
+    var inp = e.target.closest(".group-name-input");
+    if(!inp) return;
+    var name = inp.value.trim();
+    if(!name) return;
+    var idx = inp.getAttribute("data-group-idx");
+    var found = findSameGroupSns(name);
+    var filled = 0;
+    GROUP_SNS_KEYS.forEach(function(k){
+      var combo = "grp"+idx+"_"+k;
+      if(found[k] && !chosenSns[combo]){ setSnsValue(combo, found[k]); filled++; }
+    });
+    if(filled) toast("「"+name+"」のSNS情報を反映しました");
+  });
+
   snsCombos.forEach(function(combo){
     var btn = form.querySelector('[data-sns-btn="'+combo+'"]');
     var pop = form.querySelector('[data-sns-pop="'+combo+'"]');
