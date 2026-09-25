@@ -465,6 +465,10 @@
     background:var(--paper);color:var(--ink-soft);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;
   }
   .rec-oshi-remove svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;}
+  .stream-url-row{display:flex;align-items:center;gap:8px;}
+  .stream-url-row + .stream-url-row{margin-top:8px;}
+  .field .stream-url-row input{flex:1;min-width:0;width:auto;}
+  .ticket .stream-link-wrap .stream-link + .stream-link{margin-left:8px;}
   .add-rec-oshi-btn{
     display:block;width:100%;margin-top:8px;padding:9px 12px;border:1px dashed var(--line-strong);border-radius:3px;
     background:transparent;color:var(--ink-soft);font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;
@@ -2313,6 +2317,11 @@ function activeOshi(){ return getOshi(state.activeOshiId); }
 /* 非表示にした推し（oshi.hidden）は、推しの切り替え・絞り込み・記録の推し選択に出さない。
    記録や集計には残る。 */
 function visibleOshis(){ return state.oshis.filter(function(o){ return !o.hidden; }); }
+/* LIVEの配信URL。複数は streamUrls 配列、以前の記録は streamUrl 1件 */
+function recStreamUrls(r){
+  var list = Array.isArray(r.streamUrls) ? r.streamUrls : (r.streamUrl ? [r.streamUrl] : []);
+  return list.map(safeWebUrl).filter(Boolean);
+}
 function fmtYen(n){
   n = Number(n)||0;
   return "&#165;"+n.toLocaleString("ja-JP");
@@ -2647,10 +2656,16 @@ function ticketHtml(type,r,withOshiTag){
     if(tags.length) oshiLineHtml = '<div class="meta meta-oshi">'+tags.join(" ／ ")+'</div>';
   }
   // 配信URL（LIVE）・ONLINE物販のURL（物販）は http(s) のときだけリンクにする
-  var linkUrl = type==="live" ? safeWebUrl(r.streamUrl) : (type==="goods" ? safeWebUrl(r.shopUrl) : "");
-  var streamLinkHtml = linkUrl
-    ? '<a href="'+escapeHtml(linkUrl)+'" target="_blank" rel="noopener noreferrer" class="stream-link">'+(type==="live" ? "配信を見る" : "購入ページを見る")+'</a>'
-    : "";
+  var streamLinkHtml = "";
+  if(type==="live"){
+    var sUrls = recStreamUrls(r);
+    streamLinkHtml = sUrls.map(function(u, i){
+      var label = sUrls.length>1 ? "配信"+(i+1) : "配信を見る";
+      return '<a href="'+escapeHtml(u)+'" target="_blank" rel="noopener noreferrer" class="stream-link">'+label+'</a>';
+    }).join(" ");
+  } else if(type==="goods" && safeWebUrl(r.shopUrl)){
+    streamLinkHtml = '<a href="'+escapeHtml(safeWebUrl(r.shopUrl))+'" target="_blank" rel="noopener noreferrer" class="stream-link">購入ページを見る</a>';
+  }
   var stubHasPhoto = (type==="live" || type==="goods") && !!r.photo;
   var html = '<div class="ticket'+(r.hidden?' is-hidden':'')+'">'
     + '<div class="tape"></div>'
@@ -3334,7 +3349,10 @@ function recordFormHtml(type,rec){
       + '<div class="venue-suggest" id="venueSuggest" hidden></div>'
       + '<div class="venue-place" id="venuePlaceInfo"></div>'
       + '</div>';
-    fields += '<div class="field"><label>配信URL（任意）</label><input type="url" name="streamUrl" autocomplete="off" value="'+(rec?escapeHtml(rec.streamUrl||""):"")+'"><div class="field-hint">配信ライブの場合はこちらにURLを入れてください</div></div>';
+    fields += '<div class="field"><label>配信URL（任意）</label>'
+      + '<div id="streamUrlRows"></div>'
+      + '<button type="button" class="add-rec-oshi-btn" id="addStreamUrlBtn">＋ 配信URLを追加</button>'
+      + '<div class="field-hint">配信ライブの場合はこちらにURLを入れてください</div></div>';
     fields += '<div class="field"><label>チケット種別（任意）</label>'
       + '<input type="text" name="ticketType" list="ticketTypeOptions" value="'+(rec?escapeHtml(rec.ticketType||""):"")+'">'
       + '<datalist id="ticketTypeOptions">'
@@ -3881,6 +3899,39 @@ function bindRecordForm(type,existingRec){
 
   var venueAc = type==="live" ? bindVenueAutocomplete(form, existingRec) : null;
 
+  /* 配信URL：1行ずつ入力し、「＋ 配信URLを追加」で行を増やす（2行目以降は✕で外せる） */
+  var elStreamRows = form.querySelector("#streamUrlRows");
+  function streamRowHtml(v, i){
+    return '<div class="stream-url-row">'
+      + '<input type="text" class="stream-url-input" inputmode="url" autocomplete="off" aria-label="配信URL'+(i+1)+'" value="'+escapeHtml(v||"")+'">'
+      + (i>0 ? '<button type="button" class="rec-oshi-icon rec-oshi-remove" data-remove-stream="'+i+'" title="このURLを外す" aria-label="このURLを外す"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>' : '')
+      + '</div>';
+  }
+  function currentStreamValues(){
+    return Array.prototype.map.call(elStreamRows.querySelectorAll(".stream-url-input"), function(inp){ return inp.value; });
+  }
+  function renderStreamRows(values){
+    if(!values.length) values = [""];
+    elStreamRows.innerHTML = values.map(streamRowHtml).join("");
+  }
+  if(elStreamRows){
+    renderStreamRows(existingRec ? (Array.isArray(existingRec.streamUrls) ? existingRec.streamUrls.slice() : (existingRec.streamUrl ? [existingRec.streamUrl] : [])) : []);
+    form.querySelector("#addStreamUrlBtn").addEventListener("click", function(){
+      var vals = currentStreamValues();
+      vals.push("");
+      renderStreamRows(vals);
+      var inputs = elStreamRows.querySelectorAll(".stream-url-input");
+      inputs[inputs.length-1].focus();
+    });
+    elStreamRows.addEventListener("click", function(e){
+      var b = e.target.closest("[data-remove-stream]");
+      if(!b) return;
+      var vals = currentStreamValues();
+      vals.splice(Number(b.getAttribute("data-remove-stream")), 1);
+      renderStreamRows(vals);
+    });
+  }
+
   var hasPhotoField = (type==="cheki" || type==="live" || type==="goods");
   if(hasPhotoField){
     var elBtn = form.querySelector("#recPhotoPreviewBtn");
@@ -3971,6 +4022,19 @@ function bindRecordForm(type,existingRec){
     rec.oshiId = oshiRows[0].oshiId;
     rec.groupId = oshiRows[0].groupId || "";
     if(type==="live"){
+      // 配信URLは http(s) のみ（https:// は省略可）。空欄は無視し、1件目は streamUrl にも入れて旧形式と互換にする
+      var urls = [];
+      var badUrl = currentStreamValues().some(function(v){
+        v = (v||"").trim();
+        if(!v) return false;
+        var u = safeWebUrl(v);
+        if(!u) return true;
+        urls.push(u);
+        return false;
+      });
+      if(badUrl){ toast("配信URLを正しく入力してください"); return; }
+      rec.streamUrls = urls;
+      rec.streamUrl = urls[0] || "";
       rec.extraOshis = oshiRows.slice(1).map(function(r){ return {oshiId:r.oshiId, groupId:r.groupId||""}; });
       rec.venuePlace = venueAc ? venueAc.getPlace() : null;
     }
