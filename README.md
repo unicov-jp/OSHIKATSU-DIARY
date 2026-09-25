@@ -96,7 +96,7 @@ python3 -m http.server 8000
   - 推し別の集計（参戦回数・金額）では、`recHasOshi()` で `oshiId` と `extraOshis` の両方を対象にし、金額は `recAmountForOshi()` で人数に均等に割ります（合計の二重計上を防ぐため）。
   - フォームでは推しとグループを横並びで選び、LIVEのみ「＋ 推しを追加」で行を増やせます。
 - cheki固有: `title, count, price, content, photo`
-- goods固有: `title, item, price, qty`
+- goods固有: `title, item, price, qty, photo`（写真はLIVEと同じくチケット右側の背景に表示）
 
 ## 実装上の注意点（引き継ぎ時に踏みやすい罠）
 
