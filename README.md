@@ -64,13 +64,14 @@ python3 -m http.server 8000
 {
   id, name, agency, photo, color, birthYear, birthMonth, birthDay,
   groups: [
-    { id, name, color, sns_instagram, sns_x, sns_tiktok, sns_youtube }
+    { id, name, color, sns_web, sns_instagram, sns_x, sns_tiktok, sns_youtube }
   ],
   sns_person_instagram, sns_person_x, sns_person_tiktok, sns_person_youtube,
   mode: "pale", order, createdAt
 }
 ```
 - `groups` は配列の**並び順がそのまま「メイン所属／サブ所属」を表す**（先頭＝メイン）。専用のフラグは持たない。
+- グループの `sns_web` は公式HPのURL（IDではなくURLを保存）。`safeWebUrl()` で http(s) のみに正規化し、スキーム省略時は `https://` を補う。そのほかの `sns_*` はIDを保存する。
 - 推し全体のテーマカラー（`oshi.color`）は、保存時に「メイングループの色」から自動的に決定される（`effectiveColor()` 参照）。グループが1つもない推しは自動割り当てのプリセット色になる。
 - 過去バージョンの単一グループ形式（`oshi.group` 文字列 + `sns_group_*`）のデータも `oshiGroupsList()` が後方互換で読み込む。
 
@@ -96,9 +97,14 @@ python3 -m http.server 8000
 - 複数推し・推しごとの複数グループ（兼任）管理、グループごとのSNS・担当カラー
 - LIVE／チェキ／物販の記録（写真、配信URL、チケット情報など）
 - 統計（推し別／イベント別／期間別／カレンダー）
+- グループごとの公式HPのURL登録（グループSNSの先頭）
 - ヘッダーへの推しグループロゴのアップロード（透過PNG対応）
 - お気に入り推しの切り替え（トップバーのドロップダウン）
 - メールアドレス / Googleアカウントでのログイン（ログイン必須）と、複数端末でのクラウド同期（マイページ →「アカウント・同期」）
+
+## プライバシーポリシー
+
+`privacy.html`（公開URL：`https://oshikatsu-diary.vercel.app/privacy.html`）。ログイン画面とマイページの最下部からリンクしています。Google OAuth 同意画面の「プライバシーポリシーのリンク」にもこのURLを設定します。取得する情報や外部サービスを追加・変更したときは、このページも更新してください。
 
 ## Claude Codeでの作業にあたって
 
