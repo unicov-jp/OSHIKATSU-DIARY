@@ -77,7 +77,7 @@ python3 -m http.server 8000
   groups: [
     { id, name, color, sns_web, sns_instagram, sns_x, sns_tiktok, sns_youtube }
   ],
-  sns_person_instagram, sns_person_x, sns_person_tiktok, sns_person_youtube,
+  sns_person_instagram, sns_person_x, sns_person_tiktok, sns_person_youtube, sns_person_web,
   photoOriginal, mode: "pale", order, hidden, createdAt
 }
 ```
@@ -86,7 +86,7 @@ python3 -m http.server 8000
 - `groups` は配列の**並び順がそのまま「メイン所属／サブ所属」を表す**（先頭＝メイン）。専用のフラグは持たない。
 - 推しの登録・編集で、所属（`#agencyOptions`）とグループ名（`#groupNameOptions`）の入力欄には、登録済みの値を `datalist` で候補表示する。グループ名を候補から選んだときも、下のSNS自動入力がその場で働く。
 - 推しの登録・編集でグループ名を入力し終えたとき、ほかの推しに**完全一致**する名前のグループがあれば、そのSNS（公式HP含む）を空欄にだけ自動で入れる（同じグループの別メンバーを登録するとき用。入力済みのSNSは上書きしない）。
-- グループの `sns_web` は公式HPのURL（IDではなくURLを保存）。`safeWebUrl()` で http(s) のみに正規化し、スキーム省略時は `https://` を補う。そのほかの `sns_*` はIDを保存する。
+- 個人の `sns_person_web` とグループの `sns_web` は公式HPのURL（IDではなくURLを保存）。`safeWebUrl()` で http(s) のみに正規化し、スキーム省略時は `https://` を補う。そのほかの `sns_*` はIDを保存する。
 - 推し全体のテーマカラー（`oshi.color`）は、保存時に「メイングループの色」から自動的に決定される（`effectiveColor()` 参照）。グループが1つもない推しは自動割り当てのプリセット色になる。
 - 過去バージョンの単一グループ形式（`oshi.group` 文字列 + `sns_group_*`）のデータも `oshiGroupsList()` が後方互換で読み込む。
 
@@ -118,7 +118,7 @@ python3 -m http.server 8000
 - 複数推し・推しごとの複数グループ（兼任）管理、グループごとのSNS・担当カラー
 - LIVE／チェキ／物販の記録（写真、配信URL、チケット情報など）
 - 統計（推し別／イベント別／期間別／カレンダー）
-- グループごとの公式HPのURL登録（グループSNSの末尾。個人SNSとアイコンの位置をそろえるため）
+- 個人・グループごとの公式HPのURL登録（SNSアイコンの末尾）
 - ヘッダーへの推しグループロゴのアップロード（透過PNG対応）
 - お気に入り推しの切り替え（トップバーのドロップダウン）
 - メールアドレス / Googleアカウントでのログイン（ログイン必須）と、複数端末でのクラウド同期（マイページ →「アカウント」で、メールアドレスの確認、パスワードの設定・変更、Google認証の連携・解除、ログアウト）
