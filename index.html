@@ -468,7 +468,9 @@
   .stream-url-row{display:flex;align-items:center;gap:8px;}
   .stream-url-row + .stream-url-row{margin-top:8px;}
   .field .stream-url-row input{flex:1;min-width:0;width:auto;}
-  .ticket .stream-link-wrap .stream-link + .stream-link{margin-left:8px;}
+  .ticket .stream-link-btn{background:none;border:none;padding:0;cursor:pointer;font-family:inherit;}
+  .stream-menu a.photo-menu-item{text-decoration:none;}
+  .stream-menu .host{display:block;font-size:10.5px;font-weight:500;color:var(--ink-soft);margin-top:2px;}
   .add-rec-oshi-btn{
     display:block;width:100%;margin-top:8px;padding:9px 12px;border:1px dashed var(--line-strong);border-radius:3px;
     background:transparent;color:var(--ink-soft);font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;
@@ -691,6 +693,15 @@
   .editor-quick-actions{display:flex;gap:10px;margin-top:8px;}
   .editor-quick-actions .btn{flex:1;padding:9px;font-size:12.5px;}
 
+  /* ---------- avatar cropper（プロフィール写真の位置合わせ） ---------- */
+  .avatar-crop-stage{
+    position:relative;width:100%;max-width:300px;aspect-ratio:1/1;margin:0 auto;background:#111;border-radius:8px;
+    overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none;cursor:grab;
+  }
+  .avatar-crop-stage.dragging{cursor:grabbing;}
+  .avatar-crop-stage img{position:absolute;left:0;top:0;max-width:none;transform-origin:0 0;pointer-events:none;}
+  .avatar-crop-mask{position:absolute;inset:0;border-radius:50%;box-shadow:0 0 0 999px rgba(0,0,0,.55);border:2px solid rgba(255,255,255,.85);pointer-events:none;}
+
   /* ---------- desktop / mouse presentation ---------- */
   @media (hover:hover) and (pointer:fine){
     .btn:hover{filter:brightness(0.96);}
@@ -781,6 +792,32 @@
   <div class="sheet" id="sheet"></div>
 </div>
 <div class="toast" id="toast"></div>
+<div class="editor-bg" id="avatarCropBg">
+  <div class="editor-panel">
+    <div class="editor-head">
+      <span class="mincho">写真の位置を調整</span>
+      <button type="button" class="editor-close" id="avatarCropClose" aria-label="閉じる">
+        <svg viewBox="0 0 24 24"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>
+      </button>
+    </div>
+    <p class="editor-hint">ドラッグで位置、スライダーで大きさを合わせてください</p>
+    <div class="avatar-crop-stage" id="avatarCropStage">
+      <img id="avatarCropImg" alt="" draggable="false">
+      <div class="avatar-crop-mask"></div>
+    </div>
+    <div class="editor-controls">
+      <div class="editor-slider-row">
+        <label for="avatarCropZoom">拡大</label>
+        <input type="range" id="avatarCropZoom" min="100" max="400" value="100">
+      </div>
+    </div>
+    <div class="sheet-actions">
+      <button type="button" class="btn ghost" id="avatarCropCancel">キャンセル</button>
+      <button type="button" class="btn primary" id="avatarCropApply">適用する</button>
+    </div>
+  </div>
+</div>
+<div class="photo-menu stream-menu" id="streamMenu" style="display:none;"></div>
 <div class="photo-viewer" id="photoViewer" hidden role="dialog" aria-modal="true" aria-label="写真">
   <button type="button" class="photo-viewer-close" id="photoViewerClose" aria-label="閉じる">
     <svg viewBox="0 0 24 24"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>
@@ -2658,11 +2695,13 @@ function ticketHtml(type,r,withOshiTag){
   // 配信URL（LIVE）・ONLINE物販のURL（物販）は http(s) のときだけリンクにする
   var streamLinkHtml = "";
   if(type==="live"){
+    // 表記は件数に関係なく「配信を見る」。複数あるときは押すとメニューから選ぶ
     var sUrls = recStreamUrls(r);
-    streamLinkHtml = sUrls.map(function(u, i){
-      var label = sUrls.length>1 ? "配信"+(i+1) : "配信を見る";
-      return '<a href="'+escapeHtml(u)+'" target="_blank" rel="noopener noreferrer" class="stream-link">'+label+'</a>';
-    }).join(" ");
+    if(sUrls.length===1){
+      streamLinkHtml = '<a href="'+escapeHtml(sUrls[0])+'" target="_blank" rel="noopener noreferrer" class="stream-link">配信を見る</a>';
+    } else if(sUrls.length>1){
+      streamLinkHtml = '<button type="button" class="stream-link stream-link-btn" data-action="stream-menu" data-id="'+r.id+'">配信を見る</button>';
+    }
   } else if(type==="goods" && safeWebUrl(r.shopUrl)){
     streamLinkHtml = '<a href="'+escapeHtml(safeWebUrl(r.shopUrl))+'" target="_blank" rel="noopener noreferrer" class="stream-link">購入ページを見る</a>';
   }
@@ -3250,7 +3289,7 @@ function oshiFormHtml(oshi){
       +         '</div>'
       +       '</div>'
       +     '</div>'
-      +     '<input type="text" class="group-name-input" data-group-idx="'+i+'" value="'+escapeHtml(g.name||"")+'" placeholder="グループ名" maxlength="40">'
+      +     '<input type="text" class="group-name-input" data-group-idx="'+i+'" list="groupNameOptions" autocomplete="off" value="'+escapeHtml(g.name||"")+'" placeholder="グループ名" maxlength="40">'
       +     '<div class="group-sns-inline">'+snsIconPickerHtml("grp"+i, g.name||"グループ", function(k){ return g["sns_"+k]; }, GROUP_SNS_KEYS)+'</div>'
       +     '<div class="group-order-btns">'
       +       '<button type="button" class="group-order-btn" data-group-move="'+i+'" data-dir="up" title="上に移動" aria-label="上に移動" '+(i===0?"disabled":"")+'>'
@@ -3267,8 +3306,22 @@ function oshiFormHtml(oshi){
       + '</div>';
   }).join("");
 
+  /* 所属・グループ名の候補（登録済みの値）。入力欄の list 属性で使う */
+  function uniqueSorted(list){
+    var seen = {}, out = [];
+    list.forEach(function(v){ v = (v||"").trim(); if(v && !seen[v]){ seen[v] = true; out.push(v); } });
+    return out.sort(function(a,b){ return a.localeCompare(b, "ja"); });
+  }
+  var agencyOptions = uniqueSorted(state.oshis.map(function(o){ return o.agency; }));
+  var groupNameOptions = uniqueSorted([].concat.apply([], state.oshis.map(function(o){ return oshiGroupsList(o).map(function(g){ return g.name; }); })));
+  function datalistHtml(id, values){
+    return '<datalist id="'+id+'">'+values.map(function(v){ return '<option value="'+escapeHtml(v)+'"></option>'; }).join("")+'</datalist>';
+  }
+
   return ''
     + '<h2 class="mincho">'+((oshi&&oshi.id)?"推しを編集":"推しを登録")+'</h2>'
+    + datalistHtml("agencyOptions", agencyOptions)
+    + datalistHtml("groupNameOptions", groupNameOptions)
     + '<form id="oshiForm">'
     +   '<div class="field">'
     +     '<div class="identity-duo">'
@@ -3282,6 +3335,7 @@ function oshiFormHtml(oshi){
     +           '</button>'
     +           '<div class="photo-menu" id="photoMenu" style="display:none;">'
     +             '<label class="photo-menu-item" style="cursor:pointer;">画像を選ぶ<input type="file" name="photo" accept="image/*" style="display:none;"></label>'
+    +             '<button type="button" class="photo-menu-item" id="adjustPhotoBtn" style="display:none;">位置を調整</button>'
     +             '<button type="button" class="photo-menu-item danger" id="clearPhotoBtn" style="display:none;">写真を削除</button>'
     +           '</div>'
     +         '</div>'
@@ -3301,7 +3355,7 @@ function oshiFormHtml(oshi){
     +     '</div>'
     +     '<div class="field-hint">年を空欄にすると年齢は非公開になります</div>'
     +   '</div>'
-    +   '<div class="field"><label>所属</label><input type="text" name="agency" maxlength="40" value="'+(oshi?escapeHtml(oshi.agency||""):"")+'"></div>'
+    +   '<div class="field"><label>所属</label><input type="text" name="agency" maxlength="40" list="agencyOptions" autocomplete="off" value="'+(oshi?escapeHtml(oshi.agency||""):"")+'"></div>'
     +   '<div class="field"><label>グループ</label>'
     +     '<div class="group-card-list">'+groupCardsHtml+'</div>'
     +     '<button type="button" class="btn ghost block" id="addGroupBtn" style="margin-top:'+(groupsList.length?"10px":"0")+';">＋ グループを追加</button>'
@@ -3408,6 +3462,8 @@ function bindOshiForm(existingOshi){
   var form = document.getElementById("oshiForm");
   var preset = PALETTE[state.oshis.length % PALETTE.length];
   var chosenPhoto = existingOshi ? (existingOshi.photo || null) : null;
+  // 位置を後から調整し直せるよう、切り抜く前の画像（縮小済み）も持っておく
+  var chosenPhotoOriginal = existingOshi ? (existingOshi.photoOriginal || null) : null;
   var draftGroups = existingOshi ? oshiGroupsList(existingOshi) : [];
 
   var elName = form.querySelector('[name="name"]');
@@ -3483,6 +3539,7 @@ function bindOshiForm(existingOshi){
       agency: elAgency.value,
       name: elName.value,
       photo: chosenPhoto,
+      photoOriginal: chosenPhotoOriginal,
       color: effectiveColor(groups),
       birthMonth: elBirthMonth.value,
       birthDay: elBirthDay.value,
@@ -3502,14 +3559,25 @@ function bindOshiForm(existingOshi){
       elPhotoImg.style.display = "block";
       elPhotoPlaceholder.style.display = "none";
       elClearPhotoBtn.style.display = "block";
+      elAdjustPhotoBtn.style.display = "block";
     } else {
       elPhotoImg.style.display = "none";
       elPhotoImg.src = "";
       elPhotoPlaceholder.style.display = "block";
       elClearPhotoBtn.style.display = "none";
+      elAdjustPhotoBtn.style.display = "none";
     }
   }
+  var elAdjustPhotoBtn = form.querySelector("#adjustPhotoBtn");
   refreshPhotoPreview();
+  elAdjustPhotoBtn.addEventListener("click", function(){
+    AvatarCropper.open(chosenPhotoOriginal || chosenPhoto, function(cropped){
+      if(!cropped) return;
+      if(!chosenPhotoOriginal) chosenPhotoOriginal = chosenPhoto;
+      chosenPhoto = cropped;
+      refreshPhotoPreview();
+    });
+  });
 
   function closeAllPickers(){
     form.querySelectorAll(".photo-menu").forEach(function(m){ m.style.display = "none"; });
@@ -3650,9 +3718,11 @@ function bindOshiForm(existingOshi){
     var clearBtn = form.querySelector('[data-sns-clear="'+combo+'"]');
     if(clearBtn) clearBtn.style.display = value ? "block" : "none";
   }
-  form.addEventListener("change", function(e){
+  function onGroupNameCommitted(e){
     var inp = e.target.closest(".group-name-input");
     if(!inp) return;
+    // 候補から選んだとき（insertReplacementText、または inputType なし）もその場で反映する
+    if(e.type==="input" && e.inputType && e.inputType!=="insertReplacementText") return;
     var name = inp.value.trim();
     if(!name) return;
     var idx = inp.getAttribute("data-group-idx");
@@ -3663,7 +3733,9 @@ function bindOshiForm(existingOshi){
       if(found[k] && !chosenSns[combo]){ setSnsValue(combo, found[k]); filled++; }
     });
     if(filled) toast("「"+name+"」のSNS情報を反映しました");
-  });
+  }
+  form.addEventListener("change", onGroupNameCommitted);
+  form.addEventListener("input", onGroupNameCommitted);
 
   snsCombos.forEach(function(combo){
     var btn = form.querySelector('[data-sns-btn="'+combo+'"]');
@@ -3711,15 +3783,21 @@ function bindOshiForm(existingOshi){
     var file = elPhotoInput.files && elPhotoInput.files[0];
     if(!file) return;
     if(file.type.indexOf("image/")!==0){ toast("画像ファイルを選択してください"); return; }
-    resizeImageFile(file, 480, 0.85).then(function(dataUrl){
-      chosenPhoto = dataUrl;
-      refreshPhotoPreview();
+    resizeImageFile(file, 1000, 0.85).then(function(original){
+      elPhotoInput.value = "";
+      AvatarCropper.open(original, function(cropped){
+        if(!cropped) return;
+        chosenPhotoOriginal = original;
+        chosenPhoto = cropped;
+        refreshPhotoPreview();
+      });
     }).catch(function(){
       toast("画像の読み込みに失敗しました");
     });
   });
   elClearPhotoBtn.addEventListener("click", function(){
     chosenPhoto = null;
+    chosenPhotoOriginal = null;
     elPhotoInput.value = "";
     refreshPhotoPreview();
   });
@@ -3748,6 +3826,7 @@ function bindOshiForm(existingOshi){
       groups: groups,
       name: name,
       photo: chosenPhoto,
+      photoOriginal: chosenPhoto ? chosenPhotoOriginal : null,
       color: effectiveColor(groups),
       birthMonth: elBirthMonth.value ? Number(elBirthMonth.value) : null,
       birthDay: elBirthDay.value ? Number(elBirthDay.value) : null,
@@ -4073,6 +4152,101 @@ function openRecordSheet(type,rec){
   bindRecordForm(type,rec);
 }
 
+/* ============ avatar cropper ============
+   プロフィール写真を丸枠に合わせて切り抜く。open(元画像dataURL, 完了時コールバック) で開き、
+   ドラッグで位置、スライダー（PCはホイールも）で拡大率を変える。
+   適用すると 480x480 の正方形JPEGを返す（キャンセル時は null）。 */
+var AvatarCropper = (function(){
+  var bg, stage, imgEl, zoomEl, img = null, onDone = null;
+  var S = 0, base = 1, zoom = 1, ox = 0, oy = 0, drag = null;
+
+  function scale(){ return base*zoom; }
+  function clamp(){
+    var dw = img.naturalWidth*scale(), dh = img.naturalHeight*scale();
+    ox = Math.min(0, Math.max(S-dw, ox));
+    oy = Math.min(0, Math.max(S-dh, oy));
+  }
+  function draw(){
+    clamp();
+    imgEl.style.transform = "translate("+ox+"px,"+oy+"px) scale("+scale()+")";
+  }
+  // 画面上の中心を保ったまま拡大率を変える
+  function setZoom(z){
+    z = Math.max(1, Math.min(4, z));
+    var cx = (S/2 - ox)/scale(), cy = (S/2 - oy)/scale();
+    zoom = z;
+    ox = S/2 - cx*scale(); oy = S/2 - cy*scale();
+    zoomEl.value = Math.round(zoom*100);
+    draw();
+  }
+  function layout(){
+    S = stage.clientWidth;
+    base = S / Math.min(img.naturalWidth, img.naturalHeight);
+  }
+  function close(result){
+    bg.classList.remove("show");
+    var cb = onDone; onDone = null; img = null; imgEl.src = "";
+    if(cb) cb(result);
+  }
+  function apply(){
+    var out = 480, sc = scale();
+    var c = document.createElement("canvas");
+    c.width = out; c.height = out;
+    c.getContext("2d").drawImage(img, -ox/sc, -oy/sc, S/sc, S/sc, 0, 0, out, out);
+    var url = null;
+    try{ url = c.toDataURL("image/jpeg", 0.88); }catch(e){ toast("画像の書き出しに失敗しました"); }
+    close(url);
+  }
+  function init(){
+    bg = document.getElementById("avatarCropBg");
+    stage = document.getElementById("avatarCropStage");
+    imgEl = document.getElementById("avatarCropImg");
+    zoomEl = document.getElementById("avatarCropZoom");
+    zoomEl.addEventListener("input", function(){ if(img) setZoom(Number(zoomEl.value)/100); });
+    stage.addEventListener("pointerdown", function(e){
+      if(!img) return;
+      drag = {id:e.pointerId, x:e.clientX, y:e.clientY, ox:ox, oy:oy};
+      stage.setPointerCapture(e.pointerId);
+      stage.classList.add("dragging");
+    });
+    stage.addEventListener("pointermove", function(e){
+      if(!drag || e.pointerId!==drag.id) return;
+      ox = drag.ox + (e.clientX-drag.x);
+      oy = drag.oy + (e.clientY-drag.y);
+      draw();
+    });
+    function endDrag(e){ if(drag && e.pointerId===drag.id){ drag = null; stage.classList.remove("dragging"); } }
+    stage.addEventListener("pointerup", endDrag);
+    stage.addEventListener("pointercancel", endDrag);
+    stage.addEventListener("wheel", function(e){
+      if(!img) return;
+      e.preventDefault();
+      setZoom(zoom * (e.deltaY<0 ? 1.08 : 1/1.08));
+    }, {passive:false});
+    document.getElementById("avatarCropApply").addEventListener("click", apply);
+    document.getElementById("avatarCropCancel").addEventListener("click", function(){ close(null); });
+    document.getElementById("avatarCropClose").addEventListener("click", function(){ close(null); });
+  }
+  function open(src, cb){
+    onDone = cb;
+    var im = new Image();
+    im.onload = function(){
+      img = im;
+      imgEl.src = src;
+      bg.classList.add("show");
+      layout();
+      zoom = 1;
+      zoomEl.value = 100;
+      ox = (S - img.naturalWidth*scale())/2;
+      oy = (S - img.naturalHeight*scale())/2;
+      draw();
+    };
+    im.onerror = function(){ toast("画像の読み込みに失敗しました"); close(null); };
+    im.src = src;
+  }
+  return { init:init, open:open };
+})();
+
 /* ============ photo viewer ============ */
 function openPhotoViewer(src){
   if(!src) return;
@@ -4111,6 +4285,20 @@ function onAppClick(e){
     return;
   }
   if(action==="share-summary"){ shareSummaryImage(); return; }
+  if(action==="stream-menu"){
+    var sr = state.live.find(function(r){ return r.id===el.getAttribute("data-id"); });
+    var menu = document.getElementById("streamMenu");
+    var wasOpen = menu.style.display==="block" && menu.getAttribute("data-for")===el.getAttribute("data-id");
+    menu.style.display = "none";
+    if(!sr || wasOpen) return;
+    menu.innerHTML = recStreamUrls(sr).map(function(u, i){
+      var host = u; try{ host = new URL(u).hostname.replace(/^www\./, ""); }catch(err){}
+      return '<a class="photo-menu-item" href="'+escapeHtml(u)+'" target="_blank" rel="noopener noreferrer">配信'+(i+1)+'<span class="host">'+escapeHtml(host)+'</span></a>';
+    }).join("");
+    menu.setAttribute("data-for", el.getAttribute("data-id"));
+    openPopoverNear(el, menu);
+    return;
+  }
   if(action==="view-photo"){
     var pr = (state[el.getAttribute("data-type")]||[]).find(function(r){ return r.id===el.getAttribute("data-id"); });
     if(pr) openPhotoViewer(pr.photo);
@@ -4217,6 +4405,13 @@ document.addEventListener("DOMContentLoaded", function(){
 
   sheetBg.addEventListener("click", function(e){ if(e.target===sheetBg) closeSheet(); });
 
+  var streamMenu = document.getElementById("streamMenu");
+  document.addEventListener("click", function(e){
+    if(!e.target.closest("#streamMenu") && !e.target.closest('[data-action="stream-menu"]')) streamMenu.style.display = "none";
+    else if(e.target.closest("#streamMenu a")) streamMenu.style.display = "none";
+  });
+  window.addEventListener("scroll", function(){ streamMenu.style.display = "none"; }, {passive:true});
+
   var photoViewer = document.getElementById("photoViewer");
   photoViewer.addEventListener("click", function(e){
     if(e.target===photoViewer || e.target.closest("#photoViewerClose")) closePhotoViewer();
@@ -4226,6 +4421,7 @@ document.addEventListener("DOMContentLoaded", function(){
   });
 
   PhotoEditor.init();
+  AvatarCropper.init();
   initStorage();
 });
 })();

@@ -78,11 +78,13 @@ python3 -m http.server 8000
     { id, name, color, sns_web, sns_instagram, sns_x, sns_tiktok, sns_youtube }
   ],
   sns_person_instagram, sns_person_x, sns_person_tiktok, sns_person_youtube,
-  mode: "pale", order, hidden, createdAt
+  photoOriginal, mode: "pale", order, hidden, createdAt
 }
 ```
+- プロフィール写真は `AvatarCropper` で丸枠に合わせて切り抜いた 480x480 のJPEGを `photo` に、切り抜く前の画像（長辺1000pxに縮小）を `photoOriginal` に保存する。写真メニューの「位置を調整」で、`photoOriginal` から何度でも調整し直せる（以前に登録した写真は `photo` から調整）。
 - `hidden: true` の推しは非表示。推しの切り替え・記録一覧の絞り込み・記録フォームの推し選択に出さない（`visibleOshis()`）。記録や集計には残り、マイページの「非表示の推し」から戻せる。お気に入りの推しを非表示にすると、表示中のほかの推しがお気に入りになる。
 - `groups` は配列の**並び順がそのまま「メイン所属／サブ所属」を表す**（先頭＝メイン）。専用のフラグは持たない。
+- 推しの登録・編集で、所属（`#agencyOptions`）とグループ名（`#groupNameOptions`）の入力欄には、登録済みの値を `datalist` で候補表示する。グループ名を候補から選んだときも、下のSNS自動入力がその場で働く。
 - 推しの登録・編集でグループ名を入力し終えたとき、ほかの推しに**完全一致**する名前のグループがあれば、そのSNS（公式HP含む）を空欄にだけ自動で入れる（同じグループの別メンバーを登録するとき用。入力済みのSNSは上書きしない）。
 - グループの `sns_web` は公式HPのURL（IDではなくURLを保存）。`safeWebUrl()` で http(s) のみに正規化し、スキーム省略時は `https://` を補う。そのほかの `sns_*` はIDを保存する。
 - 推し全体のテーマカラー（`oshi.color`）は、保存時に「メイングループの色」から自動的に決定される（`effectiveColor()` 参照）。グループが1つもない推しは自動割り当てのプリセット色になる。
@@ -94,7 +96,7 @@ python3 -m http.server 8000
 （`groupId` はその記録がどのグループ活動かを表す任意フィールド。フォームでは推しを選ぶとメイングループがデフォルト選択される）
 
 - live固有: `title, venue, streamUrl, ticketType, seat, price, photo, extraOshis`
-  - `streamUrls`：配信URLの配列（http(s) のみ）。互換のため1件目は `streamUrl` にも入れる。以前の記録は `streamUrl` だけでも表示できる（`recStreamUrls()`）。一覧では1件なら「配信を見る」、複数なら「配信1」「配信2」…のリンク。
+  - `streamUrls`：配信URLの配列（http(s) のみ）。互換のため1件目は `streamUrl` にも入れる。以前の記録は `streamUrl` だけでも表示できる（`recStreamUrls()`）。一覧のリンク表記は件数に関係なく「配信を見る」。複数あるときは押すとメニュー（`#streamMenu`）が開き、「配信1（ドメイン）」「配信2（ドメイン）」…から選ぶ。
   - `venuePlace`：会場を Google マップの候補から選んだときの場所 `{ placeId, name, address, lat, lng }`。手入力のままなら `null`（遠征マップ用）。
   - `extraOshis`：対バンなどで一緒に記録する2人目以降の推し `[{ oshiId, groupId }]`。1人目は従来どおり `oshiId` / `groupId`。
   - 推し別の集計（参戦回数・金額）では、`recHasOshi()` で `oshiId` と `extraOshis` の両方を対象にし、金額は `recAmountForOshi()` で人数に均等に割ります（合計の二重計上を防ぐため）。
