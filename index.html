@@ -540,7 +540,7 @@
   }
   .group-color-pop{padding:11px;width:auto;}
   .group-color-swatches{display:flex;flex-wrap:wrap;gap:7px;max-width:168px;}
-  .gcs-swatch{width:24px;height:24px;border-radius:50%;border:2px solid rgba(0,0,0,.06);cursor:pointer;padding:0;flex:none;}
+  .gcs-swatch{width:24px;height:24px;border-radius:50%;border:2px solid rgba(0,0,0,.14);cursor:pointer;padding:0;flex:none;}
   .gcs-custom-btn{
     width:24px;height:24px;
     background:conic-gradient(from 0deg,#E04B4B,#E0A23C,#E0D23C,#6CBF5E,#3C9AE0,#6C5CE0,#C25CE0,#E04B4B)!important;
@@ -955,6 +955,11 @@ function luminance(hex){
   var rgb=hexToRgb(hex);
   function lin(c){c/=255; return c<=0.03928 ? c/12.92 : Math.pow((c+0.055)/1.055,2.4);}
   return 0.2126*lin(rgb.r)+0.7152*lin(rgb.g)+0.0722*lin(rgb.b);
+}
+/* 白などごく明るい推しカラーを文字色・塗りに使うと背景に溶けるため、暗めにして返す */
+function readableColor(hex){
+  hex = hex || "#C9457A";
+  return luminance(hex)>0.7 ? withLightness(hex,40) : hex;
 }
 
 /* ============ theme application ============ */
@@ -2156,7 +2161,7 @@ var PALETTE = [
   {name:"ブルー",hex:"#3E6FD9"},
   {name:"パープル",hex:"#7A5AD1"},
   {name:"ラベンダー",hex:"#B39AE0"},
-  {name:"ホワイト",hex:"#E9E2D4"},
+  {name:"ホワイト",hex:"#FFFFFF"},
   {name:"ブラック",hex:"#3A342C"},
   {name:"ゴールド",hex:"#C9A227"},
   {name:"シルバー",hex:"#ABA398"}
@@ -2686,7 +2691,7 @@ function ticketHtml(type,r,withOshiTag){
     });
     var tags = tagEntries.map(function(e){
       var o = getOshi(e.oshiId);
-      return o ? '<span style="color:'+o.color+';font-weight:700;">'+escapeHtml(oshiFullLabel(o))+'</span>' : '';
+      return o ? '<span style="color:'+readableColor(o.color)+';font-weight:700;">'+escapeHtml(oshiFullLabel(o))+'</span>' : '';
     }).filter(Boolean);
     if(tags.length) oshiLineHtml = '<div class="meta meta-oshi">'+tags.join(" ／ ")+'</div>';
   }
@@ -2893,7 +2898,7 @@ function shareSummaryImage(){
   if(rows.length===0){ toast("まだ集計できる記録がありません"); return; }
   var totalAll = rows.reduce(function(s,r){return s+r.total;},0);
   var itemsAll = rows.reduce(function(s,r){return s+r.itemCount;},0);
-  var accentColor = rows[0].oshi.color || "#C9457A";
+  var accentColor = readableColor(rows[0].oshi.color);
   var now = new Date();
 
   var W = 900, H = 340 + rows.length*110 + 90;
