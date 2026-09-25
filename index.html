@@ -432,15 +432,18 @@
   .legal-links a{color:var(--accent);font-size:12px;}
 
   /* ---------- account / cloud sync ---------- */
-  .account-card{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:14px;margin-bottom:6px;}
   .account-note{margin:0 0 12px;font-size:12.5px;line-height:1.7;color:var(--ink-soft);}
-  .account-line{display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:8px;word-break:break-all;}
-  .account-label{font-size:11px;color:var(--ink-soft);flex:none;}
-  .sync-dot{width:8px;height:8px;border-radius:50%;background:#3E9B6B;flex:none;}
-  .sync-dot.syncing{background:#D9A036;}
-  .sync-dot.error,.sync-dot.offline{background:#B23A3A;}
-  .account-actions{display:flex;gap:10px;margin-top:12px;}
-  .account-actions .btn{flex:1;}
+  .account-list{background:var(--card);border:1px solid var(--line);border-radius:6px;overflow:hidden;}
+  .account-row{display:flex;align-items:center;gap:10px;min-height:52px;padding:10px 14px;}
+  .account-row + .account-row{border-top:1px solid var(--line);}
+  .account-row-label{flex:none;width:7.5em;font-size:12px;color:var(--ink-soft);font-weight:600;}
+  .account-row-value{flex:1;min-width:0;font-size:13.5px;overflow-wrap:anywhere;}
+  .account-row-value.muted{color:var(--ink-soft);}
+  .account-row-btn{
+    flex:none;border:1px solid var(--line-strong);background:var(--paper);color:var(--text);
+    border-radius:3px;font-size:12px;font-weight:600;padding:6px 12px;cursor:pointer;font-family:inherit;
+  }
+  .btn.account-logout{margin-top:12px;border-color:var(--line);color:#B23A3A;background:transparent;}
   .btn.google-btn{background:#FFFFFF;color:#1F1F1F;border-color:var(--line-strong);gap:10px;padding:11px 16px;}
   .btn.google-btn .google-icon{width:18px;height:18px;flex:none;stroke:none;}
   .btn:disabled{opacity:.55;cursor:default;}
@@ -1295,22 +1298,9 @@ function scheduleSync(delay){
   cloud.timer = setTimeout(syncNow, delay==null ? 800 : delay);
 }
 
-function syncStatusText(){
-  if(cloud.status==="syncing") return "同期中…";
-  if(cloud.status==="offline") return "オフラインです（接続が戻ると自動で同期します）";
-  if(cloud.status==="error") return "同期に失敗しました（自動で再試行します）";
-  if(cloud.lastSyncedAt){
-    var d = cloud.lastSyncedAt;
-    return "同期済み "+(d.getMonth()+1)+"/"+d.getDate()+" "+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");
-  }
-  return "未同期";
-}
+/* 同期状態（idle | syncing | error | offline）。画面には出さず、ログアウト時の確認などに使う */
 function setSyncStatus(s){
   cloud.status = s;
-  var t = document.getElementById("syncStatusText");
-  if(t) t.textContent = syncStatusText();
-  var dot = document.getElementById("syncStatusDot");
-  if(dot) dot.className = "sync-dot "+s;
 }
 
 async function pushChanges(uid){
@@ -1465,12 +1455,44 @@ function mergeGuestData(guest){
   if(!state.headerLogo && guest.headerLogo) state.headerLogo = guest.headerLogo;
 }
 
+/* アカウント欄の表示用に、ログイン方法（メール/Google）の情報を持っておく */
+function applyAuthInfo(user){
+  if(!cloud.user || !user || cloud.user.id!==user.id) return;
+  cloud.user.email = user.email || cloud.user.email;
+  if(user.identities) cloud.user.identities = user.identities;
+  var providers = (user.app_metadata && user.app_metadata.providers) || [];
+  if(providers.length) cloud.user.providers = providers;
+}
+function userHasGoogle(){
+  return !!(cloud.user && (cloud.user.identities||[]).some(function(i){ return i.provider==="google"; }));
+}
+function userHasPassword(){
+  if(!cloud.user) return false;
+  if(cloud.user.passwordSet) return true;
+  if((cloud.user.providers||[]).indexOf("email")>=0) return true;
+  return (cloud.user.identities||[]).some(function(i){ return i.provider==="email"; });
+}
+/* セッションに入っている情報は古いことがあるため、最新のユーザー情報を取り直す */
+async function refreshAuthInfo(){
+  if(!sb || !cloud.user) return;
+  try{
+    var r = await sb.auth.getUser();
+    if(r && r.data && r.data.user){
+      applyAuthInfo(r.data.user);
+      if(state.view==="oshi") render();
+    }
+  }catch(e){ console.error(e); }
+}
+
 async function enterUserMode(user){
   if(cloud.user && cloud.user.id===user.id){
-    cloud.user.email = user.email||cloud.user.email;
+    applyAuthInfo(user);
+    if(state.view==="oshi") render();
     return;
   }
-  cloud.user = {id:user.id, email:user.email||""};
+  cloud.user = {id:user.id, email:user.email||"", identities:[], providers:[]};
+  applyAuthInfo(user);
+  refreshAuthInfo();
   var meta = readStored(userSyncKey(user.id)) || {};
   cloud.hashes = meta.hashes || {};
   cloud.lastPulledAt = meta.lastPulledAt || null;
@@ -1625,13 +1647,49 @@ var GOOGLE_ICON = '<svg class="google-icon" viewBox="0 0 48 48" aria-hidden="tru
 
 function accountSectionHtml(){
   if(!cloud.user) return '';
-  return '<div class="section-label">アカウント・同期</div><div class="account-card">'
-    + '<div class="account-line"><span class="account-label">ログイン中</span><b>'+escapeHtml(cloud.user.email||"")+'</b></div>'
-    + '<div class="account-line"><span class="sync-dot '+cloud.status+'" id="syncStatusDot"></span><span id="syncStatusText">'+escapeHtml(syncStatusText())+'</span></div>'
-    + '<div class="account-actions">'
-    +   '<button class="btn" data-action="sync-now">今すぐ同期</button>'
-    +   '<button class="btn ghost" data-action="logout">ログアウト</button>'
-    + '</div></div>';
+  var hasPw = userHasPassword();
+  var hasGoogle = userHasGoogle();
+  var canUnlinkGoogle = hasGoogle && (cloud.user.identities||[]).length>=2;
+  var googleBtn = !hasGoogle
+    ? '<button type="button" class="account-row-btn" data-action="link-google">連携する</button>'
+    : (canUnlinkGoogle ? '<button type="button" class="account-row-btn" data-action="unlink-google">解除</button>' : '');
+  return '<div class="section-label">アカウント</div>'
+    + '<div class="account-list">'
+    +   '<div class="account-row">'
+    +     '<span class="account-row-label">メールアドレス</span>'
+    +     '<span class="account-row-value">'+escapeHtml(cloud.user.email||"")+'</span>'
+    +   '</div>'
+    +   '<div class="account-row">'
+    +     '<span class="account-row-label">パスワード</span>'
+    +     '<span class="account-row-value'+(hasPw?'':' muted')+'">'+(hasPw?'設定済み':'未設定')+'</span>'
+    +     '<button type="button" class="account-row-btn" data-action="change-password">'+(hasPw?'変更':'設定')+'</button>'
+    +   '</div>'
+    +   '<div class="account-row">'
+    +     '<span class="account-row-label">Google認証</span>'
+    +     '<span class="account-row-value'+(hasGoogle?'':' muted')+'">'+(hasGoogle?'連携済み':'未連携')+'</span>'
+    +     googleBtn
+    +   '</div>'
+    + '</div>'
+    + '<button type="button" class="btn block account-logout" data-action="logout">ログアウト</button>';
+}
+
+async function linkGoogle(){
+  if(!sb || !cloud.user) return;
+  var res = await sb.auth.linkIdentity({provider:"google", options:{redirectTo:appUrl()}});
+  if(res && res.error) toast(authErrorMessage(res.error));
+}
+async function unlinkGoogle(){
+  if(!sb || !cloud.user) return;
+  var identity = (cloud.user.identities||[]).find(function(i){ return i.provider==="google"; });
+  if(!identity) return;
+  if((cloud.user.identities||[]).length<2){ toast("ログイン方法がなくなるため解除できません"); return; }
+  if(!confirm("Google認証の連携を解除しますか？\n解除後は、メールアドレスとパスワードでログインしてください。")) return;
+  var res = await sb.auth.unlinkIdentity(identity);
+  if(res && res.error){ toast(authErrorMessage(res.error)); return; }
+  cloud.user.identities = cloud.user.identities.filter(function(i){ return i.provider!=="google"; });
+  toast("Google認証の連携を解除しました");
+  render();
+  refreshAuthInfo();
 }
 
 function authErrorMessage(err){
@@ -1642,6 +1700,11 @@ function authErrorMessage(err){
   if(/Password should be/i.test(m)) return "パスワードは6文字以上で入力してください。";
   if(/rate limit|security purposes|too many/i.test(m)) return "短時間に操作が集中しました。しばらく待ってからもう一度お試しください。";
   if(/provider is not enabled|Unsupported provider/i.test(m)) return "Googleログインが有効になっていません。管理者にお問い合わせください。";
+  if(/manual linking/i.test(m)) return "Google認証の連携が有効になっていません。管理者にお問い合わせください。";
+  if(/already linked|identity_already_exists|Identity is already/i.test(m)) return "このGoogleアカウントは、別のアカウントですでに使われています。";
+  if(/single identity|at least 2 identities|at least two/i.test(m)) return "ログイン方法がなくなるため解除できません。";
+  if(/different from the old password/i.test(m)) return "今と同じパスワードは設定できません。";
+  if(/reauthentication|reauthenticate/i.test(m)) return "安全のため、いったんログアウトしてログインし直してから変更してください。";
   if(/Failed to fetch|NetworkError|network/i.test(m)) return "通信に失敗しました。ネット接続を確認してください。";
   return "エラーが発生しました"+(m ? "（"+m+"）" : "")+"。";
 }
@@ -1758,14 +1821,16 @@ function bindAuthForm(root, mode, switchMode){
   });
 }
 
-function openNewPasswordSheet(){
-  var html = '<h2 class="mincho">新しいパスワードを設定</h2>'
+function openNewPasswordSheet(mode){
+  var title = mode==="change" ? "パスワードを変更" : (mode==="set" ? "パスワードを設定" : "新しいパスワードを設定");
+  var html = '<h2 class="mincho">'+title+'</h2>'
+    + (mode==="set" ? '<p class="account-note">パスワードを設定すると、Googleアカウントのほかに、メールアドレスとパスワードでもログインできるようになります。</p>' : '')
     + '<form id="newPwForm" novalidate>'
     + '<div class="field"><label for="newPw1">新しいパスワード（6文字以上）</label><input type="password" id="newPw1" autocomplete="new-password" minlength="6" required></div>'
     + '<div class="field"><label for="newPw2">確認のためもう一度</label><input type="password" id="newPw2" autocomplete="new-password" minlength="6" required></div>'
     + '<p class="auth-msg" id="newPwMsg"></p>'
     + '<div class="sheet-actions">'
-    +   '<button type="button" class="btn ghost" id="newPwCancel">あとで</button>'
+    +   '<button type="button" class="btn ghost" id="newPwCancel">'+(mode ? 'キャンセル' : 'あとで')+'</button>'
     +   '<button type="submit" class="btn primary" id="newPwSubmit">設定する</button>'
     + '</div></form>';
   openSheet(html);
@@ -1781,8 +1846,11 @@ function openNewPasswordSheet(){
     var res = await sb.auth.updateUser({password:p1});
     btn.disabled = false;
     if(res.error){ msg.textContent = authErrorMessage(res.error); msg.className = "auth-msg error"; return; }
+    if(cloud.user) cloud.user.passwordSet = true;
     closeSheet();
-    toast("パスワードを変更しました");
+    toast(mode==="set" ? "パスワードを設定しました" : "パスワードを変更しました");
+    if(state.view==="oshi") render();
+    refreshAuthInfo();
   });
 }
 
@@ -2569,7 +2637,6 @@ function shareSummaryImage(){
 /* ============ rendering: MY PAGE (oshi registration & app settings) ============ */
 function renderOshiPage(){
   var html = '<div class="page-head"><h1 class="mincho">マイページ</h1></div>';
-  html += accountSectionHtml();
   html += '<div class="section-label">推しの管理</div>';
   html += '<button class="btn primary block" data-action="add-oshi" style="margin-bottom:18px;">＋ 新しい推しを登録</button>';
 
@@ -2618,6 +2685,7 @@ function renderOshiPage(){
         + '</div>';
     });
   }
+  html += accountSectionHtml();
   html += '<p class="legal-links"><a href="privacy.html">プライバシーポリシー</a></p>';
   document.getElementById("main").innerHTML = html;
   if(state.oshis.length>1) bindOshiPageDragDrop();
@@ -3495,7 +3563,9 @@ function onAppClick(e){
   var action = el.getAttribute("data-action");
 
   if(action==="add-oshi"){ openOshiSheet(null); return; }
-  if(action==="sync-now"){ syncNow(); return; }
+  if(action==="change-password"){ openNewPasswordSheet(userHasPassword() ? "change" : "set"); return; }
+  if(action==="link-google"){ linkGoogle(); return; }
+  if(action==="unlink-google"){ unlinkGoogle(); return; }
   if(action==="logout"){ logout(); return; }
   if(action==="edit-oshi"){ openOshiSheet(getOshi(el.getAttribute("data-id"))); return; }
   if(action==="set-active"){ setActiveOshi(el.getAttribute("data-id")).then(render); return; }
