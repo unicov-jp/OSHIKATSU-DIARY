@@ -411,6 +411,20 @@
   }
   .field textarea{resize:vertical;min-height:56px;line-height:1.6;}
   .field .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .venue-field{position:relative;}
+  .venue-suggest{
+    position:absolute;left:0;right:0;z-index:5;margin-top:4px;background:var(--paper);
+    border:1px solid var(--line-strong);border-radius:4px;box-shadow:0 8px 20px -8px rgba(33,28,23,.35);overflow:hidden;
+  }
+  .venue-suggest-item{display:block;width:100%;text-align:left;background:none;border:none;padding:9px 12px;cursor:pointer;font-family:inherit;color:var(--text);}
+  .venue-suggest-item + .venue-suggest-item{border-top:1px solid var(--line);}
+  .venue-suggest-item:hover{background:var(--card);}
+  .venue-suggest-item .main{display:block;font-size:13.5px;font-weight:600;}
+  .venue-suggest-item .sub{display:block;font-size:11px;color:var(--ink-soft);margin-top:2px;}
+  .venue-place{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:11px;color:var(--ink-soft);margin-top:5px;}
+  .venue-place:empty{display:none;}
+  .venue-place a{color:var(--accent);}
+  .venue-link{color:inherit;text-decoration:underline;text-decoration-color:var(--line-strong);text-underline-offset:2px;}
   .rec-oshi-row{display:flex;align-items:center;gap:8px;}
   .rec-oshi-row + .rec-oshi-row{margin-top:8px;}
   .field .rec-oshi-row select{flex:1 1 0;min-width:0;width:auto;}
@@ -1175,6 +1189,7 @@ var CLOUD_PAGE = 500;              // 1回の取得件数
 var CLOUD_CHUNK_BYTES = 1500000;   // 1回のアップロードの目安サイズ（写真入り記録を考慮）
 var CLOUD_PULL_OVERLAP_MS = 30000; // 差分取得の取りこぼし防止用の重なり
 var sb = null;                     // Supabase client（未設定なら null）
+var appConfig = null;              // /api/config の内容（Supabase・Google Maps の公開キー）
 var cloud = {
   configured:false,
   user:null,          // {id,email}
@@ -1580,7 +1595,10 @@ async function loadCloudConfig(){
   if(location.protocol==="file:") return null;
   var cached = readStored(CLOUD_CONFIG_KEY);
   if(cached && cached.supabaseUrl && cached.supabaseAnonKey){
-    fetchCloudConfig();
+    // 起動はキャッシュで行い、最新の設定（後から追加された Google Maps のキーなど）は裏で取り直す
+    fetchCloudConfig().then(function(fresh){
+      if(fresh && appConfig) appConfig.googleMapsApiKey = fresh.googleMapsApiKey || "";
+    });
     return cached;
   }
   return await fetchCloudConfig();
@@ -1602,6 +1620,7 @@ function handleAuthEvent(event, session){
 
 async function initStorage(){
   var cfg = await loadCloudConfig();
+  appConfig = cfg;
   if(cfg && window.supabase && window.supabase.createClient){
     try{
       sb = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, {
@@ -1646,6 +1665,146 @@ async function initStorage(){
   setInterval(function(){
     if(cloud.user && document.visibilityState==="visible") syncNow();
   }, 60000);
+}
+
+/* ============ Google Maps (会場の検索・位置情報) ============
+   会場名の入力中に Places API (New) の候補を出し、選ばれた場所の
+   Place ID・正式名称・住所・緯度経度を LIVE 記録の venuePlace に保存する
+   （遠征マップ用）。APIキーは /api/config の googleMapsApiKey から受け取り、
+   キーが無いときは会場を手入力するだけになる。 */
+var MapsPlaces = (function(){
+  var loading = null;
+  var failed = false;
+  function available(){ return !failed && !!(appConfig && appConfig.googleMapsApiKey); }
+  function load(){
+    if(!available()) return Promise.reject(new Error("Google Maps API key is not configured"));
+    if(loading) return loading;
+    loading = new Promise(function(resolve, reject){
+      if(window.google && google.maps && google.maps.importLibrary){ resolve(); return; }
+      window.__oshikatsuMapsReady = function(){ resolve(); };
+      window.gm_authFailure = function(){ failed = true; console.warn("Google Maps API key was rejected"); };
+      var s = document.createElement("script");
+      s.src = "https://maps.googleapis.com/maps/api/js?key="+encodeURIComponent(appConfig.googleMapsApiKey)
+        + "&v=weekly&loading=async&language=ja&region=JP&callback=__oshikatsuMapsReady";
+      s.async = true;
+      s.onerror = function(){ loading = null; reject(new Error("Google Maps failed to load")); };
+      document.head.appendChild(s);
+    }).then(function(){ return google.maps.importLibrary("places"); });
+    loading.catch(function(){ loading = null; });
+    return loading;
+  }
+  return { available:available, load:load };
+})();
+
+/* Googleマップで場所を開くURL（APIキー不要） */
+function mapsUrlFor(venue, place){
+  var q = place && place.name ? place.name+(place.address ? " "+place.address : "") : (venue||"");
+  var url = "https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(q);
+  if(place && place.placeId) url += "&query_place_id="+encodeURIComponent(place.placeId);
+  return url;
+}
+
+/* LIVEフォームの会場欄に候補リストを付ける。返り値の getPlace() で、
+   入力中の会場名と一致する選択済みの場所（なければ null）を返す。 */
+function bindVenueAutocomplete(form, existingRec){
+  var input = form.querySelector('[name="venue"]');
+  var list = form.querySelector("#venueSuggest");
+  var info = form.querySelector("#venuePlaceInfo");
+  var place = existingRec && existingRec.venuePlace && existingRec.venuePlace.name===existingRec.venue ? existingRec.venuePlace : null;
+  var sessionToken = null, timer = null, seq = 0, items = [];
+
+  function renderInfo(){
+    var v = input.value.trim();
+    if(place){
+      info.innerHTML = (place.address ? '<span class="venue-address">'+escapeHtml(place.address)+'</span>' : '')
+        + '<a href="'+escapeHtml(mapsUrlFor(v, place))+'" target="_blank" rel="noopener noreferrer">Googleマップで開く</a>';
+    } else if(v){
+      info.innerHTML = '<a href="'+escapeHtml(mapsUrlFor(v, null))+'" target="_blank" rel="noopener noreferrer">Googleマップで開く</a>';
+    } else {
+      info.innerHTML = "";
+    }
+  }
+  function hideList(){ list.hidden = true; list.innerHTML = ""; items = []; }
+  function showList(){
+    if(!items.length){ hideList(); return; }
+    list.innerHTML = items.map(function(it, i){
+      return '<button type="button" class="venue-suggest-item" data-idx="'+i+'">'
+        + '<span class="main">'+escapeHtml(it.main)+'</span>'
+        + (it.sub ? '<span class="sub">'+escapeHtml(it.sub)+'</span>' : '')
+        + '</button>';
+    }).join("");
+    list.hidden = false;
+  }
+  async function search(q){
+    var mySeq = ++seq;
+    try{
+      var lib = await MapsPlaces.load();
+      if(!sessionToken) sessionToken = new lib.AutocompleteSessionToken();
+      var res = await lib.AutocompleteSuggestion.fetchAutocompleteSuggestions({
+        input:q, sessionToken:sessionToken, language:"ja", region:"jp"
+      });
+      if(mySeq!==seq) return;
+      items = (res.suggestions||[]).map(function(s){ return s.placePrediction; }).filter(Boolean).slice(0,5).map(function(p){
+        return {
+          prediction:p,
+          main:(p.mainText && p.mainText.text) || (p.text && p.text.text) || "",
+          sub:(p.secondaryText && p.secondaryText.text) || ""
+        };
+      });
+      showList();
+    }catch(e){
+      console.warn("venue autocomplete failed", e);
+      hideList();
+    }
+  }
+  async function choose(it){
+    hideList();
+    try{
+      var p = it.prediction.toPlace();
+      await p.fetchFields({fields:["id","displayName","formattedAddress","location"]});
+      place = {
+        placeId:p.id,
+        name:p.displayName || it.main,
+        address:p.formattedAddress || it.sub || "",
+        lat:p.location ? p.location.lat() : null,
+        lng:p.location ? p.location.lng() : null
+      };
+      input.value = place.name;
+    }catch(e){
+      console.warn("place details failed", e);
+      toast("会場の情報を取得できませんでした");
+      place = null;
+      input.value = it.main;
+    }
+    sessionToken = null;
+    renderInfo();
+  }
+
+  input.setAttribute("autocomplete", "off");
+  input.addEventListener("input", function(){
+    if(place && input.value.trim()!==place.name) place = null;
+    renderInfo();
+    clearTimeout(timer);
+    var q = input.value.trim();
+    if(!MapsPlaces.available() || q.length<2){ seq++; hideList(); return; }
+    timer = setTimeout(function(){ search(q); }, 250);
+  });
+  // blur より先に選べるよう mousedown で処理する
+  list.addEventListener("mousedown", function(e){
+    var btn = e.target.closest("[data-idx]");
+    if(!btn) return;
+    e.preventDefault();
+    choose(items[Number(btn.getAttribute("data-idx"))]);
+  });
+  input.addEventListener("blur", function(){ setTimeout(hideList, 150); });
+  input.addEventListener("keydown", function(e){
+    if(e.key==="Escape"){ hideList(); }
+    if(e.key==="Enter" && !list.hidden && items.length){ e.preventDefault(); choose(items[0]); }
+  });
+  renderInfo();
+  return {
+    getPlace:function(){ return place && input.value.trim()===place.name ? place : null; }
+  };
 }
 
 /* ============ account UI (login / signup / password reset) ============ */
@@ -2401,7 +2560,7 @@ function ticketHtml(type,r,withOshiTag){
   var titleText = r.title || (type==="goods"?r.item:"") || "(無題)";
   var metaBits = [];
   if(type==="live"){
-    if(r.venue) metaBits.push(escapeHtml(r.venue));
+    if(r.venue) metaBits.push('<a class="venue-link" href="'+escapeHtml(mapsUrlFor(r.venue, r.venuePlace))+'" target="_blank" rel="noopener noreferrer">'+escapeHtml(r.venue)+'</a>');
     if(r.ticketType) metaBits.push(escapeHtml(r.ticketType));
     if(r.seat) metaBits.push(escapeHtml(r.seat));
   } else if(type==="cheki"){
@@ -3051,7 +3210,11 @@ function recordFormHtml(type,rec){
   if(type==="live"){
     fields += recordPhotoFieldHtml("LIVE写真（任意）・チケット右側の背景になります");
     fields += '<div class="field"><label>公演・ツアー名</label><input type="text" name="title" value="'+(rec?escapeHtml(rec.title||""):"")+'" required></div>';
-    fields += '<div class="field"><label>会場（任意）</label><input type="text" name="venue" value="'+(rec?escapeHtml(rec.venue||""):"")+'"></div>';
+    fields += '<div class="field venue-field"><label>会場（任意）</label>'
+      + '<input type="text" name="venue" value="'+(rec?escapeHtml(rec.venue||""):"")+'">'
+      + '<div class="venue-suggest" id="venueSuggest" hidden></div>'
+      + '<div class="venue-place" id="venuePlaceInfo"></div>'
+      + '</div>';
     fields += '<div class="field"><label>配信URL（任意）</label><input type="url" name="streamUrl" autocomplete="off" value="'+(rec?escapeHtml(rec.streamUrl||""):"")+'"><div class="field-hint">配信ライブの場合はこちらにURLを入れてください</div></div>';
     fields += '<div class="field"><label>チケット種別（任意）</label>'
       + '<input type="text" name="ticketType" list="ticketTypeOptions" value="'+(rec?escapeHtml(rec.ticketType||""):"")+'">'
@@ -3527,6 +3690,8 @@ function bindRecordForm(type,existingRec){
   }
   renderOshiRows();
 
+  var venueAc = type==="live" ? bindVenueAutocomplete(form, existingRec) : null;
+
   var hasPhotoField = (type==="cheki" || type==="live");
   if(hasPhotoField){
     var elBtn = form.querySelector("#recPhotoPreviewBtn");
@@ -3604,6 +3769,7 @@ function bindRecordForm(type,existingRec){
     rec.groupId = oshiRows[0].groupId || "";
     if(type==="live"){
       rec.extraOshis = oshiRows.slice(1).map(function(r){ return {oshiId:r.oshiId, groupId:r.groupId||""}; });
+      rec.venuePlace = venueAc ? venueAc.getPlace() : null;
     }
     if(hasPhotoField){ rec.photo = chosenPhoto; }
     rec.favorite = favOn;

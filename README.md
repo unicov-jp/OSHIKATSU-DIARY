@@ -91,6 +91,7 @@ python3 -m http.server 8000
 （`groupId` はその記録がどのグループ活動かを表す任意フィールド。フォームでは推しを選ぶとメイングループがデフォルト選択される）
 
 - live固有: `title, venue, streamUrl, ticketType, seat, price, photo, extraOshis`
+  - `venuePlace`：会場を Google マップの候補から選んだときの場所 `{ placeId, name, address, lat, lng }`。手入力のままなら `null`（遠征マップ用）。
   - `extraOshis`：対バンなどで一緒に記録する2人目以降の推し `[{ oshiId, groupId }]`。1人目は従来どおり `oshiId` / `groupId`。
   - 推し別の集計（参戦回数・金額）では、`recHasOshi()` で `oshiId` と `extraOshis` の両方を対象にし、金額は `recAmountForOshi()` で人数に均等に割ります（合計の二重計上を防ぐため）。
   - フォームでは推しとグループを横並びで選び、LIVEのみ「＋ 推しを追加（対バン）」で行を増やせます。
@@ -114,6 +115,15 @@ python3 -m http.server 8000
 - ヘッダーへの推しグループロゴのアップロード（透過PNG対応）
 - お気に入り推しの切り替え（トップバーのドロップダウン）
 - メールアドレス / Googleアカウントでのログイン（ログイン必須）と、複数端末でのクラウド同期（マイページ →「アカウント」で、メールアドレスの確認、パスワードの設定・変更、Google認証の連携・解除、ログアウト）
+
+## 会場と Google マップ（遠征マップの準備）
+
+LIVE の「会場」欄で2文字以上入力すると、Google Places API (New) の候補（`AutocompleteSuggestion.fetchAutocompleteSuggestions`）を表示します。候補を選ぶと `place.fetchFields()` で正式名称・住所・緯度経度・Place ID を取得し、`venuePlace` に保存します。会場名を手で書き換えると `venuePlace` は外れます。
+
+- 会場名は、記録一覧で Google マップへのリンクになります（APIキー不要の検索URL）。
+- APIキーは Vercel の環境変数 `GOOGLE_MAPS_API_KEY` に設定し、`/api/config` の `googleMapsApiKey` でブラウザに渡します。キーが無いときは手入力のみで動きます。
+- Google Cloud で有効にする API：**Maps JavaScript API**、**Places API (New)**。キーは「HTTPリファラー」を `https://oshikatsu-diary.vercel.app/*` に制限し、API の制限もこの2つにしてください。
+- 今後「遠征マップ」を作るときは、`state.live` の `venuePlace.lat / lng` を使います。
 
 ## プライバシーポリシー
 

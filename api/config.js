@@ -1,6 +1,7 @@
 /* Vercel Serverless Function: GET /api/config
    Returns the public Supabase connection info (project URL + anon/publishable
-   key) from the project's environment variables, so index.html can stay a
+   key) and the browser Google Maps API key from the project's environment
+   variables, so index.html can stay a
    build-free static file. Only browser-safe values are ever returned: a key
    that turns out to be a service_role / secret key is refused. */
 
@@ -35,9 +36,11 @@ module.exports = function handler(req, res){
     "SUPABASE_ANON_KEY"
   ]);
   if(key && isSecretKey(key)) key = "";
+  // Google Maps のブラウザ用キー（HTTPリファラーで制限して使う前提）
+  var mapsKey = pick(env, ["GOOGLE_MAPS_API_KEY", "NEXT_PUBLIC_GOOGLE_MAPS_API_KEY"]);
 
   res.statusCode = 200;
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.setHeader("Cache-Control", "no-store");
-  res.end(JSON.stringify({ supabaseUrl: url, supabaseAnonKey: key }));
+  res.end(JSON.stringify({ supabaseUrl: url, supabaseAnonKey: key, googleMapsApiKey: mapsKey }));
 };
