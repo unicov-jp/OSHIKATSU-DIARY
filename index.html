@@ -355,15 +355,15 @@
     border:1.5px dashed var(--line-strong);border-radius:6px;padding:26px 18px 22px;text-align:center;color:var(--ink-soft);
     background-image:radial-gradient(var(--line) 1px, transparent 1.4px);background-size:12px 12px;
   }
-  .empty-state .cluster{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:14px;}
-  .empty-state .cluster span{
+  .empty-state .cluster,.auth-gate-hero .cluster{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:14px;}
+  .empty-state .cluster span,.auth-gate-hero .cluster span{
     width:38px;height:38px;border-radius:8px;background:var(--bg);border:1px solid var(--line-strong);
     display:flex;align-items:center;justify-content:center;box-shadow:0 2px 5px rgba(33,28,23,.12);
   }
-  .empty-state .cluster span:nth-child(1){transform:rotate(-9deg);}
-  .empty-state .cluster span:nth-child(2){transform:rotate(4deg) translateY(-4px);width:44px;height:44px;}
-  .empty-state .cluster span:nth-child(3){transform:rotate(10deg);}
-  .empty-state .cluster svg{width:18px;height:18px;stroke:var(--accent);fill:none;stroke-width:1.5;}
+  .empty-state .cluster span:nth-child(1),.auth-gate-hero .cluster span:nth-child(1){transform:rotate(-9deg);}
+  .empty-state .cluster span:nth-child(2),.auth-gate-hero .cluster span:nth-child(2){transform:rotate(4deg) translateY(-4px);width:44px;height:44px;}
+  .empty-state .cluster span:nth-child(3),.auth-gate-hero .cluster span:nth-child(3){transform:rotate(10deg);}
+  .empty-state .cluster svg,.auth-gate-hero .cluster svg{width:18px;height:18px;stroke:var(--accent);fill:none;stroke-width:1.5;}
   .empty-state > svg{width:30px;height:30px;stroke:var(--ink-soft);fill:none;stroke-width:1.3;margin-bottom:10px;}
   .empty-state p{margin:0 0 14px;font-size:12.5px;line-height:1.7;}
 
@@ -416,6 +416,18 @@
   .field-hint{font-size:10.5px;color:var(--ink-soft);margin-top:5px;line-height:1.6;}
   .sheet-actions{display:flex;gap:10px;margin-top:18px;}
   .sheet-actions .btn{flex:1;}
+
+  /* ---------- login gate (未ログイン時はログイン画面のみ) ---------- */
+  #app.booting nav.tabs,#app.booting .fab,#app.booting .header-logo-btn,
+  #app.auth-gate nav.tabs,#app.auth-gate .fab,#app.auth-gate .header-logo-btn,#app.auth-gate .oshi-chip{display:none !important;}
+  .auth-gate-page{max-width:420px;margin:8px auto 0;}
+  .auth-gate-hero{text-align:center;margin:10px 0 18px;}
+  .auth-gate-hero .cluster{justify-content:center;margin-bottom:12px;}
+  .auth-gate-hero h1{font-size:21px;margin:0 0 8px;color:var(--heading);}
+  .auth-gate-hero p{margin:0;font-size:12.5px;line-height:1.8;color:var(--ink-soft);}
+  .auth-card{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:18px 16px 14px;}
+  .auth-card h2{font-size:16px;margin:0 0 14px;color:var(--heading);}
+  .auth-submit{margin-top:14px;}
 
   /* ---------- account / cloud sync ---------- */
   .account-card{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:14px;margin-bottom:6px;}
@@ -626,7 +638,7 @@
 </style>
 </head>
 <body>
-<div id="app" class="no-oshi">
+<div id="app" class="no-oshi booting">
   <div class="topbar">
     <div class="brand">
       <span class="word mincho">推し活手帳</span>
@@ -752,6 +764,7 @@ var state = {
   statsSubView:"oshi",
   calendarMonth:(function(){ var d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); })(),
   calendarSelectedDate:null,
+  authMode:"login",     // login | signup | reset (ログイン画面の表示モード)
   ready:false
 };
 var storageMode = "local";
@@ -1486,7 +1499,9 @@ function leaveUserMode(){
   cloud.lastPulledAt = null;
   cloud.lastSyncedAt = null;
   cloud.status = "idle";
-  loadLocal();
+  applyStored(null);
+  state.view = "home";
+  state.authMode = "login";
   state.ready = true;
   render();
 }
@@ -1564,7 +1579,7 @@ async function initStorage(){
     }
   }
   if(!sb){
-    loadLocal();
+    applyStored(null);
     state.ready = true;
     render();
     return;
@@ -1577,9 +1592,12 @@ async function initStorage(){
   if(session && session.user){
     enterUserMode(session.user);
   } else {
-    loadLocal();
+    applyStored(null);
     state.ready = true;
     render();
+  }
+  if(location.hash==="#" || location.href.slice(-1)==="#"){
+    try{ history.replaceState(null, "", location.pathname+location.search); }catch(e){}
   }
   // Supabase の推奨どおり、コールバック内では await せず次のタスクで処理する
   sb.auth.onAuthStateChange(function(event, s){
@@ -1604,21 +1622,14 @@ var GOOGLE_ICON = '<svg class="google-icon" viewBox="0 0 48 48" aria-hidden="tru
   + '</svg>';
 
 function accountSectionHtml(){
-  var html = '<div class="section-label">アカウント・同期</div><div class="account-card">';
-  if(!cloud.configured){
-    html += '<p class="account-note">クラウド同期は利用できません。記録はこの端末（ブラウザ）にのみ保存されます。</p>';
-  } else if(!cloud.user){
-    html += '<p class="account-note">ログインすると記録がクラウドに保存され、スマホやPCなど複数の端末で同じ記録を見られます。</p>'
-      + '<button class="btn primary block" data-action="open-login">ログイン / 新規登録</button>';
-  } else {
-    html += '<div class="account-line"><span class="account-label">ログイン中</span><b>'+escapeHtml(cloud.user.email||"")+'</b></div>'
-      + '<div class="account-line"><span class="sync-dot '+cloud.status+'" id="syncStatusDot"></span><span id="syncStatusText">'+escapeHtml(syncStatusText())+'</span></div>'
-      + '<div class="account-actions">'
-      +   '<button class="btn" data-action="sync-now">今すぐ同期</button>'
-      +   '<button class="btn ghost" data-action="logout">ログアウト</button>'
-      + '</div>';
-  }
-  return html + '</div>';
+  if(!cloud.user) return '';
+  return '<div class="section-label">アカウント・同期</div><div class="account-card">'
+    + '<div class="account-line"><span class="account-label">ログイン中</span><b>'+escapeHtml(cloud.user.email||"")+'</b></div>'
+    + '<div class="account-line"><span class="sync-dot '+cloud.status+'" id="syncStatusDot"></span><span id="syncStatusText">'+escapeHtml(syncStatusText())+'</span></div>'
+    + '<div class="account-actions">'
+    +   '<button class="btn" data-action="sync-now">今すぐ同期</button>'
+    +   '<button class="btn ghost" data-action="logout">ログアウト</button>'
+    + '</div></div>';
 }
 
 function authErrorMessage(err){
@@ -1633,11 +1644,35 @@ function authErrorMessage(err){
   return "エラーが発生しました"+(m ? "（"+m+"）" : "")+"。";
 }
 
-function openAuthSheet(mode){
-  if(!sb){ toast("クラウド同期が設定されていません"); return; }
-  mode = mode || "login";
+/* ログイン必須: 未ログイン時は #main にこのログイン画面だけを描く（タブ等は CSS で隠す） */
+function renderAuthGate(){
+  var mode = state.authMode || "login";
+  var html = '<div class="auth-gate-page">'
+    + '<div class="auth-gate-hero">'
+    +   iconCluster()
+    +   '<h1 class="mincho">推し活手帳へようこそ</h1>'
+    +   '<p>LIVE参戦・チェキ・物販の記録を、スマホでもPCでも。<br>ログインして始めましょう。</p>'
+    + '</div>'
+    + '<div class="auth-card" id="authBox"></div>'
+    + '</div>';
+  document.getElementById("main").innerHTML = html;
+  var box = document.getElementById("authBox");
+  if(!sb){
+    box.innerHTML = '<p class="account-note">サーバーに接続できませんでした。通信環境を確認して、ページを再読み込みしてください。</p>'
+      + '<button type="button" class="btn primary block" id="authReloadBtn">再読み込み</button>';
+    document.getElementById("authReloadBtn").addEventListener("click", function(){ location.reload(); });
+    return;
+  }
+  box.innerHTML = authFormHtml(mode);
+  bindAuthForm(box, mode, function(next){
+    state.authMode = next;
+    renderAuthGate();
+  });
+}
+
+function authFormHtml(mode){
   var title = mode==="signup" ? "新規登録" : (mode==="reset" ? "パスワードの再設定" : "ログイン");
-  var submitLabel = mode==="signup" ? "登録する" : (mode==="reset" ? "再設定メールを送る" : "ログイン");
+  var submitLabel = mode==="signup" ? "登録する" : (mode==="reset" ? "再設定メールを送る" : "メールアドレスでログイン");
   var html = '<h2 class="mincho">'+title+'</h2>';
   if(mode!=="reset"){
     html += '<button type="button" class="btn block google-btn" data-auth="google">'+GOOGLE_ICON+'<span>Googleアカウントで'+(mode==="signup"?"登録":"ログイン")+'</span></button>'
@@ -1645,18 +1680,16 @@ function openAuthSheet(mode){
   } else {
     html += '<p class="account-note">登録したメールアドレスに、新しいパスワードを設定するためのリンクを送ります。</p>';
   }
-  html += '<form id="authForm" novalidate>'
+  html += '<form data-auth-form novalidate>'
     + '<div class="field"><label for="authEmail">メールアドレス</label>'
-    +   '<input type="email" id="authEmail" autocomplete="email" inputmode="email" placeholder="you@example.com" required></div>';
+    +   '<input type="email" id="authEmail" autocomplete="email" inputmode="email" required></div>';
   if(mode!=="reset"){
     html += '<div class="field"><label for="authPassword">パスワード'+(mode==="signup"?"（6文字以上）":"")+'</label>'
       + '<input type="password" id="authPassword" autocomplete="'+(mode==="signup"?"new-password":"current-password")+'" minlength="6" required></div>';
   }
   html += '<p class="auth-msg" id="authMsg"></p>'
-    + '<div class="sheet-actions">'
-    +   '<button type="button" class="btn ghost" data-auth="cancel">キャンセル</button>'
-    +   '<button type="submit" class="btn primary" id="authSubmit">'+submitLabel+'</button>'
-    + '</div></form>'
+    + '<button type="submit" class="btn primary block auth-submit" id="authSubmit">'+submitLabel+'</button>'
+    + '</form>'
     + '<div class="auth-links">';
   if(mode==="login"){
     html += '<button type="button" class="link-btn" data-auth-mode="signup">アカウントをお持ちでない方は新規登録</button>'
@@ -1664,19 +1697,19 @@ function openAuthSheet(mode){
   } else {
     html += '<button type="button" class="link-btn" data-auth-mode="login">ログイン画面に戻る</button>';
   }
-  html += '</div>';
-  openSheet(html);
+  return html + '</div>';
+}
 
-  var form = document.getElementById("authForm");
-  var msg = document.getElementById("authMsg");
-  var submitBtn = document.getElementById("authSubmit");
+function bindAuthForm(root, mode, switchMode){
+  var form = root.querySelector("[data-auth-form]");
+  var msg = root.querySelector("#authMsg");
+  var submitBtn = root.querySelector("#authSubmit");
   function showMsg(text, kind){ msg.textContent = text; msg.className = "auth-msg "+(kind||""); }
 
-  sheetEl.querySelectorAll("[data-auth-mode]").forEach(function(b){
-    b.addEventListener("click", function(){ openAuthSheet(b.getAttribute("data-auth-mode")); });
+  root.querySelectorAll("[data-auth-mode]").forEach(function(b){
+    b.addEventListener("click", function(){ switchMode(b.getAttribute("data-auth-mode")); });
   });
-  sheetEl.querySelector('[data-auth="cancel"]').addEventListener("click", closeSheet);
-  var googleBtn = sheetEl.querySelector('[data-auth="google"]');
+  var googleBtn = root.querySelector('[data-auth="google"]');
   if(googleBtn){
     googleBtn.addEventListener("click", async function(){
       googleBtn.disabled = true;
@@ -1686,8 +1719,8 @@ function openAuthSheet(mode){
   }
   form.addEventListener("submit", async function(e){
     e.preventDefault();
-    var email = document.getElementById("authEmail").value.trim();
-    var pwEl = document.getElementById("authPassword");
+    var email = root.querySelector("#authEmail").value.trim();
+    var pwEl = root.querySelector("#authPassword");
     var password = pwEl ? pwEl.value : "";
     if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ showMsg("メールアドレスを正しく入力してください。", "error"); return; }
     if(mode!=="reset" && password.length<6){ showMsg("パスワードは6文字以上で入力してください。", "error"); return; }
@@ -1698,7 +1731,6 @@ function openAuthSheet(mode){
       if(mode==="login"){
         res = await sb.auth.signInWithPassword({email:email, password:password});
         if(res.error) throw res.error;
-        closeSheet();
         toast("ログインしました");
         return;
       }
@@ -1706,7 +1738,6 @@ function openAuthSheet(mode){
         res = await sb.auth.signUp({email:email, password:password, options:{emailRedirectTo:appUrl()}});
         if(res.error) throw res.error;
         if(res.data && res.data.session){
-          closeSheet();
           toast("登録してログインしました");
           return;
         }
@@ -1719,7 +1750,7 @@ function openAuthSheet(mode){
     }catch(err){
       showMsg(authErrorMessage(err), "error");
     }finally{
-      submitBtn.disabled = false;
+      if(submitBtn.isConnected) submitBtn.disabled = false;
     }
   });
 }
@@ -2672,6 +2703,17 @@ function renderTopChipMenu(){
 /* ============ router ============ */
 function render(){
   var app = document.getElementById("app");
+  app.classList.remove("booting");
+  var gated = !cloud.user;
+  app.classList.toggle("auth-gate", gated);
+  if(gated){
+    applyTheme(null);
+    app.classList.add("no-oshi");
+    document.getElementById("topChip").style.display = "none";
+    closeSheet();
+    renderAuthGate();
+    return;
+  }
   var oshi = activeOshi();
   applyTheme(oshi);
   app.classList.toggle("no-oshi", !oshi);
@@ -2830,7 +2872,7 @@ function oshiFormHtml(oshi){
     +       '</div>'
     +     '</div>'
     +   '</div>'
-    +   '<div class="field"><label>人物名</label><input type="text" name="name" required maxlength="30" value="'+(oshi?escapeHtml(oshi.name):"")+'" placeholder="例：儚寧この"></div>'
+    +   '<div class="field"><label>人物名</label><input type="text" name="name" required maxlength="30" value="'+(oshi?escapeHtml(oshi.name):"")+'"></div>'
     +   '<div class="field"><label>生年月日</label>'
     +     '<div class="row3">'
     +       '<select name="birthYear">'+yearOpts+'</select>'
@@ -2839,7 +2881,7 @@ function oshiFormHtml(oshi){
     +     '</div>'
     +     '<div class="field-hint">年を空欄にすると年齢は非公開になります</div>'
     +   '</div>'
-    +   '<div class="field"><label>所属</label><input type="text" name="agency" maxlength="40" value="'+(oshi?escapeHtml(oshi.agency||""):"")+'" placeholder="例：HEROINES"></div>'
+    +   '<div class="field"><label>所属</label><input type="text" name="agency" maxlength="40" value="'+(oshi?escapeHtml(oshi.agency||""):"")+'"></div>'
     +   '<div class="field"><label>グループ</label>'
     +     '<div class="group-card-list">'+groupCardsHtml+'</div>'
     +     '<button type="button" class="btn ghost block" id="addGroupBtn" style="margin-top:'+(groupsList.length?"10px":"0")+';">＋ グループを追加</button>'
@@ -2885,11 +2927,11 @@ function recordFormHtml(type,rec){
 
   if(type==="live"){
     fields += recordPhotoFieldHtml("LIVE写真（任意）・チケット右側の背景になります");
-    fields += '<div class="field"><label>公演・ツアー名</label><input type="text" name="title" value="'+(rec?escapeHtml(rec.title||""):"")+'" placeholder="例：〇〇 LIVE TOUR" required></div>';
-    fields += '<div class="field"><label>会場（任意）</label><input type="text" name="venue" value="'+(rec?escapeHtml(rec.venue||""):"")+'" placeholder="例：〇〇ホール"></div>';
-    fields += '<div class="field"><label>配信URL（任意）</label><input type="url" name="streamUrl" autocomplete="off" value="'+(rec?escapeHtml(rec.streamUrl||""):"")+'" placeholder="例：配信ライブの視聴ページURL"><div class="field-hint">配信ライブの場合はこちらにURLを入れてください</div></div>';
+    fields += '<div class="field"><label>公演・ツアー名</label><input type="text" name="title" value="'+(rec?escapeHtml(rec.title||""):"")+'" required></div>';
+    fields += '<div class="field"><label>会場（任意）</label><input type="text" name="venue" value="'+(rec?escapeHtml(rec.venue||""):"")+'"></div>';
+    fields += '<div class="field"><label>配信URL（任意）</label><input type="url" name="streamUrl" autocomplete="off" value="'+(rec?escapeHtml(rec.streamUrl||""):"")+'"><div class="field-hint">配信ライブの場合はこちらにURLを入れてください</div></div>';
     fields += '<div class="field"><label>チケット種別（任意）</label>'
-      + '<input type="text" name="ticketType" list="ticketTypeOptions" value="'+(rec?escapeHtml(rec.ticketType||""):"")+'" placeholder="例：一般 ／ FC限定 ／ プレイガイド最速">'
+      + '<input type="text" name="ticketType" list="ticketTypeOptions" value="'+(rec?escapeHtml(rec.ticketType||""):"")+'">'
       + '<datalist id="ticketTypeOptions">'
       +   '<option value="一般"></option>'
       +   '<option value="FC限定"></option>'
@@ -2901,27 +2943,27 @@ function recordFormHtml(type,rec){
       + '</datalist>'
       + '</div>';
     fields += '<div class="field row2">'
-      + '<div><label>座席・ブロック（任意）</label><input type="text" name="seat" value="'+(rec?escapeHtml(rec.seat||""):"")+'" placeholder="例：Aブロック"></div>'
+      + '<div><label>座席・ブロック（任意）</label><input type="text" name="seat" value="'+(rec?escapeHtml(rec.seat||""):"")+'"></div>'
       + '<div><label>チケット代（任意）</label><input type="number" name="price" min="0" value="'+(rec?rec.price||"":"")+'" placeholder="0"></div>'
       + '</div>';
   } else if(type==="cheki"){
     fields += recordPhotoFieldHtml("チェキ写真（任意）");
-    fields += '<div class="field"><label>イベント名</label><input type="text" name="title" value="'+(rec?escapeHtml(rec.title||""):"")+'" placeholder="例：特典会 〇〇会場" required></div>';
+    fields += '<div class="field"><label>イベント名</label><input type="text" name="title" value="'+(rec?escapeHtml(rec.title||""):"")+'" required></div>';
     fields += '<div class="field row2">'
       + '<div><label>枚数（任意）</label><input type="number" name="count" min="1" value="'+(rec?rec.count||1:1)+'"></div>'
       + '<div><label>合計金額（任意）</label><input type="number" name="price" min="0" value="'+(rec?rec.price||"":"")+'" placeholder="0"></div>'
       + '</div>';
-    fields += '<div class="field"><label>話した内容・会話メモ（任意）</label><input type="text" name="content" value="'+(rec?escapeHtml(rec.content||""):"")+'" placeholder="例：新曲の感想を伝えた"></div>';
+    fields += '<div class="field"><label>話した内容・会話メモ（任意）</label><input type="text" name="content" value="'+(rec?escapeHtml(rec.content||""):"")+'"></div>';
   } else {
-    fields += '<div class="field"><label>イベント名・購入先（任意）</label><input type="text" name="title" value="'+(rec?escapeHtml(rec.title||""):"")+'" placeholder="例：〇〇 グッズ売り場"></div>';
-    fields += '<div class="field"><label>商品名</label><input type="text" name="item" value="'+(rec?escapeHtml(rec.item||""):"")+'" placeholder="例：ペンライト" required></div>';
+    fields += '<div class="field"><label>イベント名・購入先（任意）</label><input type="text" name="title" value="'+(rec?escapeHtml(rec.title||""):"")+'"></div>';
+    fields += '<div class="field"><label>商品名</label><input type="text" name="item" value="'+(rec?escapeHtml(rec.item||""):"")+'" required></div>';
     fields += '<div class="field row2">'
       + '<div><label>単価（任意）</label><input type="number" name="price" min="0" value="'+(rec?rec.price||"":"")+'" placeholder="0"></div>'
       + '<div><label>数量（任意）</label><input type="number" name="qty" min="1" value="'+(rec?rec.qty||1:1)+'"></div>'
       + '</div>';
   }
   fields += '<div class="field"><label>メモ（任意）</label><textarea name="memo" placeholder="自由にメモを残せます">'+(rec?escapeHtml(rec.memo||""):"")+'</textarea></div>';
-  fields += '<div class="field"><label>タグ（任意）</label><input type="text" name="tag" maxlength="20" value="'+(rec?escapeHtml(rec.tag||""):"")+'" placeholder="例：本命・限定・ソロ"></div>';
+  fields += '<div class="field"><label>タグ（任意）</label><input type="text" name="tag" maxlength="20" value="'+(rec?escapeHtml(rec.tag||""):"")+'"></div>';
   fields += '<div class="field toggle-row">'
     + '<button type="button" class="toggle-chip" id="favToggle"><svg viewBox="0 0 24 24"><path d="M12 3l2.6 6 6.4.6-4.9 4.2 1.5 6.2L12 16.9 6.4 20l1.5-6.2-4.9-4.2 6.4-.6z"/></svg>お気に入り</button>'
     + '<button type="button" class="toggle-chip" id="hideToggle"><svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/><line x1="3" y1="21" x2="21" y2="3"/></svg>非表示にする</button>'
@@ -3418,7 +3460,6 @@ function onAppClick(e){
   var action = el.getAttribute("data-action");
 
   if(action==="add-oshi"){ openOshiSheet(null); return; }
-  if(action==="open-login"){ openAuthSheet("login"); return; }
   if(action==="sync-now"){ syncNow(); return; }
   if(action==="logout"){ logout(); return; }
   if(action==="edit-oshi"){ openOshiSheet(getOshi(el.getAttribute("data-id"))); return; }
