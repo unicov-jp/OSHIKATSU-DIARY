@@ -95,7 +95,8 @@ python3 -m http.server 8000
   - `venuePlace`：会場を Google マップの候補から選んだときの場所 `{ placeId, name, address, lat, lng }`。手入力のままなら `null`（遠征マップ用）。
   - `extraOshis`：対バンなどで一緒に記録する2人目以降の推し `[{ oshiId, groupId }]`。1人目は従来どおり `oshiId` / `groupId`。
   - 推し別の集計（参戦回数・金額）では、`recHasOshi()` で `oshiId` と `extraOshis` の両方を対象にし、金額は `recAmountForOshi()` で人数に均等に割ります（合計の二重計上を防ぐため）。
-  - フォームでは推しとグループを横並びで選び、LIVEのみ「＋ 推しを追加」で行を増やせます。
+  - フォームでは推しとグループを横並びで選び、LIVEのみ「＋ 推しを追加」で行を増やせます。LIVEの行は「人物名・グループ名・チェキボタン・✕ボタン」の4列（1行目は✕の位置を空けて列をそろえる）。
+  - チェキボタンを押すと、その行の推し・グループと、LIVEの日付・公演・ツアー名で、チェキの記録（1枚・金額0）をすぐに追加します。
 - cheki固有: `title, count, price, content, photo`
 - goods固有: `title, item, price, qty, photo, shopUrl`（`shopUrl` はONLINE物販のURL。`safeWebUrl()` で http(s) のみ保存し、一覧に「購入ページを見る」リンクを表示）（写真はLIVEと同じくチケット右側の背景に表示）
 
