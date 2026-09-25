@@ -21,7 +21,7 @@ python3 -m http.server 8000
 
 ## クラウド同期（Supabase）とログイン
 
-ログインすると記録が Supabase に保存され、複数の端末で同期されます。未ログイン時や、`index.html` をファイルとして直接開いた場合は、これまで通りこの端末の `localStorage` だけに保存します（ゲストモード）。
+**ログイン必須**です。未ログイン時はログイン画面だけを表示し、タブ・＋ボタン・ヘッダーの操作は隠します（`render()` の先頭で `renderAuthGate()` に切り替え、`#app.auth-gate` のCSSで非表示）。ログインすると記録が Supabase に保存され、複数の端末で同期されます。接続情報を取得できない場合（`index.html` をファイルとして直接開いた場合を含む）は、接続できない旨と再読み込みボタンを表示します。
 
 - **ログイン方法**：メールアドレス＋パスワード（新規登録・パスワード再設定あり）、Googleアカウント
 - **接続情報**：`api/config.js`（Vercel Serverless Function）が、Vercel の環境変数 `NEXT_PUBLIC_SUPABASE_URL` と `NEXT_PUBLIC_SUPABASE_ANON_KEY`（または `..._PUBLISHABLE_KEY`）を `/api/config` で返します。service_role / secret キーは返さないようにしています。
@@ -37,7 +37,7 @@ python3 -m http.server 8000
 - `saveLocal()` が呼ばれると、「最後にクラウドと一致していた内容のハッシュ」と比べて、変更・追加・削除された行だけを送信します（0.8秒のデバウンス）。
 - 受信は `updated_at` による差分取得です。画面に戻ったとき、オンラインに復帰したとき、1分ごと、「今すぐ同期」を押したときに行います。
 - 同じ行を複数の端末で編集した場合は、後から保存した方が残ります。
-- ログイン前にその端末で付けていた記録は、初回ログイン時に確認のうえアカウントへ取り込めます。
+- ログイン必須化より前にその端末で付けていた記録（`oshikatsu_diary_v1`）は、ログイン時に確認のうえアカウントへ取り込めます。
 - ログアウトすると、その端末のユーザー別キャッシュは削除されます。
 
 ### Supabase / Google 側の設定
@@ -52,8 +52,8 @@ python3 -m http.server 8000
 ## 技術構成
 
 - **1ファイル完結**：`index.html` の中にCSS（`<style>`）とJS（`<script>`）がすべて内包されています。ビルドツールは使用していません（vanilla JS / vanilla CSS）。外部ライブラリは同梱の supabase-js のみです。
-- **データ保存**：ゲストモードはブラウザの `localStorage` のみ。ログイン中は Supabase と同期します（上記参照）。
-  - キー: `oshikatsu_diary_v1`（ゲスト）、`oshikatsu_diary_v1:u:<userId>`（ログイン中のキャッシュ）
+- **データ保存**：Supabase が正本で、ブラウザの `localStorage` にユーザー別のキャッシュを持ちます（上記参照）。
+  - キー: `oshikatsu_diary_v1:u:<userId>`（ログイン中のキャッシュ）、`oshikatsu_diary_v1`（ログイン必須化以前のデータ。初回ログイン時に取り込み可）
   - 中身: `{ oshis, live, cheki, goods, activeOshiId, headerLogo }`
 - **画像**：アップロードされた写真はすべて `dataURL`（base64）としてlocalStorageに直接保存されます。ファイルアップロードは `resizeImageFile`（JPEG化・不透明画像用）と `resizeImageFilePreserveAlpha`（PNG化・透過を保持したい画像用、ヘッダーロゴなど）の2種類のリサイズ関数を使い分けています。
 
@@ -98,7 +98,7 @@ python3 -m http.server 8000
 - 統計（推し別／イベント別／期間別／カレンダー）
 - ヘッダーへの推しグループロゴのアップロード（透過PNG対応）
 - お気に入り推しの切り替え（トップバーのドロップダウン）
-- メールアドレス / Googleアカウントでのログインと、複数端末でのクラウド同期（マイページ →「アカウント・同期」）
+- メールアドレス / Googleアカウントでのログイン（ログイン必須）と、複数端末でのクラウド同期（マイページ →「アカウント・同期」）
 
 ## Claude Codeでの作業にあたって
 
