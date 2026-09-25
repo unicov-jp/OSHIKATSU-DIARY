@@ -168,7 +168,6 @@
   }
   .sns-caption-text{min-width:0;overflow:hidden;text-overflow:ellipsis;}
   .sns-scope-row .sns-links{flex:none;}
-  .sns-slot-spacer{width:28px;height:28px;flex:none;}
   .sns-block.on-accent .sns-caption{color:rgba(255,255,255,.78);}
   .group-color-dot{width:8px;height:8px;border-radius:50%;flex:none;box-shadow:0 0 0 1px rgba(0,0,0,.15);}
   .avatar{border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px rgba(255,255,255,.55);color:#fff;}
@@ -602,7 +601,6 @@
   /* SNSは推しの行の下に全幅で並べ、右端（操作ボタンの下）まで使う。
      左端は名前の位置（つまみ12px＋余白12px＋写真38px＋余白12px）にそろえる */
   .oshi-row .sns-block{flex:0 0 100%;box-sizing:border-box;padding-left:74px;margin-top:6px;gap:4px;}
-  .oshi-row .sns-slot-spacer{width:22px;height:22px;}
   /* 推し一覧では右端まで寄せず、名前の欄を最大140pxにしてその右に並べる（狭い画面では縮む） */
   .oshi-row .sns-caption{flex:0 1 140px;}
   .oshi-row .sns-caption{font-size:8.5px;}
@@ -2251,6 +2249,8 @@ var SNS_KEYS = ["instagram","x","tiktok","youtube"];
 /* グループは末尾に「公式HP」（IDではなくURLを保存）を持つ。
    個人SNSと同じ並びのアイコンが縦にそろうよう、共通の4つを先に並べる。 */
 var GROUP_SNS_KEYS = SNS_KEYS.concat(["web"]);
+/* 個人も同じ並び（Instagram・X・TikTok・YouTube・公式HP）にする */
+var PERSON_SNS_KEYS = GROUP_SNS_KEYS;
 /* 公式HPのURLを http(s) のみに正規化する。スキーム省略時は https:// を補う。
    javascript: など http(s) 以外は空文字にしてリンクにしない。 */
 function safeWebUrl(v){
@@ -2305,9 +2305,9 @@ function snsIconHtml(k, val){
     + '<svg viewBox="0 0 24 24">'+meta.icon+'</svg></span>';
 }
 function snsIconsHtml(oshi, scope){
-  var hasAny = SNS_KEYS.some(function(k){ return getSnsValue(oshi, scope, k); });
+  var hasAny = PERSON_SNS_KEYS.some(function(k){ return getSnsValue(oshi, scope, k); });
   if(!hasAny) return "";
-  return SNS_KEYS.map(function(k){ return snsIconHtml(k, getSnsValue(oshi, scope, k)); }).join("");
+  return PERSON_SNS_KEYS.map(function(k){ return snsIconHtml(k, getSnsValue(oshi, scope, k)); }).join("");
 }
 /* Same as snsIconsHtml, but for one group object's own sns_<key> fields
    (a group isn't "scoped" off the oshi the way person/legacy data is —
@@ -2321,9 +2321,8 @@ function groupSnsIconsHtml(group){
    (掛け持ち-friendly), each labeled with that group's own real name rather
    than a generic "グループ" caption. Rows with nothing registered are
    omitted entirely. */
-/* 個人とグループの行でアイコンの列がそろうよう、アイコンは右寄せにし、
-   グループにだけある「公式HP」の位置には個人の行で空き枠を入れる。
-   名前の欄は残りの幅いっぱいに使い、入りきらないときだけ省略する。 */
+/* 個人とグループは同じ5つ（Instagram・X・TikTok・YouTube・公式HP）を同じ順で並べ、
+   列をそろえる。名前の欄は残りの幅を使い、入りきらないときだけ省略する。 */
 function snsLinksHtml(oshi, variant){
   var onAccent = variant==="hero";
   var linksCls = 'sns-links'+(onAccent?' on-accent':'');
@@ -2343,8 +2342,7 @@ function snsLinksHtml(oshi, variant){
   var personIcons = snsIconsHtml(oshi, "person");
   if(personIcons){
     var mainColor = (oshiGroupsList(oshi)[0] && oshiGroupsList(oshi)[0].color) || "";
-    var spacer = groupRows ? '<span class="sns-slot-spacer" aria-hidden="true"></span>' : '';
-    rows += '<div class="sns-scope-row">'+caption(mainColor, "個人")+'<div class="'+linksCls+'">'+personIcons+spacer+'</div></div>';
+    rows += '<div class="sns-scope-row">'+caption(mainColor, "個人")+'<div class="'+linksCls+'">'+personIcons+'</div></div>';
   }
   rows += groupRows;
   if(!rows) return "";
@@ -3342,7 +3340,7 @@ function oshiFormHtml(oshi){
     +       '</div>'
     +       '<div class="identity-duo-col">'
     +         '<label>個人SNS</label>'
-    +         '<div class="identity-row">'+snsIconPickerHtml("person", "個人", function(k){ return oshi ? getSnsValue(oshi,"person",k) : ""; })+'</div>'
+    +         '<div class="identity-row">'+snsIconPickerHtml("person", "個人", function(k){ return oshi ? getSnsValue(oshi,"person",k) : ""; }, PERSON_SNS_KEYS)+'</div>'
     +       '</div>'
     +     '</div>'
     +   '</div>'
@@ -3488,10 +3486,10 @@ function bindOshiForm(existingOshi){
   }
 
   var snsCombos = [];
-  SNS_KEYS.forEach(function(k){ snsCombos.push("person_"+k); });
+  PERSON_SNS_KEYS.forEach(function(k){ snsCombos.push("person_"+k); });
   draftGroups.forEach(function(g,i){ GROUP_SNS_KEYS.forEach(function(k){ snsCombos.push("grp"+i+"_"+k); }); });
   var chosenSns = {};
-  SNS_KEYS.forEach(function(k){
+  PERSON_SNS_KEYS.forEach(function(k){
     chosenSns["person_"+k] = existingOshi ? getSnsValue(existingOshi, "person", k) : "";
   });
   draftGroups.forEach(function(g,i){
@@ -3549,7 +3547,7 @@ function bindOshiForm(existingOshi){
       createdAt: existingOshi ? existingOshi.createdAt : Date.now(),
       groups: groups
     };
-    SNS_KEYS.forEach(function(k){ draft["sns_person_"+k] = chosenSns["person_"+k] || ""; });
+    PERSON_SNS_KEYS.forEach(function(k){ draft["sns_person_"+k] = chosenSns["person_"+k] || ""; });
     return draft;
   }
 
@@ -3836,7 +3834,7 @@ function bindOshiForm(existingOshi){
       hidden: isEditingReal ? !!existingOshi.hidden : false,
       createdAt: isEditingReal ? existingOshi.createdAt : Date.now()
     };
-    SNS_KEYS.forEach(function(k){ oshi["sns_person_"+k] = chosenSns["person_"+k] || ""; });
+    PERSON_SNS_KEYS.forEach(function(k){ oshi["sns_person_"+k] = chosenSns["person_"+k] || ""; });
     await persistOshi(oshi);
     if(!state.activeOshiId){ await setActiveOshi(oshi.id); }
     closeSheet();
