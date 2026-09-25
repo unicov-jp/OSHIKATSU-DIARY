@@ -162,10 +162,13 @@
   .sns-scope-row{display:flex;align-items:center;gap:9px;}
   .sns-scope-row .sns-links{margin-top:0;}
   .sns-caption{
-    font-size:9.5px;font-weight:700;color:var(--ink-soft);width:64px;min-width:64px;max-width:64px;flex:none;
-    letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    font-size:9.5px;font-weight:700;color:var(--ink-soft);flex:1 1 auto;min-width:0;
+    letter-spacing:.02em;white-space:nowrap;
     display:inline-flex;align-items:center;gap:4px;justify-content:flex-start;
   }
+  .sns-caption-text{min-width:0;overflow:hidden;text-overflow:ellipsis;}
+  .sns-scope-row .sns-links{flex:none;}
+  .sns-slot-spacer{width:28px;height:28px;flex:none;}
   .sns-block.on-accent .sns-caption{color:rgba(255,255,255,.78);}
   .group-color-dot{width:8px;height:8px;border-radius:50%;flex:none;box-shadow:0 0 0 1px rgba(0,0,0,.15);}
   .avatar{border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px rgba(255,255,255,.55);color:#fff;}
@@ -350,6 +353,25 @@
     box-shadow:0 1px 3px rgba(33,28,23,.18);
   }
   .ticket button.editbtn svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.6;}
+  .ticket button.zoombtn{
+    position:absolute;bottom:6px;right:6px;border:none;background:rgba(20,17,13,.55);color:#FBF8F3;
+    width:24px;height:24px;display:flex;align-items:center;justify-content:center;cursor:pointer;border-radius:50%;
+  }
+  .ticket button.zoombtn svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:1.8;}
+
+  /* ---------- photo viewer (写真を画面いっぱいに表示) ---------- */
+  .photo-viewer{
+    position:fixed;inset:0;z-index:90;background:rgba(10,8,6,.92);
+    display:flex;align-items:center;justify-content:center;
+    padding:calc(12px + var(--safe-t)) 12px calc(12px + var(--safe-b));
+  }
+  .photo-viewer[hidden]{display:none;}
+  .photo-viewer img{width:100%;height:100%;object-fit:contain;}
+  .photo-viewer-close{
+    position:absolute;top:calc(12px + var(--safe-t));right:12px;width:40px;height:40px;border-radius:50%;
+    border:none;background:rgba(255,255,255,.14);color:#FFFFFF;display:flex;align-items:center;justify-content:center;cursor:pointer;
+  }
+  .photo-viewer-close svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2;}
 
   .empty-state{
     border:1.5px dashed var(--line-strong);border-radius:6px;padding:26px 18px 22px;text-align:center;color:var(--ink-soft);
@@ -537,7 +559,7 @@
 
   /* ---------- oshi manage list ---------- */
   .oshi-row{
-    display:flex;align-items:flex-start;gap:12px;padding:13px 4px;border-bottom:1px dashed var(--line);
+    display:flex;flex-wrap:wrap;align-items:flex-start;column-gap:12px;row-gap:0;padding:13px 4px;border-bottom:1px dashed var(--line);
   }
   .oshi-row.dragging{opacity:.4;}
   .oshi-row.drag-over{box-shadow:0 0 0 2px var(--accent);border-radius:8px;}
@@ -553,7 +575,10 @@
   .oshi-row .star.active svg{fill:var(--accent);stroke:var(--accent);}
   .oshi-row .del{background:none;border:none;color:var(--ink-soft);cursor:pointer;width:26px;height:26px;flex:none;}
   .oshi-row .del svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.6;}
-  .oshi-row .sns-block{margin-top:4px;gap:4px;}
+  /* SNSは推しの行の下に全幅で並べ、右端（操作ボタンの下）まで使う。
+     左端は名前の位置（つまみ12px＋余白12px＋写真38px＋余白12px）にそろえる */
+  .oshi-row .sns-block{flex:0 0 100%;box-sizing:border-box;padding-left:74px;margin-top:6px;gap:4px;}
+  .oshi-row .sns-slot-spacer{width:22px;height:22px;}
   .oshi-row .sns-caption{font-size:8.5px;}
   .oshi-row .sns-links a,.oshi-row .sns-links .unregistered{width:22px;height:22px;}
   .oshi-row .sns-links a svg,.oshi-row .sns-links .unregistered svg{width:11px;height:11px;}
@@ -732,6 +757,12 @@
   <div class="sheet" id="sheet"></div>
 </div>
 <div class="toast" id="toast"></div>
+<div class="photo-viewer" id="photoViewer" hidden role="dialog" aria-modal="true" aria-label="写真">
+  <button type="button" class="photo-viewer-close" id="photoViewerClose" aria-label="閉じる">
+    <svg viewBox="0 0 24 24"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>
+  </button>
+  <img id="photoViewerImg" alt="">
+</div>
 
 <div class="editor-bg" id="editorBg">
   <div class="editor-panel">
@@ -2221,31 +2252,32 @@ function groupSnsIconsHtml(group){
    (掛け持ち-friendly), each labeled with that group's own real name rather
    than a generic "グループ" caption. Rows with nothing registered are
    omitted entirely. */
+/* 個人とグループの行でアイコンの列がそろうよう、アイコンは右寄せにし、
+   グループにだけある「公式HP」の位置には個人の行で空き枠を入れる。
+   名前の欄は残りの幅いっぱいに使い、入りきらないときだけ省略する。 */
 function snsLinksHtml(oshi, variant){
   var onAccent = variant==="hero";
+  var linksCls = 'sns-links'+(onAccent?' on-accent':'');
+  function caption(color, text){
+    return '<span class="sns-caption">'
+      + (color? '<span class="group-color-dot" style="background:'+color+'"></span>' : '')
+      + '<span class="sns-caption-text">'+escapeHtml(text)+'</span>'
+      + '</span>';
+  }
+  var groupRows = "";
+  oshiGroupsList(oshi).forEach(function(g){
+    var icons = groupSnsIconsHtml(g);
+    if(!icons) return;
+    groupRows += '<div class="sns-scope-row">'+caption(g.color, g.name||"グループ")+'<div class="'+linksCls+'">'+icons+'</div></div>';
+  });
   var rows = "";
   var personIcons = snsIconsHtml(oshi, "person");
   if(personIcons){
     var mainColor = (oshiGroupsList(oshi)[0] && oshiGroupsList(oshi)[0].color) || "";
-    rows += '<div class="sns-scope-row">'
-      + '<span class="sns-caption">'
-      +   (mainColor? '<span class="group-color-dot" style="background:'+mainColor+'"></span>' : '')
-      +   '個人'
-      + '</span>'
-      + '<div class="sns-links'+(onAccent?' on-accent':'')+'">'+personIcons+'</div>'
-      + '</div>';
+    var spacer = groupRows ? '<span class="sns-slot-spacer" aria-hidden="true"></span>' : '';
+    rows += '<div class="sns-scope-row">'+caption(mainColor, "個人")+'<div class="'+linksCls+'">'+personIcons+spacer+'</div></div>';
   }
-  oshiGroupsList(oshi).forEach(function(g){
-    var icons = groupSnsIconsHtml(g);
-    if(!icons) return;
-    rows += '<div class="sns-scope-row">'
-      + '<span class="sns-caption">'
-      +   (g.color? '<span class="group-color-dot" style="background:'+g.color+'"></span>' : '')
-      +   escapeHtml(g.name||"グループ")
-      + '</span>'
-      + '<div class="sns-links'+(onAccent?' on-accent':'')+'">'+icons+'</div>'
-      + '</div>';
-  });
+  rows += groupRows;
   if(!rows) return "";
   return '<div class="sns-block'+(onAccent?' on-accent':'')+'">'+rows+'</div>';
 }
@@ -2572,8 +2604,12 @@ function ticketHtml(type,r,withOshiTag){
   }
   // 推しは1行目、会場などの詳細は次の行に分けて表示する
   var oshiLineHtml = "";
-  if(withOshiTag && oshi && state.filterOshiId==="all"){
-    var tags = recOshiEntries(r).map(function(e){
+  if(withOshiTag && oshi){
+    // 推しで絞り込み中は、その推しの「グループ名・人物名」だけを出す
+    var tagEntries = recOshiEntries(r).filter(function(e){
+      return state.filterOshiId==="all" || e.oshiId===state.filterOshiId;
+    });
+    var tags = tagEntries.map(function(e){
       var o = getOshi(e.oshiId);
       return o ? '<span style="color:'+o.color+';font-weight:700;">'+escapeHtml(oshiFullLabel(o))+'</span>' : '';
     }).filter(Boolean);
@@ -2599,6 +2635,9 @@ function ticketHtml(type,r,withOshiTag){
     +   '<div class="ym">'+fmtYm(r.date)+'</div>'
     +   (amt? '<div class="amt">'+fmtYen(amt)+'</div>' : '')
     + '</div>'
+    + (stubHasPhoto ? '<button class="zoombtn" data-action="view-photo" data-type="'+type+'" data-id="'+r.id+'" title="写真を拡大" aria-label="写真を拡大">'
+        + '<svg viewBox="0 0 24 24"><path d="M14 4h6v6"/><path d="M10 20H4v-6"/><path d="M20 4l-6.5 6.5"/><path d="M4 20l6.5-6.5"/></svg>'
+        + '</button>' : '')
     + '<button class="editbtn" data-action="edit-record" data-type="'+type+'" data-id="'+r.id+'">'
     +   '<svg viewBox="0 0 24 24"><path d="M4 20h4L18.5 9.5a2.1 2.1 0 000-3L18 6a2.1 2.1 0 00-3 0L4.5 16.5z"/></svg>'
     + '</button>'
@@ -2861,7 +2900,6 @@ function renderOshiPage(){
         +     (isActive?' <span class="stamp" style="font-size:9px;padding:1px 6px 1px 5px;vertical-align:2px;">お気に入り</span>':'')
         +   '</div>'
         +   (subText? '<span>'+escapeHtml(subText)+'</span>' : '')
-        +   snsLinksHtml(o,"row")
         + '</div>'
         + '<div class="side-actions">'
         +   '<button class="star '+(isActive?"active":"")+'" data-action="set-active" data-id="'+o.id+'" title="このカラーを適用">'
@@ -2879,6 +2917,7 @@ function renderOshiPage(){
         +     '</button>'
         +   '</div>'
         + '</div>'
+        + snsLinksHtml(o,"row")
         + '</div>';
     });
   }
@@ -3194,6 +3233,7 @@ function recordPhotoFieldHtml(labelText){
     +   '</button>'
     +   '<div class="photo-menu" id="recPhotoMenu" style="display:none;">'
     +     '<label class="photo-menu-item" style="cursor:pointer;">写真を撮る・選ぶ<input type="file" id="recPhotoInput" accept="image/*" capture="environment" style="display:none;"></label>'
+    +     '<button type="button" class="photo-menu-item" id="viewRecPhotoBtn" style="display:none;">拡大して見る</button>'
     +     '<button type="button" class="photo-menu-item danger" id="clearRecPhotoBtn" style="display:none;">写真を削除</button>'
     +   '</div>'
     + '</div>'
@@ -3211,7 +3251,7 @@ function recordFormHtml(type,rec){
   fields += '<div class="field"><label>日付</label><input type="date" name="date" value="'+(rec?rec.date:today)+'" required></div>';
 
   if(type==="live"){
-    fields += recordPhotoFieldHtml("LIVE写真（任意）・チケット右側の背景になります");
+    fields += recordPhotoFieldHtml("LIVE写真（任意）");
     fields += '<div class="field"><label>公演・ツアー名</label><input type="text" name="title" value="'+(rec?escapeHtml(rec.title||""):"")+'" required></div>';
     fields += '<div class="field venue-field"><label>会場（任意）</label>'
       + '<input type="text" name="venue" value="'+(rec?escapeHtml(rec.venue||""):"")+'">'
@@ -3244,7 +3284,7 @@ function recordFormHtml(type,rec){
       + '</div>';
     fields += '<div class="field"><label>話した内容・会話メモ（任意）</label><input type="text" name="content" value="'+(rec?escapeHtml(rec.content||""):"")+'"></div>';
   } else {
-    fields += recordPhotoFieldHtml("物販写真（任意）・チケット右側の背景になります");
+    fields += recordPhotoFieldHtml("物販写真（任意）");
     fields += '<div class="field"><label>イベント名・購入先（任意）</label><input type="text" name="title" value="'+(rec?escapeHtml(rec.title||""):"")+'"></div>';
     fields += '<div class="field"><label>商品名</label><input type="text" name="item" value="'+(rec?escapeHtml(rec.item||""):"")+'" required></div>';
     fields += '<div class="field row2">'
@@ -3705,19 +3745,23 @@ function bindRecordForm(type,existingRec){
     var elClearBtn = form.querySelector("#clearRecPhotoBtn");
     var elInput = form.querySelector("#recPhotoInput");
 
+    var elViewBtn = form.querySelector("#viewRecPhotoBtn");
     function refreshRecPhoto(){
       if(chosenPhoto){
         elImg.src = chosenPhoto;
         elImg.style.display = "block";
         elPlaceholder.style.display = "none";
         elClearBtn.style.display = "block";
+        elViewBtn.style.display = "block";
       } else {
         elImg.style.display = "none";
         elImg.src = "";
         elPlaceholder.style.display = "block";
         elClearBtn.style.display = "none";
+        elViewBtn.style.display = "none";
       }
     }
+    elViewBtn.addEventListener("click", function(){ openPhotoViewer(chosenPhoto); });
     refreshRecPhoto();
 
     elBtn.addEventListener("click", function(e){
@@ -3810,6 +3854,19 @@ function openRecordSheet(type,rec){
   bindRecordForm(type,rec);
 }
 
+/* ============ photo viewer ============ */
+function openPhotoViewer(src){
+  if(!src) return;
+  var v = document.getElementById("photoViewer");
+  document.getElementById("photoViewerImg").src = src;
+  v.hidden = false;
+}
+function closePhotoViewer(){
+  var v = document.getElementById("photoViewer");
+  v.hidden = true;
+  document.getElementById("photoViewerImg").src = "";
+}
+
 /* ============ events ============ */
 function onAppClick(e){
   var el = e.target.closest("[data-action]");
@@ -3833,6 +3890,11 @@ function onAppClick(e){
     return;
   }
   if(action==="share-summary"){ shareSummaryImage(); return; }
+  if(action==="view-photo"){
+    var pr = (state[el.getAttribute("data-type")]||[]).find(function(r){ return r.id===el.getAttribute("data-id"); });
+    if(pr) openPhotoViewer(pr.photo);
+    return;
+  }
   if(action==="edit-record"){
     var type = el.getAttribute("data-type"), id = el.getAttribute("data-id");
     var rec = state[type].find(function(r){return r.id===id;});
@@ -3933,6 +3995,14 @@ document.addEventListener("DOMContentLoaded", function(){
   });
 
   sheetBg.addEventListener("click", function(e){ if(e.target===sheetBg) closeSheet(); });
+
+  var photoViewer = document.getElementById("photoViewer");
+  photoViewer.addEventListener("click", function(e){
+    if(e.target===photoViewer || e.target.closest("#photoViewerClose")) closePhotoViewer();
+  });
+  document.addEventListener("keydown", function(e){
+    if(e.key==="Escape" && !photoViewer.hidden) closePhotoViewer();
+  });
 
   PhotoEditor.init();
   initStorage();
