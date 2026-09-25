@@ -572,6 +572,14 @@
     display:flex;flex-wrap:wrap;align-items:flex-start;column-gap:12px;row-gap:0;padding:13px 4px;border-bottom:1px dashed var(--line);
   }
   .oshi-row.dragging{opacity:.4;}
+  .oshi-row.is-hidden .sw,.oshi-row.is-hidden .info,.oshi-row.is-hidden .sns-block{opacity:.55;}
+  .hidden-oshi-toggle{
+    display:flex;align-items:center;gap:6px;width:100%;margin-top:14px;padding:10px 4px;border:none;background:none;
+    color:var(--ink-soft);font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;text-align:left;
+  }
+  .hidden-oshi-toggle svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;transition:transform .15s ease;}
+  .hidden-oshi-toggle svg.open{transform:rotate(90deg);}
+  .hidden-oshi-note{font-size:12px;color:var(--ink-soft);margin:6px 0;}
   .oshi-row.drag-over{box-shadow:0 0 0 2px var(--accent);border-radius:8px;}
   .oshi-row .sw{width:38px;height:38px;border-radius:50%;flex:none;box-shadow:0 0 0 3px var(--bg),0 0 0 4px var(--line-strong);}
   .oshi-row .info{flex:1;min-width:0;}
@@ -837,7 +845,8 @@ var state = {
   statsSubView:"oshi",
   calendarMonth:(function(){ var d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); })(),
   calendarSelectedDate:null,
-  authMode:"login",     // login | signup | reset (ログイン画面の表示モード)
+  authMode:"login",
+  showHiddenOshis:false, // マイページで「非表示の推し」を開いているか     // login | signup | reset (ログイン画面の表示モード)
   ready:false
 };
 var storageMode = "local";
@@ -2301,6 +2310,9 @@ function snsLinksHtml(oshi, variant){
   return '<div class="sns-block'+(onAccent?' on-accent':'')+'">'+rows+'</div>';
 }
 function activeOshi(){ return getOshi(state.activeOshiId); }
+/* 非表示にした推し（oshi.hidden）は、推しの切り替え・絞り込み・記録の推し選択に出さない。
+   記録や集計には残る。 */
+function visibleOshis(){ return state.oshis.filter(function(o){ return !o.hidden; }); }
 function fmtYen(n){
   n = Number(n)||0;
   return "&#165;"+n.toLocaleString("ja-JP");
@@ -2492,7 +2504,7 @@ function renderHome(){
     + '</div>';
 
   html += '<div class="oshi-pills">';
-  state.oshis.forEach(function(o){
+  visibleOshis().forEach(function(o){
     html += '<button class="oshi-pill '+(o.id===oshi.id?'on':'')+'" data-action="set-active" data-id="'+o.id+'">'
       + '<span class="d" style="'+oshiSwatchStyle(o)+'"></span>'+escapeHtml(o.name)+'</button>';
   });
@@ -2559,10 +2571,10 @@ function renderListPage(type){
     return;
   }
 
-  if(state.oshis.length>1){
+  if(visibleOshis().length>1){
     html += '<div class="oshi-pills">';
     html += '<button class="oshi-pill '+(state.filterOshiId==="all"?"on":"")+'" data-action="filter-oshi" data-id="all">すべて</button>';
-    state.oshis.forEach(function(o){
+    visibleOshis().forEach(function(o){
       html += '<button class="oshi-pill '+(state.filterOshiId===o.id?"on":"")+'" data-action="filter-oshi" data-id="'+o.id+'">'
         + '<span class="d" style="'+oshiSwatchStyle(o)+'"></span>'+escapeHtml(o.name)+'</button>';
     });
@@ -2892,6 +2904,51 @@ function shareSummaryImage(){
 }
 
 /* ============ rendering: MY PAGE (oshi registration & app settings) ============ */
+var EYE_ICON = '<svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>';
+var EYE_OFF_ICON = '<svg viewBox="0 0 24 24"><path d="M3 3l18 18"/><path d="M10.6 5.1A9.8 9.8 0 0112 5c6.5 0 10 7 10 7a17.6 17.6 0 01-3.2 4.2"/><path d="M6.6 6.6A17.4 17.4 0 002 12s3.5 7 10 7a9.6 9.6 0 005.4-1.6"/><path d="M9.9 9.9a3 3 0 004.2 4.2"/></svg>';
+
+/* マイページの推し1行。idx/count は同じ欄（表示中／非表示）の中での位置 */
+function oshiRowHtml(o, idx, n){
+  var isActive = o.id===state.activeOshiId;
+  var subText = oshiSubLabel(o);
+  var bLabel = oshiBirthdayLabel(o);
+  var aLabel = oshiAge(o);
+  var bdayText = bLabel ? (bLabel+"生まれ"+(aLabel!==null?"（"+aLabel+"歳）":"（非公開）")) : "";
+  return '<div class="oshi-row'+(o.hidden?' is-hidden':'')+'" draggable="true" data-oshi-row="'+o.id+'">'
+    + '<span class="group-drag-handle" title="ドラッグして並べ替え" aria-hidden="true">'
+    +   '<svg viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.4"/><circle cx="15" cy="6" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="9" cy="18" r="1.4"/><circle cx="15" cy="18" r="1.4"/></svg>'
+    + '</span>'
+    + '<div class="sw" style="'+oshiSwatchStyle(o)+'"></div>'
+    + '<div class="info">'
+    +   '<div class="name-line"><b>'+escapeHtml(o.name)+'</b>'
+    +     (bdayText? ' <span class="oshi-bday">'+escapeHtml(bdayText)+'</span>' : '')
+    +     (isActive?' <span class="stamp" style="font-size:9px;padding:1px 6px 1px 5px;vertical-align:2px;">お気に入り</span>':'')
+    +   '</div>'
+    +   (subText? '<span>'+escapeHtml(subText)+'</span>' : '')
+    + '</div>'
+    + '<div class="side-actions">'
+    +   (o.hidden ? '' : '<button class="star '+(isActive?"active":"")+'" data-action="set-active" data-id="'+o.id+'" title="このカラーを適用">'
+    +     '<svg viewBox="0 0 24 24"><path d="M12 3l2.6 6 6.4.6-4.9 4.2 1.5 6.2L12 16.9 6.4 20l1.5-6.2-4.9-4.2 6.4-.6z"/></svg>'
+    +   '</button>')
+    +   '<button class="del" data-action="edit-oshi" data-id="'+o.id+'" title="編集">'
+    +     '<svg viewBox="0 0 24 24"><path d="M4 20h4L18.5 9.5a2.1 2.1 0 000-3L18 6a2.1 2.1 0 00-3 0L4.5 16.5z"/></svg>'
+    +   '</button>'
+    +   '<button class="del" data-action="toggle-oshi-hidden" data-id="'+o.id+'" title="'+(o.hidden?'表示する':'非表示にする')+'" aria-label="'+(o.hidden?'表示する':'非表示にする')+'">'
+    +     (o.hidden ? EYE_ICON : EYE_OFF_ICON)
+    +   '</button>'
+    +   '<div class="group-order-btns">'
+    +     '<button type="button" class="group-order-btn" data-action="move-oshi" data-id="'+o.id+'" data-dir="up" title="上に移動" aria-label="上に移動" '+(idx===0?"disabled":"")+'>'
+    +       '<svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg>'
+    +     '</button>'
+    +     '<button type="button" class="group-order-btn" data-action="move-oshi" data-id="'+o.id+'" data-dir="down" title="下に移動" aria-label="下に移動" '+(idx===n-1?"disabled":"")+'>'
+    +       '<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>'
+    +     '</button>'
+    +   '</div>'
+    + '</div>'
+    + snsLinksHtml(o,"row")
+    + '</div>';
+}
+
 function renderOshiPage(){
   var html = '<div class="page-head"><h1 class="mincho">マイページ</h1></div>';
   html += '<div class="section-label">推しの管理</div>';
@@ -2902,45 +2959,24 @@ function renderOshiPage(){
       + iconCluster()
       + '<p>推しを登録すると、ここに一覧が表示されます。</p></div>';
   } else {
+    var shown = visibleOshis();
+    var hiddenList = state.oshis.filter(function(o){ return o.hidden; });
     html += '<div class="section-label">登録した推し</div>';
-    var n = state.oshis.length;
-    state.oshis.forEach(function(o, idx){
-      var isActive = o.id===state.activeOshiId;
-      var subText = oshiSubLabel(o);
-      var bLabel = oshiBirthdayLabel(o);
-      var aLabel = oshiAge(o);
-      var bdayText = bLabel ? (bLabel+"生まれ"+(aLabel!==null?"（"+aLabel+"歳）":"（非公開）")) : "";
-      html += '<div class="oshi-row" draggable="true" data-oshi-row="'+o.id+'">'
-        + '<span class="group-drag-handle" title="ドラッグして並べ替え" aria-hidden="true">'
-        +   '<svg viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.4"/><circle cx="15" cy="6" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="9" cy="18" r="1.4"/><circle cx="15" cy="18" r="1.4"/></svg>'
-        + '</span>'
-        + '<div class="sw" style="'+oshiSwatchStyle(o)+'"></div>'
-        + '<div class="info">'
-        +   '<div class="name-line"><b>'+escapeHtml(o.name)+'</b>'
-        +     (bdayText? ' <span class="oshi-bday">'+escapeHtml(bdayText)+'</span>' : '')
-        +     (isActive?' <span class="stamp" style="font-size:9px;padding:1px 6px 1px 5px;vertical-align:2px;">お気に入り</span>':'')
-        +   '</div>'
-        +   (subText? '<span>'+escapeHtml(subText)+'</span>' : '')
-        + '</div>'
-        + '<div class="side-actions">'
-        +   '<button class="star '+(isActive?"active":"")+'" data-action="set-active" data-id="'+o.id+'" title="このカラーを適用">'
-        +     '<svg viewBox="0 0 24 24"><path d="M12 3l2.6 6 6.4.6-4.9 4.2 1.5 6.2L12 16.9 6.4 20l1.5-6.2-4.9-4.2 6.4-.6z"/></svg>'
-        +   '</button>'
-        +   '<button class="del" data-action="edit-oshi" data-id="'+o.id+'" title="編集">'
-        +     '<svg viewBox="0 0 24 24"><path d="M4 20h4L18.5 9.5a2.1 2.1 0 000-3L18 6a2.1 2.1 0 00-3 0L4.5 16.5z"/></svg>'
-        +   '</button>'
-        +   '<div class="group-order-btns">'
-        +     '<button type="button" class="group-order-btn" data-action="move-oshi" data-id="'+o.id+'" data-dir="up" title="上に移動" aria-label="上に移動" '+(idx===0?"disabled":"")+'>'
-        +       '<svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg>'
-        +     '</button>'
-        +     '<button type="button" class="group-order-btn" data-action="move-oshi" data-id="'+o.id+'" data-dir="down" title="下に移動" aria-label="下に移動" '+(idx===n-1?"disabled":"")+'>'
-        +       '<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>'
-        +     '</button>'
-        +   '</div>'
-        + '</div>'
-        + snsLinksHtml(o,"row")
-        + '</div>';
-    });
+    if(!shown.length){
+      html += '<p class="hidden-oshi-note">表示中の推しはいません。</p>';
+    }
+    shown.forEach(function(o, idx){ html += oshiRowHtml(o, idx, shown.length); });
+    if(hiddenList.length){
+      html += '<button type="button" class="hidden-oshi-toggle" data-action="toggle-hidden-oshis">'
+        + '<svg viewBox="0 0 24 24" class="'+(state.showHiddenOshis?'open':'')+'"><path d="M9 6l6 6-6 6"/></svg>'
+        + '非表示の推し（'+hiddenList.length+'人）'
+        + '</button>';
+      if(state.showHiddenOshis){
+        html += '<div class="hidden-oshi-list">';
+        hiddenList.forEach(function(o, idx){ html += oshiRowHtml(o, idx, hiddenList.length); });
+        html += '</div>';
+      }
+    }
   }
   html += accountSectionHtml();
   html += '<p class="legal-links"><a href="privacy.html">プライバシーポリシー</a></p>';
@@ -2989,10 +3025,29 @@ function reorderOshi(fromId, toId){
   saveLocal();
   renderOshiPage();
 }
+/* 推しを非表示／表示に切り替える。お気に入りの推しを隠したときは、
+   表示中のほかの推しをお気に入りにする。 */
+async function toggleOshiHidden(id){
+  var o = getOshi(id);
+  if(!o) return;
+  var updated = Object.assign({}, o, {hidden: !o.hidden});
+  await persistOshi(updated);
+  if(updated.hidden && state.activeOshiId===id){
+    var next = visibleOshis()[0];
+    await setActiveOshi(next ? next.id : null);
+  } else if(!updated.hidden && !getOshi(state.activeOshiId)){
+    await setActiveOshi(id);
+  }
+  toast(updated.hidden ? "「"+o.name+"」を非表示にしました" : "「"+o.name+"」を表示に戻しました");
+  render();
+}
 function moveOshiStep(id, dir){
   var idx = state.oshis.findIndex(function(o){ return o.id===id; });
   if(idx<0) return;
-  var target = dir==="up" ? idx-1 : idx+1;
+  // 同じ欄（表示中／非表示）の隣の推しと入れ替える
+  var hidden = !!state.oshis[idx].hidden;
+  var target = idx;
+  do { target += dir==="up" ? -1 : 1; } while(target>=0 && target<state.oshis.length && !!state.oshis[target].hidden!==hidden);
   if(target<0 || target>=state.oshis.length) return;
   var moved = state.oshis.splice(idx,1)[0];
   state.oshis.splice(target,0,moved);
@@ -3033,7 +3088,7 @@ function renderTopChipMenu(){
     return;
   }
   var html = '<div class="top-chip-menu-list">';
-  state.oshis.forEach(function(o){
+  visibleOshis().forEach(function(o){
     var isActive = o.id===state.activeOshiId;
     html += '<button type="button" class="top-chip-item'+(isActive?" active":"")+'" data-set-active-oshi="'+o.id+'">'
       + '<span class="avatar-mini" style="'+oshiSwatchStyle(o)+'"></span>'
@@ -3267,7 +3322,7 @@ function recordFormHtml(type,rec){
   var fields = "";
   fields += '<div class="field"><label>推し</label>'
     + '<div id="recOshiRows"></div>'
-    + ((type==="live" && state.oshis.length>1) ? '<button type="button" class="add-rec-oshi-btn" id="addRecOshiBtn">＋ 推しを追加</button>' : '')
+    + ((type==="live" && visibleOshis().length>1) ? '<button type="button" class="add-rec-oshi-btn" id="addRecOshiBtn">＋ 推しを追加</button>' : '')
     + '</div>';
   fields += '<div class="field"><label>日付</label><input type="date" name="date" value="'+(rec?rec.date:today)+'" required></div>';
 
@@ -3681,6 +3736,7 @@ function bindOshiForm(existingOshi){
       birthYear: elBirthYear.value ? Number(elBirthYear.value) : null,
       mode: "pale",
       order: isEditingReal ? existingOshi.order : state.oshis.length,
+      hidden: isEditingReal ? !!existingOshi.hidden : false,
       createdAt: isEditingReal ? existingOshi.createdAt : Date.now()
     };
     SNS_KEYS.forEach(function(k){ oshi["sns_person_"+k] = chosenSns["person_"+k] || ""; });
@@ -3732,7 +3788,7 @@ function bindRecordForm(type,existingRec){
   if(type!=="live") oshiRows = oshiRows.slice(0,1);
   oshiRows = oshiRows.filter(function(e){ return getOshi(e.oshiId); });
   if(!oshiRows.length){
-    var firstOshi = getOshi(state.activeOshiId) || state.oshis[0];
+    var firstOshi = getOshi(state.activeOshiId) || visibleOshis()[0] || state.oshis[0];
     oshiRows = [{oshiId:firstOshi.id, groupId:""}];
   }
   function defaultGroupId(oshiId){
@@ -3752,6 +3808,7 @@ function bindRecordForm(type,existingRec){
       var oshiOpts = state.oshis.map(function(x){
         var usedElsewhere = oshiRows.some(function(r2, j){ return j!==i && r2.oshiId===x.id; });
         if(usedElsewhere) return "";
+        if(x.hidden && x.id!==row.oshiId) return "";   // 非表示の推しは、すでに選ばれている行以外では出さない
         return '<option value="'+x.id+'" '+(x.id===row.oshiId?"selected":"")+'>'+escapeHtml(x.name)+'</option>';
       }).join("");
       var groupSel = gs.length
@@ -3774,7 +3831,8 @@ function bindRecordForm(type,existingRec){
         + '</div>';
     }).join("");
     if(elAddOshiBtn){
-      elAddOshiBtn.style.display = oshiRows.length < state.oshis.length ? "" : "none";
+      var canAdd = visibleOshis().some(function(o){ return !oshiRows.some(function(r){ return r.oshiId===o.id; }); });
+      elAddOshiBtn.style.display = canAdd ? "" : "none";
     }
   }
   elOshiRows.addEventListener("change", function(e){
@@ -3813,7 +3871,7 @@ function bindRecordForm(type,existingRec){
   }
   if(elAddOshiBtn){
     elAddOshiBtn.addEventListener("click", function(){
-      var next = state.oshis.find(function(o){ return !oshiRows.some(function(r){ return r.oshiId===o.id; }); });
+      var next = visibleOshis().find(function(o){ return !oshiRows.some(function(r){ return r.oshiId===o.id; }); });
       if(!next){ toast("追加できる推しがいません"); return; }
       oshiRows.push({oshiId:next.id, groupId:defaultGroupId(next.id)});
       renderOshiRows();
@@ -3978,6 +4036,8 @@ function onAppClick(e){
   if(action==="edit-oshi"){ openOshiSheet(getOshi(el.getAttribute("data-id"))); return; }
   if(action==="set-active"){ setActiveOshi(el.getAttribute("data-id")).then(render); return; }
   if(action==="move-oshi"){ moveOshiStep(el.getAttribute("data-id"), el.getAttribute("data-dir")); return; }
+  if(action==="toggle-oshi-hidden"){ toggleOshiHidden(el.getAttribute("data-id")); return; }
+  if(action==="toggle-hidden-oshis"){ state.showHiddenOshis = !state.showHiddenOshis; renderOshiPage(); return; }
   if(action==="filter-oshi"){ state.filterOshiId = el.getAttribute("data-id"); render(); return; }
   if(action==="toggle-hidden"){ state.showHidden = !state.showHidden; render(); return; }
   if(action==="stats-tab"){

@@ -78,9 +78,10 @@ python3 -m http.server 8000
     { id, name, color, sns_web, sns_instagram, sns_x, sns_tiktok, sns_youtube }
   ],
   sns_person_instagram, sns_person_x, sns_person_tiktok, sns_person_youtube,
-  mode: "pale", order, createdAt
+  mode: "pale", order, hidden, createdAt
 }
 ```
+- `hidden: true` の推しは非表示。推しの切り替え・記録一覧の絞り込み・記録フォームの推し選択に出さない（`visibleOshis()`）。記録や集計には残り、マイページの「非表示の推し」から戻せる。お気に入りの推しを非表示にすると、表示中のほかの推しがお気に入りになる。
 - `groups` は配列の**並び順がそのまま「メイン所属／サブ所属」を表す**（先頭＝メイン）。専用のフラグは持たない。
 - 推しの登録・編集でグループ名を入力し終えたとき、ほかの推しに**完全一致**する名前のグループがあれば、そのSNS（公式HP含む）を空欄にだけ自動で入れる（同じグループの別メンバーを登録するとき用。入力済みのSNSは上書きしない）。
 - グループの `sns_web` は公式HPのURL（IDではなくURLを保存）。`safeWebUrl()` で http(s) のみに正規化し、スキーム省略時は `https://` を補う。そのほかの `sns_*` はIDを保存する。
