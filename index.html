@@ -1824,7 +1824,6 @@ function bindAuthForm(root, mode, switchMode){
 function openNewPasswordSheet(mode){
   var title = mode==="change" ? "パスワードを変更" : (mode==="set" ? "パスワードを設定" : "新しいパスワードを設定");
   var html = '<h2 class="mincho">'+title+'</h2>'
-    + (mode==="set" ? '<p class="account-note">パスワードを設定すると、Googleアカウントのほかに、メールアドレスとパスワードでもログインできるようになります。</p>' : '')
     + '<form id="newPwForm" novalidate>'
     + '<div class="field"><label for="newPw1">新しいパスワード（6文字以上）</label><input type="password" id="newPw1" autocomplete="new-password" minlength="6" required></div>'
     + '<div class="field"><label for="newPw2">確認のためもう一度</label><input type="password" id="newPw2" autocomplete="new-password" minlength="6" required></div>'
