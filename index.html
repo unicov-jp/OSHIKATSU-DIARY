@@ -2582,7 +2582,7 @@ function ticketHtml(type,r,withOshiTag){
   var streamLinkHtml = (type==="live" && r.streamUrl)
     ? '<a href="'+escapeHtml(r.streamUrl)+'" target="_blank" rel="noopener noreferrer" class="stream-link">配信を見る</a>'
     : "";
-  var stubHasPhoto = (type==="live") && !!r.photo;
+  var stubHasPhoto = (type==="live" || type==="goods") && !!r.photo;
   var html = '<div class="ticket'+(r.hidden?' is-hidden':'')+'">'
     + '<div class="tape"></div>'
     + (r.favorite ? '<div class="fav-badge"><svg viewBox="0 0 24 24"><path d="M12 3l2.6 6 6.4.6-4.9 4.2 1.5 6.2L12 16.9 6.4 20l1.5-6.2-4.9-4.2 6.4-.6z"/></svg></div>' : '')
@@ -3244,6 +3244,7 @@ function recordFormHtml(type,rec){
       + '</div>';
     fields += '<div class="field"><label>話した内容・会話メモ（任意）</label><input type="text" name="content" value="'+(rec?escapeHtml(rec.content||""):"")+'"></div>';
   } else {
+    fields += recordPhotoFieldHtml("物販写真（任意）・チケット右側の背景になります");
     fields += '<div class="field"><label>イベント名・購入先（任意）</label><input type="text" name="title" value="'+(rec?escapeHtml(rec.title||""):"")+'"></div>';
     fields += '<div class="field"><label>商品名</label><input type="text" name="item" value="'+(rec?escapeHtml(rec.item||""):"")+'" required></div>';
     fields += '<div class="field row2">'
@@ -3695,7 +3696,7 @@ function bindRecordForm(type,existingRec){
 
   var venueAc = type==="live" ? bindVenueAutocomplete(form, existingRec) : null;
 
-  var hasPhotoField = (type==="cheki" || type==="live");
+  var hasPhotoField = (type==="cheki" || type==="live" || type==="goods");
   if(hasPhotoField){
     var elBtn = form.querySelector("#recPhotoPreviewBtn");
     var elMenu = form.querySelector("#recPhotoMenu");
