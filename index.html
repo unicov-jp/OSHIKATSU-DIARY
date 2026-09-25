@@ -2605,7 +2605,11 @@ function ticketHtml(type,r,withOshiTag){
   // 推しは1行目、会場などの詳細は次の行に分けて表示する
   var oshiLineHtml = "";
   if(withOshiTag && oshi){
-    var tags = recOshiEntries(r).map(function(e){
+    // 推しで絞り込み中は、その推しの「グループ名・人物名」だけを出す
+    var tagEntries = recOshiEntries(r).filter(function(e){
+      return state.filterOshiId==="all" || e.oshiId===state.filterOshiId;
+    });
+    var tags = tagEntries.map(function(e){
       var o = getOshi(e.oshiId);
       return o ? '<span style="color:'+o.color+';font-weight:700;">'+escapeHtml(oshiFullLabel(o))+'</span>' : '';
     }).filter(Boolean);
