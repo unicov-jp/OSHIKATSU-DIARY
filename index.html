@@ -411,6 +411,32 @@
   }
   .field textarea{resize:vertical;min-height:56px;line-height:1.6;}
   .field .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .venue-field{position:relative;}
+  .venue-suggest{
+    position:absolute;left:0;right:0;z-index:5;margin-top:4px;background:var(--paper);
+    border:1px solid var(--line-strong);border-radius:4px;box-shadow:0 8px 20px -8px rgba(33,28,23,.35);overflow:hidden;
+  }
+  .venue-suggest-item{display:block;width:100%;text-align:left;background:none;border:none;padding:9px 12px;cursor:pointer;font-family:inherit;color:var(--text);}
+  .venue-suggest-item + .venue-suggest-item{border-top:1px solid var(--line);}
+  .venue-suggest-item:hover{background:var(--card);}
+  .venue-suggest-item .main{display:block;font-size:13.5px;font-weight:600;}
+  .venue-suggest-item .sub{display:block;font-size:11px;color:var(--ink-soft);margin-top:2px;}
+  .venue-place{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:11px;color:var(--ink-soft);margin-top:5px;}
+  .venue-place:empty{display:none;}
+  .venue-place a{color:var(--accent);}
+  .venue-link{color:inherit;text-decoration:underline;text-decoration-color:var(--line-strong);text-underline-offset:2px;}
+  .rec-oshi-row{display:flex;align-items:center;gap:8px;}
+  .rec-oshi-row + .rec-oshi-row{margin-top:8px;}
+  .field .rec-oshi-row select{flex:1 1 0;min-width:0;width:auto;}
+  .rec-oshi-remove{
+    flex:none;width:34px;height:34px;border-radius:50%;border:1px solid var(--line-strong);
+    background:var(--paper);color:var(--ink-soft);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;
+  }
+  .rec-oshi-remove svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;}
+  .add-rec-oshi-btn{
+    display:block;width:100%;margin-top:8px;padding:9px 12px;border:1px dashed var(--line-strong);border-radius:3px;
+    background:transparent;color:var(--ink-soft);font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;
+  }
   .field .row3{display:grid;grid-template-columns:1fr 1fr 1.2fr;gap:6px;}
   .field .row3 select,.field .row3 input{padding-left:6px;padding-right:4px;font-size:16px;}
   .field-hint{font-size:10.5px;color:var(--ink-soft);margin-top:5px;line-height:1.6;}
@@ -424,7 +450,6 @@
   .auth-gate-hero{text-align:center;margin:10px 0 18px;}
   .auth-gate-hero .cluster{justify-content:center;margin-bottom:12px;}
   .auth-gate-hero h1{font-size:21px;margin:0 0 8px;color:var(--heading);}
-  .auth-gate-hero p{margin:0;font-size:12.5px;line-height:1.8;color:var(--ink-soft);}
   .auth-card{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:18px 16px 14px;}
   .auth-card h2{font-size:16px;margin:0 0 14px;color:var(--heading);}
   .auth-submit{margin-top:14px;}
@@ -1164,6 +1189,7 @@ var CLOUD_PAGE = 500;              // 1回の取得件数
 var CLOUD_CHUNK_BYTES = 1500000;   // 1回のアップロードの目安サイズ（写真入り記録を考慮）
 var CLOUD_PULL_OVERLAP_MS = 30000; // 差分取得の取りこぼし防止用の重なり
 var sb = null;                     // Supabase client（未設定なら null）
+var appConfig = null;              // /api/config の内容（Supabase・Google Maps の公開キー）
 var cloud = {
   configured:false,
   user:null,          // {id,email}
@@ -1569,7 +1595,10 @@ async function loadCloudConfig(){
   if(location.protocol==="file:") return null;
   var cached = readStored(CLOUD_CONFIG_KEY);
   if(cached && cached.supabaseUrl && cached.supabaseAnonKey){
-    fetchCloudConfig();
+    // 起動はキャッシュで行い、最新の設定（後から追加された Google Maps のキーなど）は裏で取り直す
+    fetchCloudConfig().then(function(fresh){
+      if(fresh && appConfig) appConfig.googleMapsApiKey = fresh.googleMapsApiKey || "";
+    });
     return cached;
   }
   return await fetchCloudConfig();
@@ -1591,6 +1620,7 @@ function handleAuthEvent(event, session){
 
 async function initStorage(){
   var cfg = await loadCloudConfig();
+  appConfig = cfg;
   if(cfg && window.supabase && window.supabase.createClient){
     try{
       sb = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, {
@@ -1635,6 +1665,146 @@ async function initStorage(){
   setInterval(function(){
     if(cloud.user && document.visibilityState==="visible") syncNow();
   }, 60000);
+}
+
+/* ============ Google Maps (会場の検索・位置情報) ============
+   会場名の入力中に Places API (New) の候補を出し、選ばれた場所の
+   Place ID・正式名称・住所・緯度経度を LIVE 記録の venuePlace に保存する
+   （遠征マップ用）。APIキーは /api/config の googleMapsApiKey から受け取り、
+   キーが無いときは会場を手入力するだけになる。 */
+var MapsPlaces = (function(){
+  var loading = null;
+  var failed = false;
+  function available(){ return !failed && !!(appConfig && appConfig.googleMapsApiKey); }
+  function load(){
+    if(!available()) return Promise.reject(new Error("Google Maps API key is not configured"));
+    if(loading) return loading;
+    loading = new Promise(function(resolve, reject){
+      if(window.google && google.maps && google.maps.importLibrary){ resolve(); return; }
+      window.__oshikatsuMapsReady = function(){ resolve(); };
+      window.gm_authFailure = function(){ failed = true; console.warn("Google Maps API key was rejected"); };
+      var s = document.createElement("script");
+      s.src = "https://maps.googleapis.com/maps/api/js?key="+encodeURIComponent(appConfig.googleMapsApiKey)
+        + "&v=weekly&loading=async&language=ja&region=JP&callback=__oshikatsuMapsReady";
+      s.async = true;
+      s.onerror = function(){ loading = null; reject(new Error("Google Maps failed to load")); };
+      document.head.appendChild(s);
+    }).then(function(){ return google.maps.importLibrary("places"); });
+    loading.catch(function(){ loading = null; });
+    return loading;
+  }
+  return { available:available, load:load };
+})();
+
+/* Googleマップで場所を開くURL（APIキー不要） */
+function mapsUrlFor(venue, place){
+  var q = place && place.name ? place.name+(place.address ? " "+place.address : "") : (venue||"");
+  var url = "https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(q);
+  if(place && place.placeId) url += "&query_place_id="+encodeURIComponent(place.placeId);
+  return url;
+}
+
+/* LIVEフォームの会場欄に候補リストを付ける。返り値の getPlace() で、
+   入力中の会場名と一致する選択済みの場所（なければ null）を返す。 */
+function bindVenueAutocomplete(form, existingRec){
+  var input = form.querySelector('[name="venue"]');
+  var list = form.querySelector("#venueSuggest");
+  var info = form.querySelector("#venuePlaceInfo");
+  var place = existingRec && existingRec.venuePlace && existingRec.venuePlace.name===existingRec.venue ? existingRec.venuePlace : null;
+  var sessionToken = null, timer = null, seq = 0, items = [];
+
+  function renderInfo(){
+    var v = input.value.trim();
+    if(place){
+      info.innerHTML = (place.address ? '<span class="venue-address">'+escapeHtml(place.address)+'</span>' : '')
+        + '<a href="'+escapeHtml(mapsUrlFor(v, place))+'" target="_blank" rel="noopener noreferrer">Googleマップで開く</a>';
+    } else if(v){
+      info.innerHTML = '<a href="'+escapeHtml(mapsUrlFor(v, null))+'" target="_blank" rel="noopener noreferrer">Googleマップで開く</a>';
+    } else {
+      info.innerHTML = "";
+    }
+  }
+  function hideList(){ list.hidden = true; list.innerHTML = ""; items = []; }
+  function showList(){
+    if(!items.length){ hideList(); return; }
+    list.innerHTML = items.map(function(it, i){
+      return '<button type="button" class="venue-suggest-item" data-idx="'+i+'">'
+        + '<span class="main">'+escapeHtml(it.main)+'</span>'
+        + (it.sub ? '<span class="sub">'+escapeHtml(it.sub)+'</span>' : '')
+        + '</button>';
+    }).join("");
+    list.hidden = false;
+  }
+  async function search(q){
+    var mySeq = ++seq;
+    try{
+      var lib = await MapsPlaces.load();
+      if(!sessionToken) sessionToken = new lib.AutocompleteSessionToken();
+      var res = await lib.AutocompleteSuggestion.fetchAutocompleteSuggestions({
+        input:q, sessionToken:sessionToken, language:"ja", region:"jp"
+      });
+      if(mySeq!==seq) return;
+      items = (res.suggestions||[]).map(function(s){ return s.placePrediction; }).filter(Boolean).slice(0,5).map(function(p){
+        return {
+          prediction:p,
+          main:(p.mainText && p.mainText.text) || (p.text && p.text.text) || "",
+          sub:(p.secondaryText && p.secondaryText.text) || ""
+        };
+      });
+      showList();
+    }catch(e){
+      console.warn("venue autocomplete failed", e);
+      hideList();
+    }
+  }
+  async function choose(it){
+    hideList();
+    try{
+      var p = it.prediction.toPlace();
+      await p.fetchFields({fields:["id","displayName","formattedAddress","location"]});
+      place = {
+        placeId:p.id,
+        name:p.displayName || it.main,
+        address:p.formattedAddress || it.sub || "",
+        lat:p.location ? p.location.lat() : null,
+        lng:p.location ? p.location.lng() : null
+      };
+      input.value = place.name;
+    }catch(e){
+      console.warn("place details failed", e);
+      toast("会場の情報を取得できませんでした");
+      place = null;
+      input.value = it.main;
+    }
+    sessionToken = null;
+    renderInfo();
+  }
+
+  input.setAttribute("autocomplete", "off");
+  input.addEventListener("input", function(){
+    if(place && input.value.trim()!==place.name) place = null;
+    renderInfo();
+    clearTimeout(timer);
+    var q = input.value.trim();
+    if(!MapsPlaces.available() || q.length<2){ seq++; hideList(); return; }
+    timer = setTimeout(function(){ search(q); }, 250);
+  });
+  // blur より先に選べるよう mousedown で処理する
+  list.addEventListener("mousedown", function(e){
+    var btn = e.target.closest("[data-idx]");
+    if(!btn) return;
+    e.preventDefault();
+    choose(items[Number(btn.getAttribute("data-idx"))]);
+  });
+  input.addEventListener("blur", function(){ setTimeout(hideList, 150); });
+  input.addEventListener("keydown", function(e){
+    if(e.key==="Escape"){ hideList(); }
+    if(e.key==="Enter" && !list.hidden && items.length){ e.preventDefault(); choose(items[0]); }
+  });
+  renderInfo();
+  return {
+    getPlace:function(){ return place && input.value.trim()===place.name ? place : null; }
+  };
 }
 
 /* ============ account UI (login / signup / password reset) ============ */
@@ -1716,7 +1886,6 @@ function renderAuthGate(){
     + '<div class="auth-gate-hero">'
     +   iconCluster()
     +   '<h1 class="mincho">推し活手帳へようこそ</h1>'
-    +   '<p>LIVE参戦・チェキ・物販の記録を、スマホでもPCでも。<br>ログインして始めましょう。</p>'
     + '</div>'
     + '<div class="auth-card" id="authBox"></div>'
     + '<p class="legal-links">ログイン・登録すると、プライバシーポリシーに同意したものとみなします。<br><a href="privacy.html">プライバシーポリシー</a></p>'
@@ -1824,7 +1993,6 @@ function bindAuthForm(root, mode, switchMode){
 function openNewPasswordSheet(mode){
   var title = mode==="change" ? "パスワードを変更" : (mode==="set" ? "パスワードを設定" : "新しいパスワードを設定");
   var html = '<h2 class="mincho">'+title+'</h2>'
-    + (mode==="set" ? '<p class="account-note">パスワードを設定すると、Googleアカウントのほかに、メールアドレスとパスワードでもログインできるようになります。</p>' : '')
     + '<form id="newPwForm" novalidate>'
     + '<div class="field"><label for="newPw1">新しいパスワード（6文字以上）</label><input type="password" id="newPw1" autocomplete="new-password" minlength="6" required></div>'
     + '<div class="field"><label for="newPw2">確認のためもう一度</label><input type="password" id="newPw2" autocomplete="new-password" minlength="6" required></div>'
@@ -2114,11 +2282,33 @@ function recAmount(type,r){
   if(type==="goods") return (Number(r.price)||0)*(Number(r.qty)||1);
   return 0;
 }
+/* 記録に紐づく推し。先頭が oshiId/groupId、対バンなどで追加した推しは
+   extraOshis: [{oshiId, groupId}] に入る（LIVEのみ）。 */
+function recOshiEntries(r){
+  var out = [], seen = {};
+  function add(oshiId, groupId){
+    if(!oshiId || seen[oshiId]) return;
+    seen[oshiId] = true;
+    out.push({oshiId:oshiId, groupId:groupId||""});
+  }
+  add(r.oshiId, r.groupId);
+  (r.extraOshis||[]).forEach(function(e){ if(e) add(e.oshiId, e.groupId); });
+  return out;
+}
+function recHasOshi(r, oshiId){
+  if(r.oshiId===oshiId) return true;
+  return (r.extraOshis||[]).some(function(e){ return e && e.oshiId===oshiId; });
+}
+/* 推しごとの金額。複数の推しに紐づく記録（対バン）は人数で均等に割る */
+function recAmountForOshi(type, r, oshiId){
+  if(!recHasOshi(r, oshiId)) return 0;
+  return recAmount(type, r) / recOshiEntries(r).length;
+}
 function allRecordsForOshi(oshiId){
   var out=[];
-  state.live.forEach(function(r){ if(oshiId==="all"||r.oshiId===oshiId) out.push({type:"live",r:r}); });
-  state.cheki.forEach(function(r){ if(oshiId==="all"||r.oshiId===oshiId) out.push({type:"cheki",r:r}); });
-  state.goods.forEach(function(r){ if(oshiId==="all"||r.oshiId===oshiId) out.push({type:"goods",r:r}); });
+  state.live.forEach(function(r){ if(oshiId==="all"||recHasOshi(r,oshiId)) out.push({type:"live",r:r}); });
+  state.cheki.forEach(function(r){ if(oshiId==="all"||recHasOshi(r,oshiId)) out.push({type:"cheki",r:r}); });
+  state.goods.forEach(function(r){ if(oshiId==="all"||recHasOshi(r,oshiId)) out.push({type:"goods",r:r}); });
   out.sort(function(a,b){ return (b.r.date||"").localeCompare(a.r.date||""); });
   return out;
 }
@@ -2127,11 +2317,11 @@ function allRecordsFlat(){
 }
 function aggregateByOshi(){
   return state.oshis.map(function(o){
-    var recs = allRecordsFlat().filter(function(item){ return item.r.oshiId===o.id; });
+    var recs = allRecordsFlat().filter(function(item){ return recHasOshi(item.r, o.id); });
     var liveN = recs.filter(function(i){return i.type==="live";}).length;
     var chekiN = recs.filter(function(i){return i.type==="cheki";}).reduce(function(s,i){return s+(Number(i.r.count)||1);},0);
     var goodsN = recs.filter(function(i){return i.type==="goods";}).reduce(function(s,i){return s+(Number(i.r.qty)||1);},0);
-    var total = recs.reduce(function(s,i){ return s+recAmount(i.type,i.r); },0);
+    var total = Math.round(recs.reduce(function(s,i){ return s+recAmountForOshi(i.type,i.r,o.id); },0));
     return {oshi:o, liveN:liveN, chekiN:chekiN, goodsN:goodsN, total:total, itemCount:recs.length};
   }).sort(function(a,b){ return b.total-a.total; });
 }
@@ -2221,10 +2411,10 @@ function renderHome(){
   }
 
   var recs = allRecordsForOshi(oshi.id);
-  var liveN = state.live.filter(function(r){return r.oshiId===oshi.id;}).length;
-  var chekiN = state.cheki.filter(function(r){return r.oshiId===oshi.id;}).reduce(function(s,r){return s+(Number(r.count)||1);},0);
-  var goodsN = state.goods.filter(function(r){return r.oshiId===oshi.id;}).reduce(function(s,r){return s+(Number(r.qty)||1);},0);
-  var total = recs.reduce(function(s,item){ return s+recAmount(item.type,item.r); },0);
+  var liveN = state.live.filter(function(r){return recHasOshi(r,oshi.id);}).length;
+  var chekiN = state.cheki.filter(function(r){return recHasOshi(r,oshi.id);}).reduce(function(s,r){return s+(Number(r.count)||1);},0);
+  var goodsN = state.goods.filter(function(r){return recHasOshi(r,oshi.id);}).reduce(function(s,r){return s+(Number(r.qty)||1);},0);
+  var total = Math.round(recs.reduce(function(s,item){ return s+recAmountForOshi(item.type,item.r,oshi.id); },0));
 
   var subLabel = oshiSubLabel(oshi) || "推し活中";
   var bday = oshiBirthdayLabel(oshi);
@@ -2329,7 +2519,7 @@ function renderListPage(type){
   }
 
   var fullList = state[type].filter(function(r){
-    return state.filterOshiId==="all" || r.oshiId===state.filterOshiId;
+    return state.filterOshiId==="all" || recHasOshi(r, state.filterOshiId);
   });
   var hiddenCount = fullList.filter(function(r){ return r.hidden; }).length;
   if(hiddenCount>0){
@@ -2370,7 +2560,7 @@ function ticketHtml(type,r,withOshiTag){
   var titleText = r.title || (type==="goods"?r.item:"") || "(無題)";
   var metaBits = [];
   if(type==="live"){
-    if(r.venue) metaBits.push(escapeHtml(r.venue));
+    if(r.venue) metaBits.push('<a class="venue-link" href="'+escapeHtml(mapsUrlFor(r.venue, r.venuePlace))+'" target="_blank" rel="noopener noreferrer">'+escapeHtml(r.venue)+'</a>');
     if(r.ticketType) metaBits.push(escapeHtml(r.ticketType));
     if(r.seat) metaBits.push(escapeHtml(r.seat));
   } else if(type==="cheki"){
@@ -2381,7 +2571,11 @@ function ticketHtml(type,r,withOshiTag){
     metaBits.push((Number(r.qty)||1)+"点");
   }
   if(withOshiTag && oshi && state.filterOshiId==="all"){
-    metaBits.unshift('<span style="color:'+oshi.color+';font-weight:700;">'+escapeHtml(oshiFullLabel(oshi))+'</span>');
+    var tags = recOshiEntries(r).map(function(e){
+      var o = getOshi(e.oshiId);
+      return o ? '<span style="color:'+o.color+';font-weight:700;">'+escapeHtml(oshiFullLabel(o))+'</span>' : '';
+    }).filter(Boolean);
+    metaBits.unshift(tags.join(" ／ "));
   }
   var streamLinkHtml = (type==="live" && r.streamUrl)
     ? '<a href="'+escapeHtml(r.streamUrl)+'" target="_blank" rel="noopener noreferrer" class="stream-link">配信を見る</a>'
@@ -3006,22 +3200,21 @@ function recordPhotoFieldHtml(labelText){
 function recordFormHtml(type,rec){
   var info = labelForType(type);
   var today = new Date().toISOString().slice(0,10);
-  var oshiOptions = state.oshis.map(function(o){
-    var sel = (rec? rec.oshiId===o.id : o.id===state.activeOshiId) ? "selected":"";
-    return '<option value="'+o.id+'" '+sel+'>'+escapeHtml(o.name)+'</option>';
-  }).join("");
-
   var fields = "";
   fields += '<div class="field"><label>推し</label>'
-    + '<select name="oshiId" id="recOshiSelect">'+oshiOptions+'</select>'
-    + '<select name="groupId" id="recGroupSelect" style="margin-top:8px;"></select>'
+    + '<div id="recOshiRows"></div>'
+    + ((type==="live" && state.oshis.length>1) ? '<button type="button" class="add-rec-oshi-btn" id="addRecOshiBtn">＋ 推しを追加</button>' : '')
     + '</div>';
   fields += '<div class="field"><label>日付</label><input type="date" name="date" value="'+(rec?rec.date:today)+'" required></div>';
 
   if(type==="live"){
     fields += recordPhotoFieldHtml("LIVE写真（任意）・チケット右側の背景になります");
     fields += '<div class="field"><label>公演・ツアー名</label><input type="text" name="title" value="'+(rec?escapeHtml(rec.title||""):"")+'" required></div>';
-    fields += '<div class="field"><label>会場（任意）</label><input type="text" name="venue" value="'+(rec?escapeHtml(rec.venue||""):"")+'"></div>';
+    fields += '<div class="field venue-field"><label>会場（任意）</label>'
+      + '<input type="text" name="venue" value="'+(rec?escapeHtml(rec.venue||""):"")+'">'
+      + '<div class="venue-suggest" id="venueSuggest" hidden></div>'
+      + '<div class="venue-place" id="venuePlaceInfo"></div>'
+      + '</div>';
     fields += '<div class="field"><label>配信URL（任意）</label><input type="url" name="streamUrl" autocomplete="off" value="'+(rec?escapeHtml(rec.streamUrl||""):"")+'"><div class="field-hint">配信ライブの場合はこちらにURLを入れてください</div></div>';
     fields += '<div class="field"><label>チケット種別（任意）</label>'
       + '<input type="text" name="ticketType" list="ticketTypeOptions" value="'+(rec?escapeHtml(rec.ticketType||""):"")+'">'
@@ -3424,29 +3617,80 @@ function bindRecordForm(type,existingRec){
   elFavToggle.addEventListener("click", function(){ favOn = !favOn; refreshToggles(); });
   elHideToggle.addEventListener("click", function(){ hideOn = !hideOn; refreshToggles(); });
 
-  /* The group select always mirrors whichever oshi is currently picked: its
-     options are rebuilt from scratch when the oshi changes, defaulting to
-     that oshi's main (top) group unless editing a record that already has
-     a specific group saved on it. */
-  var elOshiSelect = form.querySelector("#recOshiSelect");
-  var elGroupSelect = form.querySelector("#recGroupSelect");
-  function refreshGroupOptions(){
-    var oshi = getOshi(elOshiSelect.value);
-    var groups = oshi ? oshiGroupsList(oshi) : [];
-    if(!groups.length){
-      elGroupSelect.innerHTML = "";
-      elGroupSelect.style.display = "none";
-      return;
-    }
-    var keepSelected = existingRec && oshi && existingRec.oshiId===oshi.id ? existingRec.groupId : null;
-    elGroupSelect.innerHTML = groups.map(function(g,i){
-      var isSel = keepSelected ? (g.id===keepSelected) : (i===0);
-      return '<option value="'+g.id+'" '+(isSel?"selected":"")+'>'+escapeHtml(g.name||"（名称未設定）")+'</option>';
-    }).join("");
-    elGroupSelect.style.display = "block";
+  /* 推しとグループを横並びの1行で選ぶ。LIVEは「推しを追加」で対バンの
+     推しを複数行にできる（1行目が oshiId/groupId、2行目以降が extraOshis）。
+     グループの選択肢は推しを変えるたびに作り直し、既定はメイングループ。 */
+  var elOshiRows = form.querySelector("#recOshiRows");
+  var elAddOshiBtn = form.querySelector("#addRecOshiBtn");
+  var oshiRows = existingRec ? recOshiEntries(existingRec) : [];
+  if(type!=="live") oshiRows = oshiRows.slice(0,1);
+  oshiRows = oshiRows.filter(function(e){ return getOshi(e.oshiId); });
+  if(!oshiRows.length){
+    var firstOshi = getOshi(state.activeOshiId) || state.oshis[0];
+    oshiRows = [{oshiId:firstOshi.id, groupId:""}];
   }
-  refreshGroupOptions();
-  elOshiSelect.addEventListener("change", refreshGroupOptions);
+  function defaultGroupId(oshiId){
+    var o = getOshi(oshiId);
+    var gs = o ? oshiGroupsList(o) : [];
+    return gs.length ? gs[0].id : "";
+  }
+  oshiRows.forEach(function(row){
+    var o = getOshi(row.oshiId);
+    var gs = o ? oshiGroupsList(o) : [];
+    if(!gs.some(function(g){ return g.id===row.groupId; })) row.groupId = defaultGroupId(row.oshiId);
+  });
+  function renderOshiRows(){
+    elOshiRows.innerHTML = oshiRows.map(function(row, i){
+      var o = getOshi(row.oshiId);
+      var gs = o ? oshiGroupsList(o) : [];
+      var oshiOpts = state.oshis.map(function(x){
+        var usedElsewhere = oshiRows.some(function(r2, j){ return j!==i && r2.oshiId===x.id; });
+        if(usedElsewhere) return "";
+        return '<option value="'+x.id+'" '+(x.id===row.oshiId?"selected":"")+'>'+escapeHtml(x.name)+'</option>';
+      }).join("");
+      var groupSel = gs.length
+        ? '<select class="rec-group-sel" data-row="'+i+'" aria-label="グループ">'+gs.map(function(g){
+            return '<option value="'+g.id+'" '+(g.id===row.groupId?"selected":"")+'>'+escapeHtml(g.name||"（名称未設定）")+'</option>';
+          }).join("")+'</select>'
+        : '';
+      return '<div class="rec-oshi-row">'
+        + '<select class="rec-oshi-sel" data-row="'+i+'" aria-label="推し">'+oshiOpts+'</select>'
+        + groupSel
+        + (i>0 ? '<button type="button" class="rec-oshi-remove" data-remove-row="'+i+'" title="この推しを外す" aria-label="この推しを外す"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>' : '')
+        + '</div>';
+    }).join("");
+    if(elAddOshiBtn){
+      elAddOshiBtn.style.display = oshiRows.length < state.oshis.length ? "" : "none";
+    }
+  }
+  elOshiRows.addEventListener("change", function(e){
+    var t = e.target;
+    var i = Number(t.getAttribute("data-row"));
+    if(t.classList.contains("rec-oshi-sel")){
+      oshiRows[i].oshiId = t.value;
+      oshiRows[i].groupId = defaultGroupId(t.value);
+      renderOshiRows();
+    } else if(t.classList.contains("rec-group-sel")){
+      oshiRows[i].groupId = t.value;
+    }
+  });
+  elOshiRows.addEventListener("click", function(e){
+    var btn = e.target.closest("[data-remove-row]");
+    if(!btn) return;
+    oshiRows.splice(Number(btn.getAttribute("data-remove-row")), 1);
+    renderOshiRows();
+  });
+  if(elAddOshiBtn){
+    elAddOshiBtn.addEventListener("click", function(){
+      var next = state.oshis.find(function(o){ return !oshiRows.some(function(r){ return r.oshiId===o.id; }); });
+      if(!next){ toast("追加できる推しがいません"); return; }
+      oshiRows.push({oshiId:next.id, groupId:defaultGroupId(next.id)});
+      renderOshiRows();
+    });
+  }
+  renderOshiRows();
+
+  var venueAc = type==="live" ? bindVenueAutocomplete(form, existingRec) : null;
 
   var hasPhotoField = (type==="cheki" || type==="live");
   if(hasPhotoField){
@@ -3521,6 +3765,12 @@ function bindRecordForm(type,existingRec){
     if(rec.price!==undefined) rec.price = rec.price===""?0:Number(rec.price);
     if(rec.count!==undefined) rec.count = rec.count===""?1:Number(rec.count);
     if(rec.qty!==undefined) rec.qty = rec.qty===""?1:Number(rec.qty);
+    rec.oshiId = oshiRows[0].oshiId;
+    rec.groupId = oshiRows[0].groupId || "";
+    if(type==="live"){
+      rec.extraOshis = oshiRows.slice(1).map(function(r){ return {oshiId:r.oshiId, groupId:r.groupId||""}; });
+      rec.venuePlace = venueAc ? venueAc.getPlace() : null;
+    }
     if(hasPhotoField){ rec.photo = chosenPhoto; }
     rec.favorite = favOn;
     rec.hidden = hideOn;
