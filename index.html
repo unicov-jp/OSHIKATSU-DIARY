@@ -1,0 +1,2932 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>推し活手帳</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;600;800&family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#211C17;
+    --ink-soft:#6B6259;
+    --paper:#FBF8F3;
+    --paper-alt:#F2ECE1;
+    --line:rgba(33,28,23,0.16);
+    --line-strong:rgba(33,28,23,0.30);
+
+    --bg:#FBF8F3;
+    --card:#F2ECE1;
+    --heading:#211C17;
+    --text:#211C17;
+    --accent:#C9457A;
+    --accent-soft:rgba(201,69,122,0.14);
+    --stub-cut:#FBF8F3;
+    --on-accent:#FBF8F3;
+
+    --safe-t:env(safe-area-inset-top,0px);
+    --safe-b:env(safe-area-inset-bottom,0px);
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  html{scroll-padding-top:var(--safe-t);}
+  body{
+    margin:0;
+    background-color:var(--bg);
+    background-image:radial-gradient(var(--line) 1px, transparent 1.4px);
+    background-size:15px 15px;
+    color:var(--text);
+    font-family:"Zen Kaku Gothic New","Hiragino Sans",sans-serif;
+    -webkit-font-smoothing:antialiased;
+    padding-top:var(--safe-t);
+    padding-bottom:var(--safe-b);
+    transition:background-color .35s ease, color .35s ease;
+    overflow-x:hidden;
+  }
+  button,.oshi-pill,.btn,.fab,.ticket .editbtn,nav.tabs button{transition:transform .12s ease;}
+  button:active,.oshi-pill:active,.btn:active,.fab:active{transform:scale(.96);}
+  h1,h2,h3,.mincho{font-family:"Shippori Mincho",serif;}
+  a{color:inherit;}
+  button{font-family:inherit;}
+  ::selection{background:var(--accent-soft);}
+
+  /* ---------- layout shell ---------- */
+  #app{max-width:560px;margin:0 auto;min-height:100%;display:flex;flex-direction:column;}
+
+  .topbar{
+    position:sticky;top:var(--safe-t);z-index:20;
+    background:var(--bg);
+    border-bottom:1px solid var(--line);
+    height:72px;padding:0 18px;box-sizing:border-box;
+    display:flex;align-items:center;justify-content:space-between;
+    transition:background .35s ease,border-color .35s ease;
+  }
+  .brand{display:flex;flex-direction:column;line-height:1;}
+  .brand .word{font-size:19px;font-weight:600;letter-spacing:.04em;color:var(--heading);}
+  .brand .sub{font-size:10.5px;color:var(--ink-soft);margin-top:4px;letter-spacing:.08em;}
+  .header-logo-slot{flex:1;min-width:0;display:flex;align-items:center;justify-content:center;margin:0 10px;align-self:stretch;}
+  .header-logo-btn{
+    background:none;border:none;padding:0;cursor:pointer;
+    height:100%;max-height:64px;max-width:100%;display:flex;align-items:center;justify-content:center;
+  }
+  .header-logo-btn img{height:100%;width:auto;max-width:100%;object-fit:contain;display:block;}
+  .header-logo-placeholder{
+    height:100%;aspect-ratio:1.6;border:1.5px dashed var(--line-strong);border-radius:8px;
+    display:flex;align-items:center;justify-content:center;color:var(--ink-soft);opacity:.55;
+  }
+  .header-logo-placeholder svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.6;}
+  .oshi-chip{
+    display:flex;align-items:center;gap:8px;
+    background:var(--card);border:1px solid var(--line);
+    padding:6px 12px 6px 8px;border-radius:999px;
+    cursor:pointer;max-width:160px;
+  }
+  .oshi-chip .dot{width:14px;height:14px;border-radius:50%;background:var(--accent);flex:none;box-shadow:0 0 0 2px var(--bg),0 0 0 3px var(--line-strong);}
+  .oshi-chip .name{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .oshi-chip .chev{font-size:9px;color:var(--ink-soft);}
+
+  main{flex:1;padding:16px 18px calc(96px + var(--safe-b));}
+
+  /* ---------- bottom nav ---------- */
+  nav.tabs{
+    position:fixed;left:0;right:0;bottom:0;z-index:30;
+    max-width:560px;margin:0 auto;
+    background:var(--bg);
+    border-top:1px solid var(--line);
+    display:flex;
+    padding-bottom:var(--safe-b);
+    transition:background .35s ease,border-color .35s ease;
+  }
+  nav.tabs button{
+    flex:1;background:none;border:none;padding:8px 2px 8px;
+    display:flex;flex-direction:column;align-items:center;gap:3px;
+    color:var(--ink-soft);cursor:pointer;
+  }
+  nav.tabs button .ic{width:34px;height:26px;border-radius:9px;display:flex;align-items:center;justify-content:center;}
+  nav.tabs button svg{width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.6;}
+  nav.tabs button span{font-size:9.5px;letter-spacing:.02em;font-weight:500;white-space:nowrap;}
+  nav.tabs button.active{color:var(--accent);}
+  nav.tabs button.active .ic{background:var(--accent-soft);}
+  nav.tabs button.active svg{stroke:var(--accent);}
+  nav.tabs button.active span{font-weight:700;}
+
+  /* ---------- headers / sections ---------- */
+  .page-head{margin-bottom:16px;}
+  .page-head h1{font-size:22px;margin:0 0 4px;color:var(--heading);font-weight:700;}
+  .page-head p{margin:0;font-size:12.5px;color:var(--ink-soft);}
+
+  .section-label{
+    font-size:12px;color:var(--ink-soft);margin:22px 0 10px;
+    display:flex;align-items:center;gap:8px;
+  }
+  .section-label::after{content:"";flex:1;height:1px;background:var(--line);}
+
+  /* ---------- hero / dashboard oshi card ---------- */
+  .hero{
+    background:var(--accent);color:var(--on-accent);
+    border-radius:6px;padding:22px 20px 20px;position:relative;overflow:hidden;
+    box-shadow:0 8px 20px -8px rgba(33,28,23,.35);
+    transition:background .35s ease,color .35s ease;
+  }
+  .hero::before{
+    content:"";position:absolute;inset:0;pointer-events:none;
+    background-image:repeating-linear-gradient(-32deg, rgba(255,255,255,.07) 0 2px, transparent 2px 16px);
+  }
+  .hero .eyebrow{display:flex;align-items:center;gap:6px;font-size:11px;opacity:.85;letter-spacing:.06em;position:relative;z-index:1;}
+  .hero .eyebrow svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2;}
+  .hero .headline{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;position:relative;z-index:1;margin-top:6px;}
+  .hero .who{display:flex;align-items:center;min-width:0;}
+  .hero .name{font-size:27px;font-weight:800;margin:0;letter-spacing:-.01em;line-height:1.25;}
+  .hero .stampring{
+    flex:none;width:60px;height:60px;border-radius:50%;border:1.5px dashed rgba(255,255,255,.55);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;transform:rotate(-8deg);
+  }
+  .hero .stampring b{font-family:"Shippori Mincho",serif;font-size:19px;font-weight:800;line-height:1;}
+  .hero .stampring span{font-size:8px;letter-spacing:.05em;opacity:.85;margin-top:1px;}
+  .hero .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:19px;position:relative;z-index:1;}
+  .hero .colorname-tag{display:inline-flex;align-items:center;gap:6px;font-size:11px;opacity:.9;margin-top:6px;position:relative;z-index:1;}
+  .hero .colorname-tag .d{width:9px;height:9px;border-radius:50%;box-shadow:0 0 0 2px rgba(255,255,255,.5);}
+  .sns-links{display:flex;gap:8px;margin-top:10px;position:relative;z-index:1;}
+  .sns-links a,.sns-links .unregistered{
+    width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    background:var(--card);border:1px solid var(--line);color:var(--accent);flex:none;
+  }
+  .sns-links a svg,.sns-links .unregistered svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.7;}
+  .sns-links.on-accent a{background:rgba(255,255,255,.2);border-color:rgba(255,255,255,.32);color:var(--on-accent);}
+  .sns-links .unregistered{
+    background:none;border:1px dashed var(--line);color:var(--ink-soft);opacity:.4;cursor:default;
+  }
+  .sns-links.on-accent .unregistered{border-color:rgba(255,255,255,.3);color:rgba(255,255,255,.6);opacity:.55;}
+  .sns-block{display:flex;flex-direction:column;gap:8px;margin-top:10px;position:relative;z-index:1;}
+  .sns-scope-row{display:flex;align-items:center;gap:9px;}
+  .sns-scope-row .sns-links{margin-top:0;}
+  .sns-caption{
+    font-size:9.5px;font-weight:700;color:var(--ink-soft);width:64px;min-width:64px;max-width:64px;flex:none;
+    letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    display:inline-flex;align-items:center;gap:4px;justify-content:flex-start;
+  }
+  .sns-block.on-accent .sns-caption{color:rgba(255,255,255,.78);}
+  .group-color-dot{width:8px;height:8px;border-radius:50%;flex:none;box-shadow:0 0 0 1px rgba(0,0,0,.15);}
+  .avatar{border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px rgba(255,255,255,.55);color:#fff;}
+  .avatar-initial{font-family:"Shippori Mincho",serif;font-weight:800;line-height:1;text-shadow:0 1px 3px rgba(0,0,0,.25);}
+  .hero .headline .avatar{margin-right:12px;box-shadow:0 0 0 2px rgba(255,255,255,.65),0 3px 8px rgba(33,28,23,.25);}
+  .photo-picker{position:relative;display:inline-block;}
+  .photo-preview{
+    width:72px;height:72px;border-radius:50%;flex:none;background:var(--paper);
+    border:1.5px solid var(--line-strong);display:flex;align-items:center;justify-content:center;
+    overflow:hidden;box-shadow:0 0 0 3px var(--bg),0 0 0 4px var(--line-strong);
+    padding:0;cursor:pointer;position:relative;
+  }
+  .photo-preview img{width:100%;height:100%;object-fit:cover;}
+  .photo-preview svg{width:26px;height:26px;stroke:var(--ink-soft);fill:none;stroke-width:1.4;}
+  .photo-edit-badge{
+    position:absolute;bottom:-1px;right:-1px;width:24px;height:24px;border-radius:50%;
+    background:var(--accent);color:var(--on-accent);display:flex;align-items:center;justify-content:center;
+    box-shadow:0 0 0 2px var(--bg);
+  }
+  .photo-edit-badge svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2;}
+  .photo-menu{
+    position:fixed;z-index:55;min-width:160px;
+    background:var(--bg);border:1px solid var(--line-strong);border-radius:9px;overflow:hidden;
+    box-shadow:0 8px 20px -6px rgba(33,28,23,.28);
+  }
+  .photo-menu-item{
+    display:block;width:100%;text-align:left;padding:12px 15px;font-size:13px;font-weight:600;
+    background:none;border:none;color:var(--text);cursor:pointer;
+  }
+  .top-chip-menu{min-width:200px;max-width:260px;}
+  .top-chip-menu-list{max-height:280px;overflow-y:auto;}
+  .top-chip-item{
+    display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:10px 14px;
+    background:none;border:none;color:var(--text);cursor:pointer;font-size:13.5px;font-weight:600;font-family:inherit;
+  }
+  .top-chip-item + .top-chip-item{border-top:1px dashed var(--line);}
+  .top-chip-item.active{background:var(--accent-soft);color:var(--accent);}
+  .top-chip-item .avatar-mini{width:26px;height:26px;border-radius:50%;flex:none;background-size:cover;background-position:center;box-shadow:0 0 0 2px var(--bg),0 0 0 3px var(--line-strong);}
+  .top-chip-item .tcm-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .top-chip-item .tcm-check{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2.4;flex:none;}
+  .top-chip-manage{
+    display:block;width:100%;text-align:center;padding:11px 14px;font-size:12px;font-weight:700;
+    background:var(--paper);border:none;border-top:1px solid var(--line-strong);color:var(--ink-soft);cursor:pointer;font-family:inherit;
+  }
+  .photo-menu-item + .photo-menu-item{border-top:1px solid var(--line);}
+  .photo-menu-item.danger{color:#B23A3A;}
+  .identity-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .identity-duo{display:flex;gap:22px;align-items:flex-start;flex-wrap:wrap;}
+  .identity-duo-col{flex:none;}
+  .identity-duo-col label{
+    display:block;font-size:11px;color:var(--ink-soft);margin-bottom:9px;
+    font-weight:600;white-space:nowrap;
+  }
+  .group-card-list{display:flex;flex-direction:column;gap:10px;}
+  .sns-icon-btn{
+    width:44px;height:44px;border-radius:50%;flex:none;background:var(--paper);
+    border:1.5px solid var(--line-strong);display:flex;align-items:center;justify-content:center;
+    color:var(--ink-soft);cursor:pointer;margin-top:14px;
+  }
+  .sns-icon-btn svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.7;}
+  .sns-icon-btn.filled{border-color:var(--accent);color:var(--accent);background:var(--accent-soft);}
+  .sns-popover{padding:11px;width:230px;}
+  .sns-popover input{
+    width:100%;border:1px solid var(--line-strong);border-radius:3px;background:var(--paper);
+    padding:9px 10px;font-size:16px;margin-bottom:8px;color:var(--text);font-family:inherit;
+  }
+  .sns-popover-actions{display:flex;gap:6px;}
+  .sns-popover-actions .btn{flex:1;padding:7px 6px;font-size:11.5px;}
+  .cheki-photo-preview{
+    width:88px;height:112px;border-radius:8px;flex:none;background:var(--paper);
+    border:1.5px solid var(--line-strong);display:flex;align-items:center;justify-content:center;
+    overflow:hidden;box-shadow:0 0 0 3px var(--bg),0 0 0 4px var(--line-strong);
+    padding:0;cursor:pointer;position:relative;
+  }
+  .cheki-photo-preview img{width:100%;height:100%;object-fit:cover;}
+  .cheki-photo-preview svg{width:26px;height:26px;stroke:var(--ink-soft);fill:none;stroke-width:1.4;}
+  .hero .bday-badge{
+    position:absolute;top:14px;right:16px;z-index:2;
+    background:var(--bg);color:var(--accent);font-size:10.5px;font-weight:700;
+    padding:4px 10px;border-radius:3px 10px 3px 10px;transform:rotate(4deg);
+    box-shadow:0 2px 6px rgba(33,28,23,.2);
+  }
+  .hero .stat{border-top:1px solid rgba(255,255,255,.28);padding-top:8px;}
+  .hero .stat b{display:block;font-size:19px;font-weight:800;font-family:"Shippori Mincho",serif;}
+  .hero .stat span{display:block;font-size:10.5px;opacity:.82;margin-top:2px;}
+  .hero .ring{position:absolute;right:-38px;top:-46px;width:130px;height:130px;border-radius:50%;border:1px solid rgba(255,255,255,.22);}
+  .hero .ring2{position:absolute;right:14px;top:64px;width:34px;height:34px;border-radius:50%;border:1px dashed rgba(255,255,255,.3);}
+  .hero.empty{background:var(--card);color:var(--text);border:1.5px dashed var(--line-strong);box-shadow:none;}
+  .hero.empty::before{display:none;}
+  .hero.empty .name{font-size:17px;font-weight:700;}
+  .hero.empty p{font-size:12.5px;color:var(--ink-soft);margin:6px 0 14px;line-height:1.7;}
+
+  .oshi-pills{display:flex;gap:8px;overflow-x:auto;padding:14px 0 2px;margin:0 -2px;-webkit-overflow-scrolling:touch;}
+  .oshi-pills::-webkit-scrollbar{display:none;}
+  .oshi-pill{
+    flex:none;display:flex;align-items:center;gap:7px;
+    padding:5px 14px;border-radius:999px;border:1px solid var(--line);
+    background:var(--card);font-size:12px;font-weight:600;cursor:pointer;color:var(--text);
+  }
+  .oshi-pill .d{width:24px;height:24px;border-radius:50%;flex:none;box-shadow:0 0 0 1.5px var(--card),0 0 0 2.5px var(--line-strong);}
+  .oshi-pill.on{border-color:var(--accent);background:var(--accent-soft);color:var(--heading);}
+  .oshi-pill.add{color:var(--ink-soft);border-style:dashed;}
+
+  /* ---------- mini bar chart ---------- */
+  .chart-card{background:var(--card);border:1px solid var(--line);border-radius:4px;padding:16px 16px 8px;margin-top:12px;}
+  .chart-card h3{margin:0 0 2px;font-size:13.5px;color:var(--heading);font-weight:700;}
+  .chart-card .unit{font-size:10.5px;color:var(--ink-soft);margin-bottom:10px;display:block;}
+  .bars{display:flex;align-items:flex-end;gap:8px;height:84px;}
+  .bars .col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;}
+  .bars .fill{width:100%;max-width:26px;background:var(--accent);border-radius:2px 2px 0 0;min-height:2px;}
+  .bars .mo{font-size:9.5px;color:var(--ink-soft);margin-top:6px;}
+
+  /* ---------- ticket cards ---------- */
+  .ticket{
+    position:relative;display:flex;background:var(--card);
+    border:1px solid var(--line);border-radius:3px;margin-bottom:18px;overflow:visible;
+    box-shadow:0 3px 8px -3px rgba(33,28,23,.16);
+  }
+  .ticket:nth-child(odd){transform:rotate(-.5deg);}
+  .ticket:nth-child(even){transform:rotate(.5deg);}
+  .ticket .tape{
+    position:absolute;top:-9px;left:22px;width:46px;height:18px;
+    background:linear-gradient(120deg, var(--accent), var(--accent) 60%, transparent 60%),
+               repeating-linear-gradient(-45deg, rgba(255,255,255,.35) 0 4px, transparent 4px 8px);
+    opacity:.85;transform:rotate(-4deg);border-radius:1px;
+    box-shadow:0 1px 2px rgba(33,28,23,.18);
+  }
+  .ticket .main{flex:1;min-width:0;padding:16px 14px 12px;overflow:hidden;border-radius:3px 0 0 3px;}
+  .ticket .kind{display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap;}
+  .ticket .kind .stream-link-wrap{margin-left:auto;}
+  .ticket.is-hidden{opacity:.55;}
+  .fav-badge{
+    position:absolute;top:-8px;left:18px;z-index:2;width:26px;height:26px;border-radius:50%;
+    background:var(--accent);color:var(--on-accent);display:flex;align-items:center;justify-content:center;
+    box-shadow:0 2px 5px rgba(33,28,23,.25);transform:rotate(-8deg);
+  }
+  .fav-badge svg{width:13px;height:13px;stroke:none;fill:currentColor;}
+  .tag-chip{
+    font-size:9.5px;font-weight:700;color:var(--ink-soft);background:var(--paper);
+    border:1px solid var(--line);border-radius:99px;padding:2px 8px;
+  }
+  .stamp{
+    display:inline-flex;align-items:center;gap:4px;
+    border:1.3px solid var(--accent);color:var(--accent);
+    border-radius:3px 10px 3px 10px;padding:2px 8px 2px 6px;
+    font-size:10px;font-weight:700;letter-spacing:.04em;transform:rotate(-3deg);
+  }
+  .stamp svg{width:11px;height:11px;stroke:var(--accent);fill:none;stroke-width:2;}
+  .ticket .title{font-size:14.5px;font-weight:700;color:var(--heading);margin:0 0 3px;line-height:1.4;word-break:break-word;}
+  .ticket .stream-link{color:var(--accent);font-weight:700;text-decoration:underline;font-size:11.5px;white-space:nowrap;}
+  .ticket .meta{font-size:11.5px;color:var(--ink-soft);line-height:1.7;}
+  .ticket .memo{font-size:11.5px;color:var(--ink-soft);margin-top:6px;line-height:1.6;border-top:1px dashed var(--line);padding-top:6px;}
+  .ticket .photo{
+    flex:none;width:52px;height:52px;margin:16px 0 0 14px;
+    background:var(--paper);border:1px solid var(--line-strong);border-radius:2px;
+    display:flex;align-items:center;justify-content:center;transform:rotate(-3deg);
+    box-shadow:0 2px 5px rgba(33,28,23,.14);overflow:hidden;
+  }
+  .ticket .photo svg{width:20px;height:20px;stroke:var(--accent);fill:none;stroke-width:1.5;opacity:.7;}
+  .ticket .photo img{width:100%;height:100%;object-fit:cover;}
+  .ticket .stub{
+    width:78px;flex:none;border-left:1px dashed var(--line-strong);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:10px 6px;text-align:center;position:relative;gap:2px;
+  }
+  .ticket .stub .day{font-family:"Shippori Mincho",serif;font-size:18px;font-weight:800;color:var(--heading);}
+  .ticket .stub .ym{font-size:9.5px;color:var(--ink-soft);}
+  .ticket .stub .amt{font-size:11.5px;font-weight:700;color:var(--accent);margin-top:4px;}
+  .ticket .stub.has-photo{background-size:cover;background-position:center;}
+  .ticket .stub.has-photo .day,.ticket .stub.has-photo .ym,.ticket .stub.has-photo .amt{
+    color:#FBF8F3;text-shadow:0 1px 4px rgba(0,0,0,.55);
+  }
+  .ticket .stub::before,.ticket .stub::after{
+    content:"";position:absolute;left:-7px;width:14px;height:14px;border-radius:50%;background:var(--bg);
+    box-shadow:0 0 0 1px var(--line) inset;
+  }
+  .ticket .stub::before{top:-7px;}
+  .ticket .stub::after{bottom:-7px;}
+  .ticket button.editbtn{
+    position:absolute;top:6px;right:6px;border:none;background:var(--bg);color:var(--ink-soft);
+    width:24px;height:24px;display:flex;align-items:center;justify-content:center;cursor:pointer;border-radius:50%;
+    box-shadow:0 1px 3px rgba(33,28,23,.18);
+  }
+  .ticket button.editbtn svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.6;}
+
+  .empty-state{
+    border:1.5px dashed var(--line-strong);border-radius:6px;padding:26px 18px 22px;text-align:center;color:var(--ink-soft);
+    background-image:radial-gradient(var(--line) 1px, transparent 1.4px);background-size:12px 12px;
+  }
+  .empty-state .cluster{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:14px;}
+  .empty-state .cluster span{
+    width:38px;height:38px;border-radius:8px;background:var(--bg);border:1px solid var(--line-strong);
+    display:flex;align-items:center;justify-content:center;box-shadow:0 2px 5px rgba(33,28,23,.12);
+  }
+  .empty-state .cluster span:nth-child(1){transform:rotate(-9deg);}
+  .empty-state .cluster span:nth-child(2){transform:rotate(4deg) translateY(-4px);width:44px;height:44px;}
+  .empty-state .cluster span:nth-child(3){transform:rotate(10deg);}
+  .empty-state .cluster svg{width:18px;height:18px;stroke:var(--accent);fill:none;stroke-width:1.5;}
+  .empty-state > svg{width:30px;height:30px;stroke:var(--ink-soft);fill:none;stroke-width:1.3;margin-bottom:10px;}
+  .empty-state p{margin:0 0 14px;font-size:12.5px;line-height:1.7;}
+
+  /* ---------- fab ---------- */
+  .fab{
+    position:fixed;right:18px;bottom:calc(78px + var(--safe-b));z-index:25;
+    width:52px;height:52px;border-radius:50%;background:var(--accent);color:var(--on-accent);
+    border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;
+    box-shadow:0 6px 16px rgba(0,0,0,.18);
+  }
+  .fab svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2;}
+  /* FAB stays visible even with no active oshi; tapping it guides the user
+     to register one first (see openRecordSheet). */
+
+  /* ---------- buttons ---------- */
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:6px;
+    border-radius:3px;border:1px solid var(--line-strong);background:transparent;color:var(--text);
+    font-size:13px;font-weight:600;padding:10px 16px;cursor:pointer;
+  }
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent);}
+  .btn.block{width:100%;}
+  .btn.ghost{border-color:transparent;color:var(--ink-soft);}
+  .btn.danger{border-color:#B23A3A;color:#B23A3A;}
+
+  /* ---------- forms / sheet ---------- */
+  .sheet-bg{
+    position:fixed;inset:0;background:rgba(33,28,23,.42);z-index:50;
+    display:none;align-items:flex-end;justify-content:center;
+  }
+  .sheet-bg.show{display:flex;}
+  .sheet{
+    width:100%;max-width:560px;background:var(--bg);border-radius:16px 16px 0 0;
+    max-height:88vh;overflow-y:auto;padding:6px 20px calc(24px + var(--safe-b));
+    animation:up .22s ease;
+  }
+  @keyframes up{from{transform:translateY(16px);opacity:0;}to{transform:translateY(0);opacity:1;}}
+  .sheet-handle{width:36px;height:4px;background:var(--line-strong);border-radius:99px;margin:10px auto 14px;}
+  .sheet h2{font-size:17px;margin:0 0 14px;color:var(--heading);}
+  .field{margin-bottom:13px;}
+  .field label{display:block;font-size:11.5px;color:var(--ink-soft);margin-bottom:5px;font-weight:600;}
+  .field input[type=text],.field input[type=number],.field input[type=date],.field input[type=url],.field select,.field textarea{
+    width:100%;border:1px solid var(--line-strong);border-radius:3px;background:var(--paper);
+    padding:10px 11px;font-size:16px;color:var(--text);font-family:inherit;
+  }
+  .field textarea{resize:vertical;min-height:56px;line-height:1.6;}
+  .field .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .field .row3{display:grid;grid-template-columns:1fr 1fr 1.2fr;gap:6px;}
+  .field .row3 select,.field .row3 input{padding-left:6px;padding-right:4px;font-size:16px;}
+  .field-hint{font-size:10.5px;color:var(--ink-soft);margin-top:5px;line-height:1.6;}
+  .sheet-actions{display:flex;gap:10px;margin-top:18px;}
+  .sheet-actions .btn{flex:1;}
+
+  .group-card{
+    border:1px solid var(--line-strong);border-radius:8px;padding:8px 10px;background:var(--card);
+    transition:opacity .12s ease, transform .12s ease;
+  }
+  .group-card.dragging{opacity:.4;}
+  .group-card.drag-over{box-shadow:0 0 0 2px var(--accent);}
+  .group-card-row{
+    display:flex;align-items:center;gap:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;
+    padding-bottom:1px;
+  }
+  .group-card-row::-webkit-scrollbar{display:none;}
+  .group-drag-handle{
+    flex:none;width:12px;height:20px;display:flex;align-items:center;justify-content:center;
+    color:var(--line-strong);cursor:grab;touch-action:none;
+  }
+  .group-drag-handle svg{width:10px;height:13px;fill:currentColor;}
+  .group-color-btn{
+    width:18px;height:18px;border-radius:50%;border:1.5px solid var(--line-strong);
+    padding:0;cursor:pointer;flex:none;
+  }
+  .group-color-pop{padding:11px;width:auto;}
+  .group-color-swatches{display:flex;flex-wrap:wrap;gap:7px;max-width:168px;}
+  .gcs-swatch{width:24px;height:24px;border-radius:50%;border:2px solid rgba(0,0,0,.06);cursor:pointer;padding:0;flex:none;}
+  .gcs-custom-btn{
+    width:24px;height:24px;
+    background:conic-gradient(from 0deg,#E04B4B,#E0A23C,#E0D23C,#6CBF5E,#3C9AE0,#6C5CE0,#C25CE0,#E04B4B)!important;
+    border:2px solid rgba(0,0,0,.1)!important;color:#fff!important;
+  }
+  .gcs-custom-btn svg{filter:drop-shadow(0 0 1.5px rgba(0,0,0,.65));}
+  .gcs-custom-btn svg{width:11px;height:11px;}
+  .group-name-input{
+    flex:none!important;width:78px!important;font-size:13.5px!important;font-weight:700;color:var(--text)!important;
+    border:none!important;background:none!important;box-shadow:none!important;
+    padding:2px 0!important;font-family:inherit;border-bottom:1px solid var(--line)!important;
+    border-radius:0!important;
+  }
+  .group-name-input:focus{outline:none;border-bottom-color:var(--accent)!important;}
+  .group-name-input::placeholder{color:var(--ink-soft);opacity:.7;font-weight:600;}
+  .group-sns-inline{display:flex;align-items:center;gap:4px;flex:none;margin-left:auto;}
+  .group-sns-inline .sns-icon-btn{width:28px;height:28px;margin-top:0;}
+  .group-sns-inline .sns-icon-btn svg{width:12px;height:12px;}
+  .group-order-btns{display:flex;gap:2px;flex:none;}
+  .group-order-btn{
+    width:18px;height:18px;border-radius:50%;border:1px solid var(--line);background:var(--paper);
+    color:var(--ink-soft);cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center;flex:none;
+  }
+  .group-order-btn svg{width:9px;height:9px;stroke:currentColor;fill:none;stroke-width:2.6;}
+  .group-order-btn:disabled{opacity:.25;cursor:default;}
+  .group-remove-btn{
+    flex:none;width:18px;height:18px;border-radius:50%;border:none;background:none;
+    color:var(--ink-soft);cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center;
+  }
+  .group-remove-btn svg{width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:2.2;}
+
+  /* ---------- oshi manage list ---------- */
+  .oshi-row{
+    display:flex;align-items:flex-start;gap:12px;padding:13px 4px;border-bottom:1px dashed var(--line);
+  }
+  .oshi-row.dragging{opacity:.4;}
+  .oshi-row.drag-over{box-shadow:0 0 0 2px var(--accent);border-radius:8px;}
+  .oshi-row .sw{width:38px;height:38px;border-radius:50%;flex:none;box-shadow:0 0 0 3px var(--bg),0 0 0 4px var(--line-strong);}
+  .oshi-row .info{flex:1;min-width:0;}
+  .oshi-row .info .name-line{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px;}
+  .oshi-row .info b{font-size:14.5px;color:var(--heading);}
+  .oshi-row .info .oshi-bday{font-size:11px;font-weight:600;color:var(--ink-soft);}
+  .oshi-row .info span{font-size:11px;color:var(--ink-soft);}
+  .oshi-row .side-actions{display:flex;align-items:center;gap:2px;flex:none;}
+  .oshi-row .star{background:none;border:none;color:var(--ink-soft);cursor:pointer;width:26px;height:26px;flex:none;}
+  .oshi-row .star svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.6;}
+  .oshi-row .star.active svg{fill:var(--accent);stroke:var(--accent);}
+  .oshi-row .del{background:none;border:none;color:var(--ink-soft);cursor:pointer;width:26px;height:26px;flex:none;}
+  .oshi-row .del svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.6;}
+  .oshi-row .sns-block{margin-top:4px;gap:4px;}
+  .oshi-row .sns-caption{font-size:8.5px;}
+  .oshi-row .sns-links a,.oshi-row .sns-links .unregistered{width:22px;height:22px;}
+  .oshi-row .sns-links a svg,.oshi-row .sns-links .unregistered svg{width:11px;height:11px;}
+
+  /* ---------- stats page ---------- */
+  .stat-row{
+    display:flex;align-items:center;gap:12px;padding:12px 10px;
+    background:var(--card);border:1px solid var(--line);border-radius:4px;margin-bottom:8px;
+  }
+  .stat-row .sw{width:32px;height:32px;border-radius:50%;flex:none;box-shadow:0 0 0 2px var(--bg),0 0 0 3px var(--line-strong);}
+  .stat-row .info{flex:1;min-width:0;}
+  .stat-row .info b{display:block;font-size:13.5px;color:var(--heading);}
+  .stat-row .info span{font-size:11px;color:var(--ink-soft);}
+  .stat-row .stat-amt{font-size:13px;font-weight:800;color:var(--accent);flex:none;font-family:"Shippori Mincho",serif;}
+
+  .cal-head{display:flex;align-items:center;justify-content:center;gap:18px;margin:4px 0 12px;}
+  .cal-head span{font-size:15px;font-weight:700;color:var(--heading);}
+  .cal-nav{background:var(--card);border:1px solid var(--line);border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;color:var(--text);cursor:pointer;}
+  .cal-nav svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2;}
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-bottom:5px;}
+  .cal-dow{margin-bottom:8px;}
+  .cal-dow div{text-align:center;font-size:10.5px;color:var(--ink-soft);font-weight:700;}
+  .cal-cell{
+    aspect-ratio:1;border:1px solid var(--line);border-radius:6px;background:var(--card);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+    cursor:pointer;color:var(--text);position:relative;
+  }
+  .cal-cell.empty{border:none;background:none;cursor:default;}
+  .cal-daynum{font-size:12px;font-weight:600;}
+  .cal-cell.has-rec{border-color:var(--line-strong);}
+  .cal-dot{width:5px;height:5px;border-radius:50%;background:var(--accent);}
+  .cal-cell.selected{background:var(--accent);border-color:var(--accent);}
+  .cal-cell.selected .cal-daynum{color:var(--on-accent);}
+  .cal-cell.selected .cal-dot{background:var(--on-accent);}
+
+  .toast{
+    position:fixed;left:50%;bottom:calc(94px + var(--safe-b));transform:translateX(-50%) translateY(8px);
+    background:var(--ink);color:var(--paper);font-size:12.5px;padding:9px 16px;border-radius:99px;
+    opacity:0;pointer-events:none;transition:opacity .25s ease,transform .25s ease;z-index:60;
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+  .filter-note{font-size:11.5px;color:var(--ink-soft);margin-bottom:12px;}
+  .filter-note b{color:var(--accent);font-weight:700;}
+  .toggle-row{display:flex;gap:8px;}
+  .toggle-chip{
+    flex:1;display:flex;align-items:center;justify-content:center;gap:6px;
+    padding:10px 6px;border:1px solid var(--line-strong);border-radius:3px;
+    background:transparent;font-size:12px;font-weight:600;color:var(--text);cursor:pointer;
+  }
+  .toggle-chip svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.8;flex:none;}
+  .toggle-chip.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);}
+  .toggle-chip.on svg{fill:currentColor;}
+
+  /* ---------- photo editor overlay ---------- */
+  .editor-bg{
+    position:fixed;inset:0;background:rgba(20,17,13,.82);z-index:70;
+    display:none;align-items:center;justify-content:center;padding:14px;
+  }
+  .editor-bg.show{display:flex;}
+  .editor-panel{
+    width:100%;max-width:420px;max-height:94vh;overflow-y:auto;
+    background:var(--bg);border-radius:14px;padding:16px 16px calc(18px + var(--safe-b));
+  }
+  .editor-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;}
+  .editor-head span{font-size:16px;font-weight:700;color:var(--heading);}
+  .editor-close{background:none;border:none;color:var(--ink-soft);width:28px;height:28px;cursor:pointer;}
+  .editor-close svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.8;}
+  .editor-hint{font-size:11.5px;color:var(--ink-soft);margin:0 0 10px;line-height:1.6;}
+  .editor-canvas-wrap{
+    position:relative;width:100%;background:#111;border-radius:8px;overflow:hidden;
+    touch-action:none;user-select:none;-webkit-user-select:none;
+  }
+  .editor-canvas-wrap canvas{display:block;width:100%;height:auto;}
+  .editor-quad-svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;}
+  .editor-quad-svg polygon{fill:rgba(201,69,122,.12);stroke:var(--accent);stroke-width:2;}
+  .editor-handle{
+    position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;
+    background:var(--accent);border:2.5px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.4);
+    cursor:grab;touch-action:none;
+  }
+  .editor-controls{margin-top:16px;}
+  .editor-slider-row{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
+  .editor-slider-row label{width:52px;flex:none;font-size:12px;color:var(--ink-soft);font-weight:600;}
+  .editor-slider-row input[type=range]{flex:1;accent-color:var(--accent);}
+  .editor-quick-actions{display:flex;gap:10px;margin-top:8px;}
+  .editor-quick-actions .btn{flex:1;padding:9px;font-size:12.5px;}
+
+  /* ---------- desktop / mouse presentation ---------- */
+  @media (hover:hover) and (pointer:fine){
+    .btn:hover{filter:brightness(0.96);}
+    .btn.primary:hover{filter:brightness(1.08);}
+    .oshi-pill:hover,.cal-cell:not(.empty):hover,.sns-icon-btn:hover,.photo-preview:hover,
+    .cheki-photo-preview:hover,nav.tabs button:hover .ic,.oshi-row .star:hover,.oshi-row .del:hover,
+    .ticket .editbtn:hover,.swatches button:hover{filter:brightness(0.95);}
+    nav.tabs button:hover{color:var(--accent);}
+    .fab:hover{filter:brightness(1.08);transform:translateY(-1px);}
+    .ticket:hover{box-shadow:0 5px 14px -3px rgba(33,28,23,.22);}
+    a:hover{opacity:.82;}
+  }
+  @media (min-width:640px){
+    body{padding:28px 0;}
+    #app{
+      max-width:480px;border-radius:22px;
+      box-shadow:0 24px 64px -24px rgba(33,28,23,.4),0 0 0 1px var(--line);
+      min-height:calc(100vh - 56px);
+    }
+    .topbar{border-radius:22px 22px 0 0;}
+    nav.tabs{max-width:480px;border-radius:0 0 22px 22px;overflow:hidden;}
+    .fab{right:calc(50% - 240px + 18px);}
+  }
+</style>
+</head>
+<body>
+<div id="app" class="no-oshi">
+  <div class="topbar">
+    <div class="brand">
+      <span class="word mincho">推し活手帳</span>
+      <span class="sub">OSHIKATSU DIARY</span>
+    </div>
+    <div class="header-logo-slot">
+      <button type="button" class="header-logo-btn" id="headerLogoBtn" title="お気に入りグループのロゴを設定">
+        <img id="headerLogoImg" alt="" style="display:none;">
+        <span class="header-logo-placeholder" id="headerLogoPlaceholder">
+          <svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.4"/><path d="M8 6l1-2h6l1 2"/></svg>
+        </span>
+      </button>
+      <div class="photo-menu" id="headerLogoMenu" style="display:none;">
+        <label class="photo-menu-item" style="cursor:pointer;">画像を選ぶ<input type="file" id="headerLogoInput" accept="image/*" style="display:none;"></label>
+        <button type="button" class="photo-menu-item danger" id="clearHeaderLogoBtn" style="display:none;">ロゴを削除</button>
+      </div>
+    </div>
+    <div class="oshi-chip" id="topChip" style="display:none;">
+      <span class="dot" id="topDot"></span>
+      <span class="name" id="topName">-</span>
+      <span class="chev">&#9662;</span>
+    </div>
+    <div class="photo-menu top-chip-menu" id="topChipMenu" style="display:none;"></div>
+  </div>
+
+  <main id="main"></main>
+
+  <button class="fab" id="fabBtn" aria-label="記録を追加">
+    <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+  </button>
+
+  <nav class="tabs">
+    <button data-view="home" class="active">
+      <span class="ic"><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg></span>
+      <span>ホーム</span>
+    </button>
+    <button data-view="live">
+      <span class="ic"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="10" rx="1.5"/><path d="M8 7v10M16 7v10"/><path d="M3 10h2M3 14h2M19 10h2M19 14h2"/></svg></span>
+      <span>LIVE</span>
+    </button>
+    <button data-view="cheki">
+      <span class="ic"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="18" rx="1"/><rect x="6.5" y="6.5" width="11" height="9" rx=".5"/></svg></span>
+      <span>チェキ</span>
+    </button>
+    <button data-view="goods">
+      <span class="ic"><svg viewBox="0 0 24 24"><path d="M6 8l1.5-4h9L18 8"/><path d="M4 8h16l-1.3 12.2a1 1 0 01-1 .8H6.3a1 1 0 01-1-.8L4 8z"/></svg></span>
+      <span>物販</span>
+    </button>
+    <button data-view="stats">
+      <span class="ic"><svg viewBox="0 0 24 24"><path d="M4 20V10M11 20V4M18 20v-7"/></svg></span>
+      <span>集計</span>
+    </button>
+    <button data-view="oshi">
+      <span class="ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.6"/><path d="M4.5 20c1.2-4 4-6 7.5-6s6.3 2 7.5 6"/></svg></span>
+      <span>マイページ</span>
+    </button>
+  </nav>
+</div>
+
+<div class="sheet-bg" id="sheetBg">
+  <div class="sheet" id="sheet"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<div class="editor-bg" id="editorBg">
+  <div class="editor-panel">
+    <div class="editor-head">
+      <span class="mincho">チェキ写真を編集</span>
+      <button type="button" class="editor-close" id="editorCloseBtn" aria-label="閉じる">
+        <svg viewBox="0 0 24 24"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>
+      </button>
+    </div>
+    <p class="editor-hint">四隅のマークをドラッグして、チェキの枠に合わせてください</p>
+    <div class="editor-canvas-wrap" id="editorCanvasWrap">
+      <canvas id="editorCanvas"></canvas>
+      <svg class="editor-quad-svg" id="editorQuadSvg"><polygon id="editorQuadPoly" points=""></polygon></svg>
+      <div class="editor-handle" data-handle="0"></div>
+      <div class="editor-handle" data-handle="1"></div>
+      <div class="editor-handle" data-handle="2"></div>
+      <div class="editor-handle" data-handle="3"></div>
+    </div>
+    <div class="editor-controls">
+      <div class="editor-slider-row">
+        <label>明るさ</label>
+        <input type="range" id="sliderBrightness" min="-60" max="60" value="0">
+      </div>
+      <div class="editor-slider-row">
+        <label>コントラスト</label>
+        <input type="range" id="sliderContrast" min="-60" max="60" value="0">
+      </div>
+      <div class="editor-slider-row">
+        <label>彩度</label>
+        <input type="range" id="sliderSaturation" min="0" max="200" value="100">
+      </div>
+    </div>
+    <div class="editor-quick-actions">
+      <button type="button" class="btn ghost" id="editorAutoBtn">自動補正</button>
+      <button type="button" class="btn ghost" id="editorResetBtn">リセット</button>
+    </div>
+    <div class="sheet-actions">
+      <button type="button" class="btn ghost" id="editorCancelBtn">キャンセル</button>
+      <button type="button" class="btn primary" id="editorApplyBtn">適用する</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+/* ============ state ============ */
+var state = {
+  view:"home",
+  oshis:[],           // {id,name,color,mode,order}
+  live:[],
+  cheki:[],
+  goods:[],
+  activeOshiId:null,
+  headerLogo:null,       // dataURL of an optional favorite-group logo shown in the header
+  filterOshiId:"all",
+  showHidden:false,
+  statsSubView:"oshi",
+  calendarMonth:(function(){ var d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); })(),
+  calendarSelectedDate:null,
+  ready:false
+};
+var storageMode = "local";
+var LOCAL_KEY = "oshikatsu_diary_v1";
+
+/* ============ util: color math ============ */
+function clamp(n,a,b){return Math.max(a,Math.min(b,n));}
+function hexToRgb(hex){
+  hex = (hex||"#C9457A").replace("#","");
+  if(hex.length===3){hex=hex.split("").map(function(c){return c+c;}).join("");}
+  var num = parseInt(hex,16);
+  return {r:(num>>16)&255, g:(num>>8)&255, b:num&255};
+}
+function rgbToHex(r,g,b){
+  function h(v){var s=clamp(Math.round(v),0,255).toString(16);return s.length===1?"0"+s:s;}
+  return "#"+h(r)+h(g)+h(b);
+}
+function rgbToHsl(r,g,b){
+  r/=255;g/=255;b/=255;
+  var max=Math.max(r,g,b),min=Math.min(r,g,b);
+  var h,s,l=(max+min)/2;
+  if(max===min){h=s=0;}
+  else{
+    var d=max-min;
+    s = l>0.5 ? d/(2-max-min) : d/(max+min);
+    switch(max){
+      case r: h=(g-b)/d+(g<b?6:0); break;
+      case g: h=(b-r)/d+2; break;
+      default: h=(r-g)/d+4;
+    }
+    h/=6;
+  }
+  return {h:h*360,s:s*100,l:l*100};
+}
+function hslToRgb(h,s,l){
+  h/=360; s/=100; l/=100;
+  var r,g,b;
+  if(s===0){r=g=b=l;}
+  else{
+    function hue2rgb(p,q,t){
+      if(t<0)t+=1; if(t>1)t-=1;
+      if(t<1/6) return p+(q-p)*6*t;
+      if(t<1/2) return q;
+      if(t<2/3) return p+(q-p)*(2/3-t)*6;
+      return p;
+    }
+    var q = l<0.5 ? l*(1+s) : l+s-l*s;
+    var p = 2*l-q;
+    r=hue2rgb(p,q,h+1/3); g=hue2rgb(p,q,h); b=hue2rgb(p,q,h-1/3);
+  }
+  return {r:r*255,g:g*255,b:b*255};
+}
+function withLightness(hex,l){
+  var rgb=hexToRgb(hex); var hsl=rgbToHsl(rgb.r,rgb.g,rgb.b);
+  var out=hslToRgb(hsl.h,hsl.s,l);
+  return rgbToHex(out.r,out.g,out.b);
+}
+function mixHex(hexA,hexB,weightB){
+  var a=hexToRgb(hexA), b=hexToRgb(hexB);
+  return rgbToHex(
+    a.r+(b.r-a.r)*weightB,
+    a.g+(b.g-a.g)*weightB,
+    a.b+(b.b-a.b)*weightB
+  );
+}
+function luminance(hex){
+  var rgb=hexToRgb(hex);
+  function lin(c){c/=255; return c<=0.03928 ? c/12.92 : Math.pow((c+0.055)/1.055,2.4);}
+  return 0.2126*lin(rgb.r)+0.7152*lin(rgb.g)+0.0722*lin(rgb.b);
+}
+
+/* ============ theme application ============ */
+function applyTheme(oshi){
+  var root = document.documentElement.style;
+  if(!oshi){
+    root.setProperty("--bg","#FBF8F3");
+    root.setProperty("--card","#F2ECE1");
+    root.setProperty("--heading","#211C17");
+    root.setProperty("--text","#211C17");
+    root.setProperty("--accent","#C9457A");
+    root.setProperty("--accent-soft","rgba(201,69,122,0.14)");
+    root.setProperty("--on-accent","#FBF8F3");
+    root.setProperty("--line","rgba(33,28,23,0.16)");
+    root.setProperty("--line-strong","rgba(33,28,23,0.30)");
+    return;
+  }
+  var color = oshi.color || "#C9457A";
+  var mode = oshi.mode || "pale";
+  var lum = luminance(color);
+  if(mode==="bold"){
+    var textOn = lum>0.55 ? "#211C17" : "#FBF8F3";
+    root.setProperty("--bg", color);
+    root.setProperty("--card", mixHex(color, lum>0.55 ? "#000000" : "#FFFFFF", 0.14));
+    root.setProperty("--heading", textOn);
+    root.setProperty("--text", textOn);
+    root.setProperty("--accent", lum>0.55 ? withLightness(color,26) : withLightness(color,86));
+    root.setProperty("--on-accent", lum>0.55 ? "#FBF8F3" : "#211C17");
+    root.setProperty("--accent-soft", "rgba(255,255,255,0.16)");
+    root.setProperty("--line", lum>0.55 ? "rgba(33,28,23,0.18)" : "rgba(255,255,255,0.24)");
+    root.setProperty("--line-strong", lum>0.55 ? "rgba(33,28,23,0.34)" : "rgba(255,255,255,0.4)");
+  } else {
+    root.setProperty("--bg", mixHex(color,"#FBF8F3",0.90));
+    root.setProperty("--card", mixHex(color,"#FBF8F3",0.80));
+    root.setProperty("--heading", withLightness(color,26));
+    root.setProperty("--text", "#211C17");
+    root.setProperty("--accent", withLightness(color,46));
+    root.setProperty("--on-accent", "#FBF8F3");
+    root.setProperty("--accent-soft", mixHex(color,"#FBF8F3",0.82));
+    root.setProperty("--line", "rgba(33,28,23,0.14)");
+    root.setProperty("--line-strong", "rgba(33,28,23,0.28)");
+  }
+}
+
+/* ============ storage: localStorage (reliable, this device/browser only) ============ */
+function uuid(){
+  if(window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  return "id-"+Date.now()+"-"+Math.random().toString(16).slice(2);
+}
+/* Reads an image file, downsizes it to fit within maxSize px and re-encodes
+   as JPEG, so photos stay small enough for localStorage (a few hundred KB max
+   instead of multi-MB originals from a phone camera). */
+function resizeImageFile(file, maxSize, quality){
+  return new Promise(function(resolve, reject){
+    var reader = new FileReader();
+    reader.onerror = function(){ reject(new Error("read failed")); };
+    reader.onload = function(e){
+      var img = new Image();
+      img.onerror = function(){ reject(new Error("decode failed")); };
+      img.onload = function(){
+        var scale = Math.min(1, maxSize / Math.max(img.width, img.height));
+        var w = Math.max(1, Math.round(img.width * scale));
+        var h = Math.max(1, Math.round(img.height * scale));
+        var canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        var ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, w, h);
+        try{
+          resolve(canvas.toDataURL("image/jpeg", quality));
+        }catch(err){ reject(err); }
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+/* Same idea as resizeImageFile, but keeps the source format's transparency
+   (PNG/WebP) instead of flattening it onto a JPEG background — used for the
+   header logo, which is commonly an alpha-channel PNG that must stay see-through. */
+function resizeImageFilePreserveAlpha(file, maxSize){
+  return new Promise(function(resolve, reject){
+    var reader = new FileReader();
+    reader.onerror = function(){ reject(new Error("read failed")); };
+    reader.onload = function(e){
+      var img = new Image();
+      img.onerror = function(){ reject(new Error("decode failed")); };
+      img.onload = function(){
+        var scale = Math.min(1, maxSize / Math.max(img.width, img.height));
+        var w = Math.max(1, Math.round(img.width * scale));
+        var h = Math.max(1, Math.round(img.height * scale));
+        var canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        var ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, w, h);
+        try{
+          resolve(canvas.toDataURL("image/png"));
+        }catch(err){ reject(err); }
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+/* ============ photo editor: perspective crop + brightness/contrast/saturation ============
+   Lets the person drag the 4 corners of a card-shaped photo (like a cheki) onto its edges,
+   straightening a skewed shot into a flat rectangle, then adjust or auto-correct color. */
+var PhotoEditor = (function(){
+  var elBg, elWrap, elCanvas, elQuadPoly, elHandles, elBrightness, elContrast, elSaturation;
+  var img = null, naturalW = 0, naturalH = 0, displayScale = 1;
+  var points = []; // 4 display-space {x,y}, order TL,TR,BR,BL
+  var onDone = null;
+  var dragIndex = -1;
+
+  function el(id){ return document.getElementById(id); }
+
+  function init(){
+    elBg = el("editorBg");
+    elWrap = el("editorCanvasWrap");
+    elCanvas = el("editorCanvas");
+    elQuadPoly = el("editorQuadPoly");
+    elHandles = Array.prototype.slice.call(document.querySelectorAll(".editor-handle"));
+    elBrightness = el("sliderBrightness");
+    elContrast = el("sliderContrast");
+    elSaturation = el("sliderSaturation");
+
+    elHandles.forEach(function(h, i){
+      h.addEventListener("pointerdown", function(e){
+        e.preventDefault();
+        dragIndex = i;
+        try{ h.setPointerCapture(e.pointerId); }catch(err){}
+      });
+      h.addEventListener("pointermove", function(e){
+        if(dragIndex!==i) return;
+        moveHandle(i, e);
+      });
+      h.addEventListener("pointerup", function(){ dragIndex = -1; });
+      h.addEventListener("pointercancel", function(){ dragIndex = -1; });
+    });
+
+    [elBrightness, elContrast, elSaturation].forEach(function(s){
+      s.addEventListener("input", applyPreviewFilter);
+    });
+    el("editorAutoBtn").addEventListener("click", autoCorrect);
+    el("editorResetBtn").addEventListener("click", function(){ resetPoints(); applyPreviewFilter(); });
+    el("editorCancelBtn").addEventListener("click", close);
+    el("editorCloseBtn").addEventListener("click", close);
+    el("editorApplyBtn").addEventListener("click", apply);
+  }
+
+  function moveHandle(i, evt){
+    var rect = elWrap.getBoundingClientRect();
+    var x = Math.max(0, Math.min(rect.width, evt.clientX - rect.left));
+    var y = Math.max(0, Math.min(rect.height, evt.clientY - rect.top));
+    points[i] = {x:x, y:y};
+    renderHandles();
+  }
+
+  function renderHandles(){
+    var rect = elWrap.getBoundingClientRect();
+    elHandles.forEach(function(h, i){
+      h.style.left = points[i].x + "px";
+      h.style.top = points[i].y + "px";
+    });
+    elQuadPoly.setAttribute("points", points.map(function(p){ return p.x+","+p.y; }).join(" "));
+    // keep the SVG's own coordinate system in sync with the wrap's actual pixel size
+    var svg = el("editorQuadSvg");
+    svg.setAttribute("viewBox", "0 0 "+rect.width+" "+rect.height);
+  }
+
+  function resetPoints(){
+    var rect = elWrap.getBoundingClientRect();
+    var mx = rect.width * 0.08, my = rect.height * 0.08;
+    points = [
+      {x:mx, y:my},
+      {x:rect.width-mx, y:my},
+      {x:rect.width-mx, y:rect.height-my},
+      {x:mx, y:rect.height-my}
+    ];
+    renderHandles();
+  }
+
+  function applyPreviewFilter(){
+    var b = Number(elBrightness.value), c = Number(elContrast.value), s = Number(elSaturation.value);
+    elCanvas.style.filter = "brightness("+(100+b)+"%) contrast("+(100+c)+"%) saturate("+s+"%)";
+  }
+
+  function autoCorrect(){
+    try{
+      var ctx = elCanvas.getContext("2d");
+      var data = ctx.getImageData(0, 0, elCanvas.width, elCanvas.height).data;
+      var sum = 0, n = data.length/4;
+      for(var i=0;i<data.length;i+=4){ sum += 0.299*data[i] + 0.587*data[i+1] + 0.114*data[i+2]; }
+      var avg = sum/n;
+      var brightness = Math.round(clampNum(138 - avg, -45, 45));
+      elBrightness.value = brightness;
+      elContrast.value = 16;
+      elSaturation.value = 116;
+      applyPreviewFilter();
+      toast("自動補正しました");
+    }catch(e){
+      toast("自動補正に失敗しました");
+    }
+  }
+  function clampNum(v,a,b){ return Math.max(a, Math.min(b, v)); }
+
+  function computeAffine(x0,y0,x1,y1,x2,y2, u0,v0,u1,v1,u2,v2){
+    var D = x0*(y1-y2) + x1*(y2-y0) + x2*(y0-y1);
+    if(!D) return [1,0,0,1,0,0];
+    var a = (u0*(y1-y2) + u1*(y2-y0) + u2*(y0-y1)) / D;
+    var c = (u0*(x2-x1) + u1*(x0-x2) + u2*(x1-x0)) / D;
+    var e = (u0*(x1*y2-x2*y1) + u1*(x2*y0-x0*y2) + u2*(x0*y1-x1*y0)) / D;
+    var b = (v0*(y1-y2) + v1*(y2-y0) + v2*(y0-y1)) / D;
+    var d = (v0*(x2-x1) + v1*(x0-x2) + v2*(x1-x0)) / D;
+    var f = (v0*(x1*y2-x2*y1) + v1*(x2*y0-x0*y2) + v2*(x0*y1-x1*y0)) / D;
+    return [a,b,c,d,e,f];
+  }
+
+  function dist(p,q){ return Math.sqrt((p.x-q.x)*(p.x-q.x)+(p.y-q.y)*(p.y-q.y)); }
+
+  /* Warps the quad (srcPts, 4 points TL,TR,BR,BL in the SOURCE image's own pixel
+     space) onto a flat outW x outH rectangle by splitting it into two triangles
+     and mapping each with its own affine transform (canvas has no native
+     quad/perspective draw, so this is the standard workaround). */
+  function warpQuadToRect(sourceImg, srcPts, outW, outH){
+    var canvas = document.createElement("canvas");
+    canvas.width = outW; canvas.height = outH;
+    var ctx = canvas.getContext("2d");
+    var dst = [{x:0,y:0},{x:outW,y:0},{x:outW,y:outH},{x:0,y:outH}];
+    function drawTri(s0,s1,s2,d0,d1,d2){
+      var m = computeAffine(s0.x,s0.y,s1.x,s1.y,s2.x,s2.y, d0.x,d0.y,d1.x,d1.y,d2.x,d2.y);
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(d0.x,d0.y); ctx.lineTo(d1.x,d1.y); ctx.lineTo(d2.x,d2.y); ctx.closePath();
+      ctx.clip();
+      ctx.transform(m[0],m[1],m[2],m[3],m[4],m[5]);
+      ctx.drawImage(sourceImg, 0, 0);
+      ctx.restore();
+    }
+    drawTri(srcPts[0],srcPts[1],srcPts[2], dst[0],dst[1],dst[2]);
+    drawTri(srcPts[0],srcPts[2],srcPts[3], dst[0],dst[2],dst[3]);
+    return canvas;
+  }
+
+  function open(file, doneCallback){
+    onDone = doneCallback;
+    var reader = new FileReader();
+    reader.onerror = function(){ toast("画像の読み込みに失敗しました"); };
+    reader.onload = function(e){
+      var image = new Image();
+      image.onerror = function(){ toast("画像の読み込みに失敗しました"); };
+      image.onload = function(){
+        img = image;
+        naturalW = image.width; naturalH = image.height;
+        var maxDisplay = Math.min(360, window.innerWidth - 60);
+        displayScale = Math.min(1, maxDisplay / naturalW);
+        var dispW = Math.round(naturalW * displayScale);
+        var dispH = Math.round(naturalH * displayScale);
+        elCanvas.width = dispW; elCanvas.height = dispH;
+        elCanvas.style.filter = "";
+        var ctx = elCanvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, dispW, dispH);
+        elBrightness.value = 0; elContrast.value = 0; elSaturation.value = 100;
+        elBg.classList.add("show");
+        // layout settles after display:flex is applied, so size handles on the next frame
+        requestAnimationFrame(function(){ resetPoints(); });
+      };
+      image.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function close(){
+    elBg.classList.remove("show");
+    img = null;
+    if(onDone) onDone(null);
+    onDone = null;
+  }
+
+  function apply(){
+    if(!img) return;
+    var srcPts = points.map(function(p){ return {x: p.x/displayScale, y: p.y/displayScale}; });
+    var topLen = dist(srcPts[0],srcPts[1]), bottomLen = dist(srcPts[3],srcPts[2]);
+    var leftLen = dist(srcPts[0],srcPts[3]), rightLen = dist(srcPts[1],srcPts[2]);
+    var w = (topLen+bottomLen)/2, h = (leftLen+rightLen)/2;
+    var maxDim = 640;
+    var outScale = Math.min(1, maxDim / Math.max(w,h));
+    var outW = Math.max(40, Math.round(w*outScale));
+    var outH = Math.max(40, Math.round(h*outScale));
+
+    var warped = warpQuadToRect(img, srcPts, outW, outH);
+
+    var b = Number(elBrightness.value), c = Number(elContrast.value), s = Number(elSaturation.value);
+    var finalCanvas = document.createElement("canvas");
+    finalCanvas.width = outW; finalCanvas.height = outH;
+    var fctx = finalCanvas.getContext("2d");
+    fctx.filter = "brightness("+(100+b)+"%) contrast("+(100+c)+"%) saturate("+s+"%)";
+    fctx.drawImage(warped, 0, 0);
+
+    var dataUrl;
+    try{ dataUrl = finalCanvas.toDataURL("image/jpeg", 0.86); }
+    catch(e){ toast("画像の書き出しに失敗しました"); return; }
+
+    elBg.classList.remove("show");
+    img = null;
+    var cb = onDone; onDone = null;
+    if(cb) cb(dataUrl);
+  }
+
+  return { init: init, open: open };
+})();
+
+function loadLocal(){
+  try{
+    var raw = localStorage.getItem(LOCAL_KEY);
+    if(raw){
+      var data = JSON.parse(raw);
+      state.oshis = data.oshis||[];
+      state.live = data.live||[];
+      state.cheki = data.cheki||[];
+      state.goods = data.goods||[];
+      state.activeOshiId = data.activeOshiId||null;
+      state.headerLogo = data.headerLogo||null;
+    }
+  }catch(e){
+    toast("保存データの読み込みに失敗しました");
+  }
+}
+function saveLocal(){
+  try{
+    localStorage.setItem(LOCAL_KEY, JSON.stringify({
+      oshis:state.oshis, live:state.live, cheki:state.cheki, goods:state.goods,
+      activeOshiId:state.activeOshiId, headerLogo:state.headerLogo
+    }));
+    return true;
+  }catch(e){
+    toast("保存に失敗しました（ストレージの空き容量やブラウザ設定をご確認ください）");
+    return false;
+  }
+}
+
+async function initStorage(){
+  loadLocal();
+  state.ready = true;
+  render();
+}
+
+async function persistOshi(oshi){
+  var idx = state.oshis.findIndex(function(o){return o.id===oshi.id;});
+  if(idx>=0) state.oshis[idx]=oshi; else state.oshis.push(oshi);
+  saveLocal();
+}
+async function removeOshi(id){
+  state.oshis = state.oshis.filter(function(o){return o.id!==id;});
+  saveLocal();
+}
+async function setActiveOshi(id){
+  state.activeOshiId = id;
+  saveLocal();
+}
+async function persistRecord(type,rec){
+  var arr = state[type];
+  var idx = arr.findIndex(function(r){return r.id===rec.id;});
+  if(idx>=0) arr[idx]=rec; else arr.push(rec);
+  saveLocal();
+}
+async function removeRecord(type,id){
+  state[type] = state[type].filter(function(r){return r.id!==id;});
+  saveLocal();
+}
+
+/* ============ helpers ============ */
+var PALETTE = [
+  {name:"レッド",hex:"#D8453F"},
+  {name:"ピンク",hex:"#E0568F"},
+  {name:"オレンジ",hex:"#E08A2C"},
+  {name:"イエロー",hex:"#E0BF2C"},
+  {name:"みどり",hex:"#4E9A5C"},
+  {name:"エメラルド",hex:"#2EA88A"},
+  {name:"水色",hex:"#3FB4D6"},
+  {name:"ブルー",hex:"#3E6FD9"},
+  {name:"パープル",hex:"#7A5AD1"},
+  {name:"ラベンダー",hex:"#B39AE0"},
+  {name:"ホワイト",hex:"#E9E2D4"},
+  {name:"ブラック",hex:"#3A342C"},
+  {name:"ゴールド",hex:"#C9A227"},
+  {name:"シルバー",hex:"#ABA398"}
+];
+
+function getOshi(id){
+  for(var i=0;i<state.oshis.length;i++) if(state.oshis[i].id===id) return state.oshis[i];
+  return null;
+}
+/* An oshi can belong to more than one group at once (兼任). oshi.groups is
+   the canonical list: [{id,name,sns_instagram,sns_x,sns_tiktok,sns_youtube}].
+   Oshi saved before this existed only had a single "group" string plus flat
+   "sns_group_*" fields; those are read as a one-item list here so old data
+   keeps showing and editing correctly without a separate migration step. */
+function oshiGroupsList(oshi){
+  if(oshi.groups && oshi.groups.length) return oshi.groups;
+  if(oshi.group){
+    return [{
+      id:"legacy",
+      name: oshi.group,
+      color:"",
+      sns_instagram: oshi.sns_group_instagram||"",
+      sns_x: oshi.sns_group_x||"",
+      sns_tiktok: oshi.sns_group_tiktok||"",
+      sns_youtube: oshi.sns_group_youtube||""
+    }];
+  }
+  return [];
+}
+/* The first group in the list is always treated as the "main" affiliation;
+   order alone determines main/sub, so no separate sort is needed here. */
+function oshiGroupNames(oshi){
+  return oshiGroupsList(oshi).map(function(g){ return g.name; }).filter(Boolean);
+}
+function oshiFullLabel(o){
+  var parts = oshiGroupNames(o).slice();
+  parts.push(o.name);
+  return parts.join(" ・ ");
+}
+function oshiSubLabel(o){
+  var parts=[];
+  if(o.agency) parts.push(o.agency);
+  var names = oshiGroupNames(o);
+  if(names.length) parts.push(names[0]);
+  return parts.join(" ／ ");
+}
+function oshiBirthdayLabel(o){
+  if(o.birthMonth && o.birthDay) return o.birthMonth+"/"+o.birthDay;
+  return null;
+}
+function oshiAge(o){
+  if(!o.birthYear) return null;
+  var now = new Date();
+  var age = now.getFullYear() - o.birthYear;
+  if(o.birthMonth && o.birthDay){
+    var passed = (now.getMonth()+1 > o.birthMonth) || (now.getMonth()+1===o.birthMonth && now.getDate() >= o.birthDay);
+    if(!passed) age--;
+  }
+  return age>=0 ? age : null;
+}
+function isBirthdayToday(o){
+  if(!o.birthMonth || !o.birthDay) return false;
+  var now = new Date();
+  return Number(o.birthMonth)===now.getMonth()+1 && Number(o.birthDay)===now.getDate();
+}
+function oshiSwatchStyle(o){
+  if(o.photo) return "background-image:url("+o.photo+");background-size:cover;background-position:center;";
+  return "background:"+o.color+";";
+}
+function oshiAvatarHtml(o,size){
+  var style = oshiSwatchStyle(o);
+  var inner = o.photo ? '' : '<span class="avatar-initial" style="font-size:'+Math.round(size*0.42)+'px;">'+escapeHtml((o.name||"?").charAt(0))+'</span>';
+  return '<div class="avatar" style="width:'+size+'px;height:'+size+'px;'+style+'">'+inner+'</div>';
+}
+var SNS_META = {
+  instagram:{label:"Instagram", icon:'<rect x="3" y="3" width="18" height="18" rx="5.5"/><circle cx="12" cy="12" r="4"/><circle cx="17.3" cy="6.7" r=".9" fill="currentColor" stroke="none"/>', url:function(id){ return "https://instagram.com/"+encodeURIComponent(id.replace(/^@+/,"")); }},
+  x:{label:"X", icon:'<line x1="4.5" y1="4.5" x2="19.5" y2="19.5"/><line x1="19.5" y1="4.5" x2="4.5" y2="19.5"/>', url:function(id){ return "https://x.com/"+encodeURIComponent(id.replace(/^@+/,"")); }},
+  tiktok:{label:"TikTok", icon:'<path d="M13.5 3.5v11.2a3.3 3.3 0 11-2.8-3.26"/><path d="M13.5 3.5c.4 2.6 2.1 4.3 4.8 4.6v2.6c-1.8-.1-3.4-.7-4.8-1.7"/>', url:function(id){ return "https://www.tiktok.com/@"+encodeURIComponent(id.replace(/^@+/,"")); }},
+  youtube:{label:"YouTube", icon:'<rect x="2.5" y="5.5" width="19" height="13" rx="3.5"/><path d="M10 9.3l5 2.7-5 2.7z" fill="currentColor" stroke="none"/>', url:function(id){
+    /* A YouTube "channel ID" (UCxxxxxxxxxxxxxxxxxxxxxx, 24 chars) only
+       resolves under /channel/, never under /@ — unlike a handle, which
+       needs the @ prefix. Route each to the URL it actually works with. */
+    if(/^UC[0-9A-Za-z_-]{22}$/.test(id)) return "https://www.youtube.com/channel/"+encodeURIComponent(id);
+    return "https://www.youtube.com/@"+encodeURIComponent(id.replace(/^@+/,""));
+  }}
+};
+var SNS_KEYS = ["instagram","x","tiktok","youtube"];
+/* SNS fields store a bare ID (e.g. "hakane_kono"), not a full URL. A value
+   already starting with http(s):// is treated as a legacy full URL (saved
+   before this change) and used as-is, so old data keeps working. */
+function snsIsLegacyUrl(v){ return /^https?:\/\//i.test(v||""); }
+function snsHref(key, storedVal){
+  if(!storedVal) return "";
+  if(snsIsLegacyUrl(storedVal)) return storedVal;
+  return SNS_META[key].url(storedVal);
+}
+/* For editing: show a bare ID in the input even if the stored value is a
+   legacy full URL, by extracting the last path segment. */
+function snsIdForEdit(storedVal){
+  if(!storedVal) return "";
+  if(!snsIsLegacyUrl(storedVal)) return storedVal;
+  try{
+    var parts = storedVal.split("?")[0].split("#")[0].split("/").filter(Boolean);
+    return (parts[parts.length-1] || "").replace(/^@+/, "");
+  }catch(e){ return storedVal; }
+}
+/* The person's own SNS lives directly on the oshi ("sns_person_<key>"),
+   falling back to the pre-groups flat "sns_<key>" fields for old data. */
+function getSnsValue(oshi, scope, key){
+  var scoped = oshi["sns_"+scope+"_"+key];
+  if(scoped) return scoped;
+  if(scope==="person" && oshi["sns_"+key]) return oshi["sns_"+key];
+  return "";
+}
+/* Renders one platform's icon: a clickable, full-color link when the value
+   is registered, or a faded, non-clickable placeholder when it isn't — so
+   every platform is always visible and registration status reads at a glance. */
+function snsIconHtml(k, val){
+  var meta = SNS_META[k];
+  if(val){
+    return '<a href="'+escapeHtml(snsHref(k, val))+'" target="_blank" rel="noopener noreferrer" title="'+meta.label+'" aria-label="'+meta.label+'">'
+      + '<svg viewBox="0 0 24 24">'+meta.icon+'</svg></a>';
+  }
+  return '<span class="unregistered" title="'+meta.label+'（未登録）" aria-label="'+meta.label+'（未登録）">'
+    + '<svg viewBox="0 0 24 24">'+meta.icon+'</svg></span>';
+}
+function snsIconsHtml(oshi, scope){
+  var hasAny = SNS_KEYS.some(function(k){ return getSnsValue(oshi, scope, k); });
+  if(!hasAny) return "";
+  return SNS_KEYS.map(function(k){ return snsIconHtml(k, getSnsValue(oshi, scope, k)); }).join("");
+}
+/* Same as snsIconsHtml, but for one group object's own sns_<key> fields
+   (a group isn't "scoped" off the oshi the way person/legacy data is —
+   each group in oshi.groups carries its fields directly). */
+function groupSnsIconsHtml(group){
+  var hasAny = SNS_KEYS.some(function(k){ return group["sns_"+k]; });
+  if(!hasAny) return "";
+  return SNS_KEYS.map(function(k){ return snsIconHtml(k, group["sns_"+k]); }).join("");
+}
+/* Renders the person's SNS row, then one row per group the oshi belongs to
+   (掛け持ち-friendly), each labeled with that group's own real name rather
+   than a generic "グループ" caption. Rows with nothing registered are
+   omitted entirely. */
+function snsLinksHtml(oshi, variant){
+  var onAccent = variant==="hero";
+  var rows = "";
+  var personIcons = snsIconsHtml(oshi, "person");
+  if(personIcons){
+    var mainColor = (oshiGroupsList(oshi)[0] && oshiGroupsList(oshi)[0].color) || "";
+    rows += '<div class="sns-scope-row">'
+      + '<span class="sns-caption">'
+      +   (mainColor? '<span class="group-color-dot" style="background:'+mainColor+'"></span>' : '')
+      +   '個人'
+      + '</span>'
+      + '<div class="sns-links'+(onAccent?' on-accent':'')+'">'+personIcons+'</div>'
+      + '</div>';
+  }
+  oshiGroupsList(oshi).forEach(function(g){
+    var icons = groupSnsIconsHtml(g);
+    if(!icons) return;
+    rows += '<div class="sns-scope-row">'
+      + '<span class="sns-caption">'
+      +   (g.color? '<span class="group-color-dot" style="background:'+g.color+'"></span>' : '')
+      +   escapeHtml(g.name||"グループ")
+      + '</span>'
+      + '<div class="sns-links'+(onAccent?' on-accent':'')+'">'+icons+'</div>'
+      + '</div>';
+  });
+  if(!rows) return "";
+  return '<div class="sns-block'+(onAccent?' on-accent':'')+'">'+rows+'</div>';
+}
+function activeOshi(){ return getOshi(state.activeOshiId); }
+function fmtYen(n){
+  n = Number(n)||0;
+  return "&#165;"+n.toLocaleString("ja-JP");
+}
+function fmtYenPlain(n){
+  n = Number(n)||0;
+  return "\u00A5"+n.toLocaleString("ja-JP");
+}
+function fmtDate(d){
+  if(!d) return "-";
+  var parts = d.split("-");
+  if(parts.length!==3) return d;
+  return parts[1]+"/"+parts[2];
+}
+function fmtYm(d){
+  if(!d) return "";
+  var parts = d.split("-");
+  if(parts.length!==3) return "";
+  return parts[0]+"."+parts[1];
+}
+function escapeHtml(s){
+  if(s===undefined||s===null) return "";
+  return String(s).replace(/[&<>"']/g,function(c){
+    return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c];
+  });
+}
+function recAmount(type,r){
+  if(type==="live") return Number(r.price)||0;
+  if(type==="cheki") return Number(r.price)||0;
+  if(type==="goods") return (Number(r.price)||0)*(Number(r.qty)||1);
+  return 0;
+}
+function allRecordsForOshi(oshiId){
+  var out=[];
+  state.live.forEach(function(r){ if(oshiId==="all"||r.oshiId===oshiId) out.push({type:"live",r:r}); });
+  state.cheki.forEach(function(r){ if(oshiId==="all"||r.oshiId===oshiId) out.push({type:"cheki",r:r}); });
+  state.goods.forEach(function(r){ if(oshiId==="all"||r.oshiId===oshiId) out.push({type:"goods",r:r}); });
+  out.sort(function(a,b){ return (b.r.date||"").localeCompare(a.r.date||""); });
+  return out;
+}
+function allRecordsFlat(){
+  return allRecordsForOshi("all").filter(function(item){ return !item.r.hidden; });
+}
+function aggregateByOshi(){
+  return state.oshis.map(function(o){
+    var recs = allRecordsFlat().filter(function(item){ return item.r.oshiId===o.id; });
+    var liveN = recs.filter(function(i){return i.type==="live";}).length;
+    var chekiN = recs.filter(function(i){return i.type==="cheki";}).reduce(function(s,i){return s+(Number(i.r.count)||1);},0);
+    var goodsN = recs.filter(function(i){return i.type==="goods";}).reduce(function(s,i){return s+(Number(i.r.qty)||1);},0);
+    var total = recs.reduce(function(s,i){ return s+recAmount(i.type,i.r); },0);
+    return {oshi:o, liveN:liveN, chekiN:chekiN, goodsN:goodsN, total:total, itemCount:recs.length};
+  }).sort(function(a,b){ return b.total-a.total; });
+}
+function aggregateByEvent(){
+  var map = {};
+  allRecordsFlat().forEach(function(item){
+    var name = (item.r.title || "").trim();
+    if(!name) return;
+    if(!map[name]) map[name] = {name:name, count:0, total:0};
+    map[name].count += (item.type==="cheki") ? (Number(item.r.count)||1) : (item.type==="goods" ? (Number(item.r.qty)||1) : 1);
+    map[name].total += recAmount(item.type,item.r);
+  });
+  return Object.keys(map).map(function(k){ return map[k]; }).sort(function(a,b){ return b.count-a.count; });
+}
+function aggregateByMonth(monthsBack){
+  var now = new Date();
+  var months = [];
+  for(var i=monthsBack-1;i>=0;i--){
+    var d = new Date(now.getFullYear(), now.getMonth()-i, 1);
+    months.push({key:d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"), label:(d.getMonth()+1)+"月", total:0, count:0});
+  }
+  var byKey = {};
+  months.forEach(function(m){ byKey[m.key]=m; });
+  allRecordsFlat().forEach(function(item){
+    var key = (item.r.date||"").slice(0,7);
+    if(byKey[key]){
+      byKey[key].total += recAmount(item.type,item.r);
+      byKey[key].count += 1;
+    }
+  });
+  return months;
+}
+function recordsForDate(dateStr){
+  return allRecordsFlat().filter(function(item){ return item.r.date===dateStr; });
+}
+function calendarDatesWithRecords(monthKey){
+  var set = {};
+  allRecordsFlat().forEach(function(item){
+    if((item.r.date||"").slice(0,7)===monthKey) set[item.r.date] = (set[item.r.date]||0)+1;
+  });
+  return set;
+}
+function shiftMonth(monthKey, delta){
+  var parts = monthKey.split("-");
+  var d = new Date(Number(parts[0]), Number(parts[1])-1+delta, 1);
+  return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");
+}
+function toast(msg){
+  var t=document.getElementById("toast");
+  t.textContent=msg; t.classList.add("show");
+  clearTimeout(toast._t);
+  toast._t = setTimeout(function(){ t.classList.remove("show"); }, 1800);
+}
+
+function iconCluster(){
+  return '<div class="cluster">'
+    + '<span><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="10" rx="1.5"/><path d="M8 7v10M16 7v10"/></svg></span>'
+    + '<span><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="18" rx="1"/><rect x="6.5" y="6.5" width="11" height="9" rx=".5"/></svg></span>'
+    + '<span><svg viewBox="0 0 24 24"><path d="M6 8l1.5-4h9L18 8"/><path d="M4 8h16l-1.3 12.2a1 1 0 01-1 .8H6.3a1 1 0 01-1-.8L4 8z"/></svg></span>'
+    + '</div>';
+}
+var KIND_LABEL = {live:"LIVE", cheki:"チェキ", goods:"物販"};
+function kindIcon(type){
+  if(type==="live") return '<svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="10" rx="1.5"/><path d="M8 7v10M16 7v10"/></svg>';
+  if(type==="cheki") return '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="18" rx="1"/><rect x="6.5" y="6.5" width="11" height="9" rx=".5"/></svg>';
+  return '<svg viewBox="0 0 24 24"><path d="M6 8l1.5-4h9L18 8"/><path d="M4 8h16l-1.3 12.2a1 1 0 01-1 .8H6.3a1 1 0 01-1-.8L4 8z"/></svg>';
+}
+
+/* ============ rendering: HOME ============ */
+function renderHome(){
+  var oshi = activeOshi();
+  var html = "";
+
+  if(!oshi){
+    html += '<div class="hero empty">'
+      + '<div class="name mincho">まだ推しが登録されていません</div>'
+      + '<p>推しの名前とカラーを登録すると、この手帳全体がその色に染まります。まずは推しを追加しましょう。</p>'
+      + '<button class="btn primary block" data-action="add-oshi">推しを登録する</button>'
+      + '</div>';
+    html += '<div class="section-label">つかいかた</div>';
+    html += '<div class="empty-state">'
+      + iconCluster()
+      + '<p>推しを登録すると、LIVE参戦・チェキ・物販の記録をタブごとにつけられます。<br>タブ下部の＋ボタンから記録を追加してください。</p>'
+      + '</div>';
+    document.getElementById("main").innerHTML = html;
+    return;
+  }
+
+  var recs = allRecordsForOshi(oshi.id);
+  var liveN = state.live.filter(function(r){return r.oshiId===oshi.id;}).length;
+  var chekiN = state.cheki.filter(function(r){return r.oshiId===oshi.id;}).reduce(function(s,r){return s+(Number(r.count)||1);},0);
+  var goodsN = state.goods.filter(function(r){return r.oshiId===oshi.id;}).reduce(function(s,r){return s+(Number(r.qty)||1);},0);
+  var total = recs.reduce(function(s,item){ return s+recAmount(item.type,item.r); },0);
+
+  var subLabel = oshiSubLabel(oshi) || "推し活中";
+  var bday = oshiBirthdayLabel(oshi);
+  var age = oshiAge(oshi);
+  var bdayBits = [];
+  if(bday) bdayBits.push("誕生日："+bday);
+  if(age!==null) bdayBits.push(age+"歳");
+  else if(bday) bdayBits.push("非公開");
+  html += '<div class="hero">'
+    + '<div class="ring"></div><div class="ring2"></div>'
+    + (isBirthdayToday(oshi)? '<div class="bday-badge">本日 誕生日</div>' : '')
+    + '<div class="eyebrow"><svg viewBox="0 0 24 24"><path d="M12 3l2.6 6 6.4.6-4.9 4.2 1.5 6.2L12 16.9 6.4 20l1.5-6.2-4.9-4.2 6.4-.6z"/></svg>'+escapeHtml(subLabel)+'</div>'
+    + '<div class="headline">'
+    +   '<div class="who">'+oshiAvatarHtml(oshi,56)+'<div class="name mincho">'+escapeHtml(oshi.name)+'</div></div>'
+    +   '<div class="stampring"><b>'+liveN+'</b><span>参戦</span></div>'
+    + '</div>'
+    + (bdayBits.length? '<div class="colorname-tag">'+escapeHtml(bdayBits.join(" ・ "))+'</div>' : '')
+    + snsLinksHtml(oshi,"hero")
+    + '<div class="stats">'
+    +   '<div class="stat"><b>'+liveN+'</b><span>参戦回数</span></div>'
+    +   '<div class="stat"><b>'+chekiN+'</b><span>チェキ枚数</span></div>'
+    +   '<div class="stat"><b>'+goodsN+'</b><span>物販点数</span></div>'
+    + '</div>'
+    + '</div>';
+
+  html += '<div class="oshi-pills">';
+  state.oshis.forEach(function(o){
+    html += '<button class="oshi-pill '+(o.id===oshi.id?'on':'')+'" data-action="set-active" data-id="'+o.id+'">'
+      + '<span class="d" style="'+oshiSwatchStyle(o)+'"></span>'+escapeHtml(o.name)+'</button>';
+  });
+  html += '<button class="oshi-pill add" data-action="add-oshi">＋ 推しを追加</button>';
+  html += '</div>';
+
+  // monthly chart, last 6 months
+  var now = new Date();
+  var months = [];
+  for(var i=5;i>=0;i--){
+    var d = new Date(now.getFullYear(), now.getMonth()-i, 1);
+    months.push({key:d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"), label:(d.getMonth()+1)+"月"});
+  }
+  var sums = months.map(function(m){
+    var s = 0;
+    recs.forEach(function(item){
+      if((item.r.date||"").slice(0,7)===m.key) s += recAmount(item.type,item.r);
+    });
+    return s;
+  });
+  var maxV = Math.max.apply(null, sums.concat([1]));
+  html += '<div class="chart-card">'
+    + '<h3>月別 推し活費用</h3><span class="unit">直近6ヶ月・合計 '+fmtYen(total)+'</span>'
+    + '<div class="bars">';
+  months.forEach(function(m,i){
+    var h = Math.round((sums[i]/maxV)*72)+4;
+    html += '<div class="col"><div class="fill" style="height:'+h+'px" title="'+fmtYen(sums[i])+'"></div><div class="mo">'+m.label+'</div></div>';
+  });
+  html += '</div></div>';
+
+  html += '<div class="section-label">最近の記録</div>';
+  var visibleRecs = recs.filter(function(item){ return !item.r.hidden; });
+  if(visibleRecs.length===0){
+    html += '<div class="empty-state">'
+      + iconCluster()
+      + '<p>まだ記録がありません。右下の＋ボタンからLIVE・チェキ・物販の記録を追加してみましょう。</p>'
+      + '</div>';
+  } else {
+    visibleRecs.slice(0,8).forEach(function(item){
+      html += ticketHtml(item.type,item.r);
+    });
+  }
+
+  document.getElementById("main").innerHTML = html;
+}
+
+/* ============ rendering: record list pages (live/cheki/goods) ============ */
+function labelForType(type){
+  return type==="live" ? {title:"LIVE記録", sub:"参戦した公演を記録する", icon:'<path d="M3 11l9-7 9 7"/>'} :
+         type==="cheki" ? {title:"チェキ記録", sub:"撮ったチェキを記録する"} :
+         {title:"物販記録", sub:"購入したグッズを記録する"};
+}
+function renderListPage(type){
+  var info = labelForType(type);
+  var html = '<div class="page-head"><h1 class="mincho">'+info.title+'</h1><p>'+info.sub+'</p></div>';
+
+  if(state.oshis.length===0){
+    html += '<div class="hero empty">'
+      + '<div class="name mincho">まず推しを登録してください</div>'
+      + '<p>'+info.title+'をつけるには、記録の相手となる推し（所属・グループ・人物名・担当カラー）を先に登録する必要があります。</p>'
+      + '<button class="btn primary block" data-action="add-oshi">推しを登録する</button>'
+      + '</div>';
+    document.getElementById("main").innerHTML = html;
+    return;
+  }
+
+  if(state.oshis.length>1){
+    html += '<div class="oshi-pills">';
+    html += '<button class="oshi-pill '+(state.filterOshiId==="all"?"on":"")+'" data-action="filter-oshi" data-id="all">すべて</button>';
+    state.oshis.forEach(function(o){
+      html += '<button class="oshi-pill '+(state.filterOshiId===o.id?"on":"")+'" data-action="filter-oshi" data-id="'+o.id+'">'
+        + '<span class="d" style="'+oshiSwatchStyle(o)+'"></span>'+escapeHtml(o.name)+'</button>';
+    });
+    html += '</div>';
+  }
+
+  var fullList = state[type].filter(function(r){
+    return state.filterOshiId==="all" || r.oshiId===state.filterOshiId;
+  });
+  var hiddenCount = fullList.filter(function(r){ return r.hidden; }).length;
+  if(hiddenCount>0){
+    html += '<button class="btn ghost" data-action="toggle-hidden" style="margin-bottom:12px;font-size:12px;padding:8px 12px;">'
+      + (state.showHidden ? "非表示のアイテムを隠す" : "非表示のアイテムを表示（"+hiddenCount+"件）")
+      + '</button>';
+  }
+
+  var list = fullList.filter(function(r){ return state.showHidden || !r.hidden; })
+    .slice().sort(function(a,b){ return (b.date||"").localeCompare(a.date||""); });
+
+  var total = list.reduce(function(s,r){ return s+recAmount(type,r); },0);
+  if(list.length>0){
+    html += '<div class="filter-note">'+list.length+'件・合計 <b>'+fmtYen(total)+'</b></div>';
+  }
+
+  if(list.length===0){
+    html += '<div class="empty-state">'
+      + '<svg viewBox="0 0 24 24">'+kindIconRaw(type)+'</svg>'
+      + '<p>まだ'+info.title.replace("記録","")+'の記録がありません。右下の＋ボタンから追加できます。</p>'
+      + '</div>';
+  } else {
+    list.forEach(function(r){ html += ticketHtml(type,r,true); });
+  }
+
+  document.getElementById("main").innerHTML = html;
+}
+function kindIconRaw(type){
+  if(type==="live") return '<rect x="3" y="7" width="18" height="10" rx="1.5"/><path d="M8 7v10M16 7v10"/>';
+  if(type==="cheki") return '<rect x="4" y="4" width="16" height="18" rx="1"/><rect x="6.5" y="6.5" width="11" height="9" rx=".5"/>';
+  return '<path d="M6 8l1.5-4h9L18 8"/><path d="M4 8h16l-1.3 12.2a1 1 0 01-1 .8H6.3a1 1 0 01-1-.8L4 8z"/>';
+}
+
+function ticketHtml(type,r,withOshiTag){
+  var oshi = getOshi(r.oshiId);
+  var amt = recAmount(type,r);
+  var day = (r.date||"").split("-")[2]||"--";
+  var titleText = r.title || (type==="goods"?r.item:"") || "(無題)";
+  var metaBits = [];
+  if(type==="live"){
+    if(r.venue) metaBits.push(escapeHtml(r.venue));
+    if(r.ticketType) metaBits.push(escapeHtml(r.ticketType));
+    if(r.seat) metaBits.push(escapeHtml(r.seat));
+  } else if(type==="cheki"){
+    metaBits.push((Number(r.count)||1)+"枚");
+    if(r.content) metaBits.push(escapeHtml(r.content));
+  } else {
+    if(r.item) metaBits.push(escapeHtml(r.item));
+    metaBits.push((Number(r.qty)||1)+"点");
+  }
+  if(withOshiTag && oshi && state.filterOshiId==="all"){
+    metaBits.unshift('<span style="color:'+oshi.color+';font-weight:700;">'+escapeHtml(oshiFullLabel(oshi))+'</span>');
+  }
+  var streamLinkHtml = (type==="live" && r.streamUrl)
+    ? '<a href="'+escapeHtml(r.streamUrl)+'" target="_blank" rel="noopener noreferrer" class="stream-link">配信を見る</a>'
+    : "";
+  var stubHasPhoto = (type==="live") && !!r.photo;
+  var html = '<div class="ticket'+(r.hidden?' is-hidden':'')+'">'
+    + '<div class="tape"></div>'
+    + (r.favorite ? '<div class="fav-badge"><svg viewBox="0 0 24 24"><path d="M12 3l2.6 6 6.4.6-4.9 4.2 1.5 6.2L12 16.9 6.4 20l1.5-6.2-4.9-4.2 6.4-.6z"/></svg></div>' : '')
+    + (type==="cheki" ? ('<div class="photo">'+(r.photo? '<img src="'+r.photo+'" alt="">' : '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.4"/><path d="M8 6l1-2h6l1 2"/></svg>')+'</div>') : '')
+    + '<div class="main">'
+    +   '<div class="kind"><span class="stamp">'+kindIcon(type)+KIND_LABEL[type]+'</span>'+(r.tag?'<span class="tag-chip">'+escapeHtml(r.tag)+'</span>':'')+(streamLinkHtml? '<span class="stream-link-wrap">'+streamLinkHtml+'</span>' : '')+'</div>'
+    +   '<div class="title">'+escapeHtml(titleText)+'</div>'
+    +   (metaBits.length? '<div class="meta">'+metaBits.join(" ・ ")+'</div>' : '')
+    +   (r.memo? '<div class="memo">'+escapeHtml(r.memo)+'</div>' : '')
+    + '</div>'
+    + '<div class="stub'+(stubHasPhoto?' has-photo':'')+'"'+(stubHasPhoto?' style="background-image:linear-gradient(175deg, rgba(20,17,13,.1), rgba(20,17,13,.62)), url('+r.photo+');"':'')+'>'
+    +   '<div class="day">'+day+'</div>'
+    +   '<div class="ym">'+fmtYm(r.date)+'</div>'
+    +   (amt? '<div class="amt">'+fmtYen(amt)+'</div>' : '')
+    + '</div>'
+    + '<button class="editbtn" data-action="edit-record" data-type="'+type+'" data-id="'+r.id+'">'
+    +   '<svg viewBox="0 0 24 24"><path d="M4 20h4L18.5 9.5a2.1 2.1 0 000-3L18 6a2.1 2.1 0 00-3 0L4.5 16.5z"/></svg>'
+    + '</button>'
+    + '</div>';
+  return html;
+}
+
+/* ============ rendering: STATS page ============ */
+function renderStatsPage(){
+  var html = '<div class="page-head"><h1 class="mincho">集計</h1><p>推し・イベント・期間別に記録をまとめて振り返ります。</p></div>';
+
+  if(state.oshis.length===0){
+    html += '<div class="hero empty">'
+      + '<div class="name mincho">まだ集計できる記録がありません</div>'
+      + '<p>推しを登録して記録をつけると、ここに集計が表示されます。</p>'
+      + '<button class="btn primary block" data-action="add-oshi">推しを登録する</button>'
+      + '</div>';
+    document.getElementById("main").innerHTML = html;
+    return;
+  }
+
+  var tabs = [["oshi","推し別"],["event","イベント別"],["period","期間別"],["calendar","カレンダー"]];
+  html += '<div class="oshi-pills">';
+  tabs.forEach(function(t){
+    html += '<button class="oshi-pill '+(state.statsSubView===t[0]?"on":"")+'" data-action="stats-tab" data-tab="'+t[0]+'">'+t[1]+'</button>';
+  });
+  html += '</div>';
+
+  if(state.statsSubView==="oshi") html += renderStatsByOshi();
+  else if(state.statsSubView==="event") html += renderStatsByEvent();
+  else if(state.statsSubView==="period") html += renderStatsByPeriod();
+  else html += renderStatsCalendar();
+
+  html += '<button class="btn ghost block" data-action="share-summary" style="margin-top:18px;">'
+    + '<svg viewBox="0 0 24 24" style="width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.8;margin-right:6px;vertical-align:-3px;"><path d="M12 5v10M8 9l4-4 4 4"/><path d="M5 15v3a2 2 0 002 2h10a2 2 0 002-2v-3"/></svg>'
+    + '集計結果を画像で保存</button>';
+
+  document.getElementById("main").innerHTML = html;
+
+  if(state.statsSubView==="calendar"){ bindCalendarEvents(); }
+}
+
+function renderStatsByOshi(){
+  var rows = aggregateByOshi();
+  if(rows.every(function(r){return r.itemCount===0;})){
+    return emptyStatsBlock();
+  }
+  var html = "";
+  rows.forEach(function(row){
+    if(row.itemCount===0) return;
+    html += '<div class="stat-row">'
+      + '<div class="sw" style="'+oshiSwatchStyle(row.oshi)+'"></div>'
+      + '<div class="info"><b>'+escapeHtml(row.oshi.name)+'</b>'
+      +   '<span>LIVE '+row.liveN+' ・ チェキ '+row.chekiN+' ・ 物販 '+row.goodsN+'</span></div>'
+      + '<div class="stat-amt">'+fmtYen(row.total)+'</div>'
+      + '</div>';
+  });
+  return html;
+}
+function renderStatsByEvent(){
+  var rows = aggregateByEvent();
+  if(rows.length===0) return emptyStatsBlock();
+  var html = "";
+  rows.slice(0,30).forEach(function(row){
+    html += '<div class="stat-row">'
+      + '<div class="info"><b>'+escapeHtml(row.name)+'</b><span>'+row.count+'件</span></div>'
+      + '<div class="stat-amt">'+fmtYen(row.total)+'</div>'
+      + '</div>';
+  });
+  return html;
+}
+function renderStatsByPeriod(){
+  var months = aggregateByMonth(12);
+  var total = months.reduce(function(s,m){return s+m.total;},0);
+  if(total===0 && months.every(function(m){return m.count===0;})) return emptyStatsBlock();
+  var maxV = Math.max.apply(null, months.map(function(m){return m.total;}).concat([1]));
+  var html = '<div class="chart-card" style="margin-top:2px;">'
+    + '<h3>月別 推し活費用</h3><span class="unit">直近12ヶ月・合計 '+fmtYen(total)+'</span>'
+    + '<div class="bars" style="overflow-x:auto;">';
+  months.forEach(function(m){
+    var h = Math.round((m.total/maxV)*72)+4;
+    html += '<div class="col" style="min-width:24px;"><div class="fill" style="height:'+h+'px" title="'+fmtYen(m.total)+'"></div><div class="mo">'+m.label+'</div></div>';
+  });
+  html += '</div></div>';
+  html += '<div class="section-label">内訳</div>';
+  months.slice().reverse().forEach(function(m){
+    if(m.count===0) return;
+    html += '<div class="stat-row">'
+      + '<div class="info"><b>'+m.label+'</b><span>'+m.count+'件</span></div>'
+      + '<div class="stat-amt">'+fmtYen(m.total)+'</div>'
+      + '</div>';
+  });
+  return html;
+}
+function renderStatsCalendar(){
+  var parts = state.calendarMonth.split("-");
+  var y = Number(parts[0]), m = Number(parts[1]);
+  var first = new Date(y, m-1, 1);
+  var startWeekday = first.getDay();
+  var daysInMonth = new Date(y, m, 0).getDate();
+  var dateMap = calendarDatesWithRecords(state.calendarMonth);
+
+  var html = '<div class="cal-head">'
+    + '<button type="button" class="cal-nav" data-action="cal-prev" aria-label="前月"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>'
+    + '<span class="mincho">'+y+'年 '+m+'月</span>'
+    + '<button type="button" class="cal-nav" data-action="cal-next" aria-label="翌月"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>'
+    + '</div>';
+  html += '<div class="cal-grid cal-dow">';
+  ["日","月","火","水","木","金","土"].forEach(function(d){ html += '<div>'+d+'</div>'; });
+  html += '</div>';
+  html += '<div class="cal-grid">';
+  for(var i=0;i<startWeekday;i++){ html += '<div class="cal-cell empty"></div>'; }
+  for(var day=1; day<=daysInMonth; day++){
+    var dateStr = state.calendarMonth+"-"+String(day).padStart(2,"0");
+    var n = dateMap[dateStr]||0;
+    var isSelected = state.calendarSelectedDate===dateStr;
+    html += '<button type="button" class="cal-cell '+(n>0?"has-rec":"")+' '+(isSelected?"selected":"")+'" data-action="cal-day" data-date="'+dateStr+'">'
+      + '<span class="cal-daynum">'+day+'</span>'
+      + (n>0? '<span class="cal-dot"></span>' : '')
+      + '</button>';
+  }
+  html += '</div>';
+
+  if(state.calendarSelectedDate){
+    var items = recordsForDate(state.calendarSelectedDate);
+    html += '<div class="section-label">'+state.calendarSelectedDate+' の記録</div>';
+    if(items.length===0){
+      html += '<div class="empty-state"><p>この日の記録はありません。</p></div>';
+    } else {
+      items.forEach(function(item){ html += ticketHtml(item.type, item.r, true); });
+    }
+  }
+  return html;
+}
+function emptyStatsBlock(){
+  return '<div class="empty-state">'
+    + iconCluster()
+    + '<p>まだ集計できる記録がありません。LIVE・チェキ・物販タブから記録を追加してみましょう。</p>'
+    + '</div>';
+}
+function bindCalendarEvents(){
+  var main = document.getElementById("main");
+  main.querySelectorAll("[data-action=cal-prev]").forEach(function(b){
+    b.addEventListener("click", function(){
+      state.calendarMonth = shiftMonth(state.calendarMonth,-1);
+      state.calendarSelectedDate = null;
+      renderStatsPage();
+    });
+  });
+  main.querySelectorAll("[data-action=cal-next]").forEach(function(b){
+    b.addEventListener("click", function(){
+      state.calendarMonth = shiftMonth(state.calendarMonth,1);
+      state.calendarSelectedDate = null;
+      renderStatsPage();
+    });
+  });
+  main.querySelectorAll("[data-action=cal-day]").forEach(function(b){
+    b.addEventListener("click", function(){
+      var d = b.getAttribute("data-date");
+      state.calendarSelectedDate = (state.calendarSelectedDate===d) ? null : d;
+      renderStatsPage();
+    });
+  });
+}
+
+function shareSummaryImage(){
+  var rows = aggregateByOshi().filter(function(r){ return r.itemCount>0; }).slice(0,6);
+  if(rows.length===0){ toast("まだ集計できる記録がありません"); return; }
+  var totalAll = rows.reduce(function(s,r){return s+r.total;},0);
+  var itemsAll = rows.reduce(function(s,r){return s+r.itemCount;},0);
+  var accentColor = rows[0].oshi.color || "#C9457A";
+  var now = new Date();
+
+  var W = 900, H = 340 + rows.length*110 + 90;
+  var canvas = document.createElement("canvas");
+  canvas.width = W; canvas.height = H;
+  var ctx = canvas.getContext("2d");
+
+  ctx.fillStyle = "#FBF8F3";
+  ctx.fillRect(0,0,W,H);
+  ctx.fillStyle = "rgba(33,28,23,0.06)";
+  for(var yy=20; yy<H; yy+=26){
+    for(var xx=20; xx<W; xx+=26){ ctx.beginPath(); ctx.arc(xx,yy,1.3,0,Math.PI*2); ctx.fill(); }
+  }
+
+  ctx.fillStyle = accentColor;
+  ctx.fillRect(0,0,W,180);
+  ctx.fillStyle = "#FBF8F3";
+  ctx.font = "700 46px sans-serif";
+  ctx.fillText("推し活記録", 50, 90);
+  ctx.font = "400 22px sans-serif";
+  ctx.fillText(now.getFullYear()+"年"+(now.getMonth()+1)+"月時点", 50, 135);
+
+  ctx.fillStyle = "#211C17";
+  ctx.font = "700 30px sans-serif";
+  ctx.fillText("合計 "+itemsAll+"件 ・ "+fmtYenPlain(totalAll), 50, 250);
+
+  var rowY = 320;
+  rows.forEach(function(row){
+    ctx.fillStyle = row.oshi.color || "#C9457A";
+    ctx.beginPath(); ctx.arc(72, rowY, 24, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = "#211C17";
+    ctx.font = "700 28px sans-serif";
+    ctx.fillText(row.oshi.name, 116, rowY+8);
+    ctx.font = "400 20px sans-serif";
+    ctx.fillStyle = "#6B6259";
+    ctx.fillText("LIVE "+row.liveN+" ・ チェキ "+row.chekiN+" ・ 物販 "+row.goodsN, 116, rowY+40);
+    ctx.textAlign = "right";
+    ctx.fillStyle = accentColor;
+    ctx.font = "700 26px sans-serif";
+    ctx.fillText(fmtYenPlain(row.total), W-50, rowY+8);
+    ctx.textAlign = "left";
+    rowY += 110;
+  });
+
+  ctx.fillStyle = "#ABA398";
+  ctx.font = "400 20px sans-serif";
+  ctx.fillText("#\u63a8\u3057\u6d3b\u624b\u5e33", 50, H-38);
+
+  var dataUrl;
+  try{ dataUrl = canvas.toDataURL("image/png"); }
+  catch(e){ toast("画像の生成に失敗しました"); return; }
+
+  var a = document.createElement("a");
+  a.href = dataUrl;
+  a.download = "oshikatsu_"+now.getFullYear()+String(now.getMonth()+1).padStart(2,"0")+".png";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  toast("画像を保存しました");
+}
+
+/* ============ rendering: MY PAGE (oshi registration & app settings) ============ */
+function renderOshiPage(){
+  var html = '<div class="page-head"><h1 class="mincho">マイページ</h1></div>';
+  html += '<div class="section-label">推しの管理</div>';
+  html += '<button class="btn primary block" data-action="add-oshi" style="margin-bottom:18px;">＋ 新しい推しを登録</button>';
+
+  if(state.oshis.length===0){
+    html += '<div class="empty-state">'
+      + iconCluster()
+      + '<p>推しを登録すると、ここに一覧が表示されます。</p></div>';
+  } else {
+    html += '<div class="section-label">登録した推し</div>';
+    var n = state.oshis.length;
+    state.oshis.forEach(function(o, idx){
+      var isActive = o.id===state.activeOshiId;
+      var subText = oshiSubLabel(o);
+      var bLabel = oshiBirthdayLabel(o);
+      var aLabel = oshiAge(o);
+      var bdayText = bLabel ? (bLabel+"生まれ"+(aLabel!==null?"（"+aLabel+"歳）":"（非公開）")) : "";
+      html += '<div class="oshi-row" draggable="true" data-oshi-row="'+o.id+'">'
+        + '<span class="group-drag-handle" title="ドラッグして並べ替え" aria-hidden="true">'
+        +   '<svg viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.4"/><circle cx="15" cy="6" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="9" cy="18" r="1.4"/><circle cx="15" cy="18" r="1.4"/></svg>'
+        + '</span>'
+        + '<div class="sw" style="'+oshiSwatchStyle(o)+'"></div>'
+        + '<div class="info">'
+        +   '<div class="name-line"><b>'+escapeHtml(o.name)+'</b>'
+        +     (bdayText? ' <span class="oshi-bday">'+escapeHtml(bdayText)+'</span>' : '')
+        +     (isActive?' <span class="stamp" style="font-size:9px;padding:1px 6px 1px 5px;vertical-align:2px;">お気に入り</span>':'')
+        +   '</div>'
+        +   (subText? '<span>'+escapeHtml(subText)+'</span>' : '')
+        +   snsLinksHtml(o,"row")
+        + '</div>'
+        + '<div class="side-actions">'
+        +   '<button class="star '+(isActive?"active":"")+'" data-action="set-active" data-id="'+o.id+'" title="このカラーを適用">'
+        +     '<svg viewBox="0 0 24 24"><path d="M12 3l2.6 6 6.4.6-4.9 4.2 1.5 6.2L12 16.9 6.4 20l1.5-6.2-4.9-4.2 6.4-.6z"/></svg>'
+        +   '</button>'
+        +   '<button class="del" data-action="edit-oshi" data-id="'+o.id+'" title="編集">'
+        +     '<svg viewBox="0 0 24 24"><path d="M4 20h4L18.5 9.5a2.1 2.1 0 000-3L18 6a2.1 2.1 0 00-3 0L4.5 16.5z"/></svg>'
+        +   '</button>'
+        +   '<div class="group-order-btns">'
+        +     '<button type="button" class="group-order-btn" data-action="move-oshi" data-id="'+o.id+'" data-dir="up" title="上に移動" aria-label="上に移動" '+(idx===0?"disabled":"")+'>'
+        +       '<svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg>'
+        +     '</button>'
+        +     '<button type="button" class="group-order-btn" data-action="move-oshi" data-id="'+o.id+'" data-dir="down" title="下に移動" aria-label="下に移動" '+(idx===n-1?"disabled":"")+'>'
+        +       '<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>'
+        +     '</button>'
+        +   '</div>'
+        + '</div>'
+        + '</div>';
+    });
+  }
+  document.getElementById("main").innerHTML = html;
+  if(state.oshis.length>1) bindOshiPageDragDrop();
+}
+/* Lets the person drag an oshi-row onto another to swap their order, as an
+   alternative to the up/down buttons rendered in each row. */
+function bindOshiPageDragDrop(){
+  var main = document.getElementById("main");
+  var dragFromId = null;
+  main.querySelectorAll("[data-oshi-row]").forEach(function(row){
+    row.addEventListener("dragstart", function(e){
+      dragFromId = row.getAttribute("data-oshi-row");
+      row.classList.add("dragging");
+      try{ e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", dragFromId); }catch(err){}
+    });
+    row.addEventListener("dragend", function(){
+      row.classList.remove("dragging");
+      main.querySelectorAll(".oshi-row.drag-over").forEach(function(r){ r.classList.remove("drag-over"); });
+    });
+    row.addEventListener("dragover", function(e){
+      e.preventDefault();
+      if(dragFromId===null) return;
+      var targetId = row.getAttribute("data-oshi-row");
+      if(targetId===dragFromId) return;
+      row.classList.add("drag-over");
+    });
+    row.addEventListener("dragleave", function(){ row.classList.remove("drag-over"); });
+    row.addEventListener("drop", function(e){
+      e.preventDefault();
+      var targetId = row.getAttribute("data-oshi-row");
+      if(dragFromId!==null && targetId!==dragFromId){ reorderOshi(dragFromId, targetId); }
+      dragFromId = null;
+    });
+  });
+}
+/* Moves fromId to the position currently held by toId (or, for the arrow
+   buttons, one step up/down) and persists the new order. */
+function reorderOshi(fromId, toId){
+  var fromIdx = state.oshis.findIndex(function(o){ return o.id===fromId; });
+  var toIdx = state.oshis.findIndex(function(o){ return o.id===toId; });
+  if(fromIdx<0 || toIdx<0 || fromIdx===toIdx) return;
+  var moved = state.oshis.splice(fromIdx,1)[0];
+  state.oshis.splice(toIdx,0,moved);
+  saveLocal();
+  renderOshiPage();
+}
+function moveOshiStep(id, dir){
+  var idx = state.oshis.findIndex(function(o){ return o.id===id; });
+  if(idx<0) return;
+  var target = dir==="up" ? idx-1 : idx+1;
+  if(target<0 || target>=state.oshis.length) return;
+  var moved = state.oshis.splice(idx,1)[0];
+  state.oshis.splice(target,0,moved);
+  saveLocal();
+  renderOshiPage();
+}
+
+/* Rebuilds the favorite-oshi dropdown under the top chip so it always
+   reflects the current oshi list; called on every render() since the list
+   or the active oshi can change from any page. */
+/* Shows the uploaded header logo image, or the dashed placeholder icon when
+   none has been set yet. Called on every render() so it stays in sync. */
+function refreshHeaderLogo(){
+  var img = document.getElementById("headerLogoImg");
+  var placeholder = document.getElementById("headerLogoPlaceholder");
+  var clearBtn = document.getElementById("clearHeaderLogoBtn");
+  if(!img) return;
+  if(state.headerLogo){
+    img.src = state.headerLogo;
+    img.style.display = "block";
+    placeholder.style.display = "none";
+    if(clearBtn) clearBtn.style.display = "block";
+  } else {
+    img.style.display = "none";
+    img.src = "";
+    placeholder.style.display = "flex";
+    if(clearBtn) clearBtn.style.display = "none";
+  }
+}
+
+function renderTopChipMenu(){
+  var menu = document.getElementById("topChipMenu");
+  if(!menu) return;
+  var wasOpen = menu.style.display === "block";
+  if(state.oshis.length===0){
+    menu.innerHTML = "";
+    menu.style.display = "none";
+    return;
+  }
+  var html = '<div class="top-chip-menu-list">';
+  state.oshis.forEach(function(o){
+    var isActive = o.id===state.activeOshiId;
+    html += '<button type="button" class="top-chip-item'+(isActive?" active":"")+'" data-set-active-oshi="'+o.id+'">'
+      + '<span class="avatar-mini" style="'+oshiSwatchStyle(o)+'"></span>'
+      + '<span class="tcm-name">'+escapeHtml(o.name)+'</span>'
+      + (isActive? '<svg class="tcm-check" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>' : '')
+      + '</button>';
+  });
+  html += '</div>'
+    + '<button type="button" class="top-chip-manage" data-action="add-oshi">＋ 新規登録</button>'
+    + '<button type="button" class="top-chip-manage" data-action="goto-oshi-page">すべて管理</button>';
+  menu.innerHTML = html;
+  if(wasOpen){ menu.style.display = "block"; }
+}
+
+/* ============ router ============ */
+function render(){
+  var app = document.getElementById("app");
+  var oshi = activeOshi();
+  applyTheme(oshi);
+  app.classList.toggle("no-oshi", !oshi);
+
+  var chip = document.getElementById("topChip");
+  if(oshi){
+    chip.style.display="flex";
+    var topDot = document.getElementById("topDot");
+    topDot.setAttribute("style", oshiSwatchStyle(oshi));
+    document.getElementById("topName").textContent = oshi.name;
+  } else {
+    chip.style.display="none";
+  }
+  renderTopChipMenu();
+  refreshHeaderLogo();
+
+  document.querySelectorAll("nav.tabs button").forEach(function(b){
+    b.classList.toggle("active", b.getAttribute("data-view")===state.view);
+  });
+
+  if(state.view==="home") renderHome();
+  else if(state.view==="oshi") renderOshiPage();
+  else if(state.view==="stats") renderStatsPage();
+  else renderListPage(state.view);
+}
+
+/* ============ sheets (forms) ============ */
+var sheetBg = null, sheetEl = null;
+function openSheet(html){
+  sheetEl.innerHTML = '<div class="sheet-handle"></div>'+html;
+  sheetBg.classList.add("show");
+}
+function closeSheet(){
+  sheetBg.classList.remove("show");
+  sheetEl.innerHTML = "";
+}
+/* .photo-menu popovers are position:fixed (viewport-relative) so that any
+   scrollable or clipping ancestor can never clip or misplace them. Since
+   "fixed" ignores document flow entirely, JS has to place them itself, next
+   to whichever icon/button opened them, clamped so they never run off the
+   right edge of the screen. */
+function openPopoverNear(anchorEl, popEl){
+  popEl.style.display = "block";
+  var rect = anchorEl.getBoundingClientRect();
+  var popWidth = popEl.offsetWidth || 200;
+  var left = Math.min(rect.left, window.innerWidth - popWidth - 12);
+  left = Math.max(12, left);
+  var top = rect.bottom + 8;
+  var popHeight = popEl.offsetHeight || 0;
+  if(top + popHeight > window.innerHeight - 12){ top = Math.max(12, rect.top - popHeight - 8); }
+  popEl.style.left = left + "px";
+  popEl.style.top = top + "px";
+}
+/* Popovers are fixed to the viewport, so if the sheet scrolls underneath
+   one while it's open, it would stay floating in place, detached from the
+   icon that opened it. Closing on scroll avoids that. */
+function closePopoversOnSheetScroll(){
+  if(!sheetEl) return;
+  sheetEl.querySelectorAll(".photo-menu").forEach(function(m){ m.style.display = "none"; });
+}
+
+function oshiFormHtml(oshi){
+  var preset = PALETTE[state.oshis.length % PALETTE.length];
+  var color = oshi ? (oshi.color || preset.hex) : preset.hex;
+  var yearOpts = '<option value="">非公開</option>';
+  for(var y=2026;y>=1990;y--){ yearOpts += '<option value="'+y+'" '+((oshi&&Number(oshi.birthYear)===y)?"selected":"")+'>'+y+'年</option>'; }
+  var monthOpts = '<option value="">--</option>';
+  for(var m=1;m<=12;m++){ monthOpts += '<option value="'+m+'" '+((oshi&&Number(oshi.birthMonth)===m)?"selected":"")+'>'+m+'月</option>'; }
+  var dayOpts = '<option value="">--</option>';
+  for(var d=1;d<=31;d++){ dayOpts += '<option value="'+d+'" '+((oshi&&Number(oshi.birthDay)===d)?"selected":"")+'>'+d+'日</option>'; }
+
+  var groupsList = oshi ? oshiGroupsList(oshi) : [];
+
+  function snsIconPickerHtml(comboPrefix, labelPrefix, getVal){
+    return SNS_KEYS.map(function(k){
+      var meta = SNS_META[k];
+      var comboKey = comboPrefix+"_"+k;
+      var val = snsIdForEdit(getVal(k)||"");
+      return ''
+        + '<div class="photo-picker">'
+        +   '<button type="button" class="sns-icon-btn" data-sns-btn="'+comboKey+'" title="'+escapeHtml(labelPrefix)+' '+meta.label+'"><svg viewBox="0 0 24 24">'+meta.icon+'</svg></button>'
+        +   '<div class="photo-menu sns-popover" data-sns-pop="'+comboKey+'" style="display:none;">'
+        +     '<input type="text" data-sns-input="'+comboKey+'" value="'+escapeHtml(val)+'" placeholder="'+meta.label+' のID（@は不要）">'
+        +     '<div class="sns-popover-actions">'
+        +       '<button type="button" class="btn ghost" data-sns-save="'+comboKey+'">保存</button>'
+        +       '<button type="button" class="btn ghost danger" data-sns-clear="'+comboKey+'" style="'+(val?'':'display:none;')+'">削除</button>'
+        +     '</div>'
+        +   '</div>'
+        + '</div>';
+    }).join("");
+  }
+
+  var colorSwatchesHtml = PALETTE.map(function(c){
+    return '<button type="button" class="gcs-swatch" data-hex="'+c.hex+'" style="background:'+c.hex+';" title="'+c.name+'" aria-label="'+c.name+'"></button>';
+  }).join("");
+
+  var groupCardsHtml = groupsList.map(function(g,i){
+    var groupColor = g.color || color;
+    return ''
+      + '<div class="group-card" draggable="true" data-group-card="'+i+'">'
+      +   '<div class="group-card-row">'
+      +     '<span class="group-drag-handle" title="ドラッグして並べ替え" aria-hidden="true">'
+      +       '<svg viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.4"/><circle cx="15" cy="6" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="9" cy="18" r="1.4"/><circle cx="15" cy="18" r="1.4"/></svg>'
+      +     '</span>'
+      +     '<div class="photo-picker">'
+      +       '<button type="button" class="group-color-btn" data-group-color-btn="'+i+'" style="background:'+groupColor+';" title="担当カラーを選ぶ" aria-label="担当カラーを選ぶ"></button>'
+      +       '<input type="color" class="group-color-input" data-group-color-idx="'+i+'" value="'+groupColor+'" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;">'
+      +       '<div class="photo-menu group-color-pop" data-group-color-pop="'+i+'" style="display:none;">'
+      +         '<div class="group-color-swatches">'
+      +           colorSwatchesHtml
+      +           '<button type="button" class="swatch-add gcs-custom-btn" data-group-color-custom="'+i+'" title="カラーコードで詳細に指定" aria-label="カラーコードで詳細に指定">'
+      +             '<svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>'
+      +           '</button>'
+      +         '</div>'
+      +       '</div>'
+      +     '</div>'
+      +     '<input type="text" class="group-name-input" data-group-idx="'+i+'" value="'+escapeHtml(g.name||"")+'" placeholder="グループ名" maxlength="40">'
+      +     '<div class="group-sns-inline">'+snsIconPickerHtml("grp"+i, g.name||"グループ", function(k){ return g["sns_"+k]; })+'</div>'
+      +     '<div class="group-order-btns">'
+      +       '<button type="button" class="group-order-btn" data-group-move="'+i+'" data-dir="up" title="上に移動" aria-label="上に移動" '+(i===0?"disabled":"")+'>'
+      +         '<svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg>'
+      +       '</button>'
+      +       '<button type="button" class="group-order-btn" data-group-move="'+i+'" data-dir="down" title="下に移動" aria-label="下に移動" '+(i===groupsList.length-1?"disabled":"")+'>'
+      +         '<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>'
+      +       '</button>'
+      +     '</div>'
+      +     '<button type="button" class="group-remove-btn" data-group-remove="'+i+'" title="このグループを削除" aria-label="このグループを削除">'
+      +       '<svg viewBox="0 0 24 24"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>'
+      +     '</button>'
+      +   '</div>'
+      + '</div>';
+  }).join("");
+
+  return ''
+    + '<h2 class="mincho">'+((oshi&&oshi.id)?"推しを編集":"推しを登録")+'</h2>'
+    + '<form id="oshiForm">'
+    +   '<div class="field">'
+    +     '<div class="identity-duo">'
+    +       '<div class="identity-duo-col">'
+    +         '<label>写真</label>'
+    +         '<div class="photo-picker">'
+    +           '<button type="button" class="photo-preview" id="photoPreviewBtn">'
+    +             '<img id="photoImg" alt="" style="display:none;">'
+    +             '<svg id="photoPlaceholder" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.4"/><path d="M8 6l1-2h6l1 2"/></svg>'
+    +             '<span class="photo-edit-badge"><svg viewBox="0 0 24 24"><path d="M4 20h4L18.5 9.5a2.1 2.1 0 000-3L18 6a2.1 2.1 0 00-3 0L4.5 16.5z"/></svg></span>'
+    +           '</button>'
+    +           '<div class="photo-menu" id="photoMenu" style="display:none;">'
+    +             '<label class="photo-menu-item" style="cursor:pointer;">画像を選ぶ<input type="file" name="photo" accept="image/*" style="display:none;"></label>'
+    +             '<button type="button" class="photo-menu-item danger" id="clearPhotoBtn" style="display:none;">写真を削除</button>'
+    +           '</div>'
+    +         '</div>'
+    +       '</div>'
+    +       '<div class="identity-duo-col">'
+    +         '<label>個人SNS</label>'
+    +         '<div class="identity-row">'+snsIconPickerHtml("person", "個人", function(k){ return oshi ? getSnsValue(oshi,"person",k) : ""; })+'</div>'
+    +       '</div>'
+    +     '</div>'
+    +   '</div>'
+    +   '<div class="field"><label>人物名</label><input type="text" name="name" required maxlength="30" value="'+(oshi?escapeHtml(oshi.name):"")+'" placeholder="例：儚寧この"></div>'
+    +   '<div class="field"><label>生年月日</label>'
+    +     '<div class="row3">'
+    +       '<select name="birthYear">'+yearOpts+'</select>'
+    +       '<select name="birthMonth">'+monthOpts+'</select>'
+    +       '<select name="birthDay">'+dayOpts+'</select>'
+    +     '</div>'
+    +     '<div class="field-hint">年を空欄にすると年齢は非公開になります</div>'
+    +   '</div>'
+    +   '<div class="field"><label>所属</label><input type="text" name="agency" maxlength="40" value="'+(oshi?escapeHtml(oshi.agency||""):"")+'" placeholder="例：HEROINES"></div>'
+    +   '<div class="field"><label>グループ</label>'
+    +     '<div class="group-card-list">'+groupCardsHtml+'</div>'
+    +     '<button type="button" class="btn ghost block" id="addGroupBtn" style="margin-top:'+(groupsList.length?"10px":"0")+';">＋ グループを追加</button>'
+    +     '<div class="field-hint">複数のグループを兼任している場合は「＋」で追加できます。各グループ名の左の丸いアイコンをタップすると、そのグループの担当カラーを指定できます（一番上のグループの色がアプリ全体のテーマカラーになります）</div>'
+    +   '</div>'
+    +   '<div class="sheet-actions">'
+    +     ((oshi&&oshi.id)? '<button type="button" class="btn danger" data-action="delete-oshi" data-id="'+oshi.id+'">削除</button>' : '')
+    +     '<button type="submit" class="btn primary">'+((oshi&&oshi.id)?"更新する":"登録する")+'</button>'
+    +   '</div>'
+    + '</form>';
+}
+
+function recordPhotoFieldHtml(labelText){
+  return '<div class="field"><label>'+labelText+'</label>'
+    + '<div class="photo-picker">'
+    +   '<button type="button" class="cheki-photo-preview" id="recPhotoPreviewBtn">'
+    +     '<img id="recPhotoImg" alt="" style="display:none;">'
+    +     '<svg id="recPhotoPlaceholder" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.4"/><path d="M8 6l1-2h6l1 2"/></svg>'
+    +     '<span class="photo-edit-badge"><svg viewBox="0 0 24 24"><path d="M4 20h4L18.5 9.5a2.1 2.1 0 000-3L18 6a2.1 2.1 0 00-3 0L4.5 16.5z"/></svg></span>'
+    +   '</button>'
+    +   '<div class="photo-menu" id="recPhotoMenu" style="display:none;">'
+    +     '<label class="photo-menu-item" style="cursor:pointer;">写真を撮る・選ぶ<input type="file" id="recPhotoInput" accept="image/*" capture="environment" style="display:none;"></label>'
+    +     '<button type="button" class="photo-menu-item danger" id="clearRecPhotoBtn" style="display:none;">写真を削除</button>'
+    +   '</div>'
+    + '</div>'
+    + '</div>';
+}
+
+function recordFormHtml(type,rec){
+  var info = labelForType(type);
+  var today = new Date().toISOString().slice(0,10);
+  var oshiOptions = state.oshis.map(function(o){
+    var sel = (rec? rec.oshiId===o.id : o.id===state.activeOshiId) ? "selected":"";
+    return '<option value="'+o.id+'" '+sel+'>'+escapeHtml(o.name)+'</option>';
+  }).join("");
+
+  var fields = "";
+  fields += '<div class="field"><label>推し</label>'
+    + '<select name="oshiId" id="recOshiSelect">'+oshiOptions+'</select>'
+    + '<select name="groupId" id="recGroupSelect" style="margin-top:8px;"></select>'
+    + '</div>';
+  fields += '<div class="field"><label>日付</label><input type="date" name="date" value="'+(rec?rec.date:today)+'" required></div>';
+
+  if(type==="live"){
+    fields += recordPhotoFieldHtml("LIVE写真（任意）・チケット右側の背景になります");
+    fields += '<div class="field"><label>公演・ツアー名</label><input type="text" name="title" value="'+(rec?escapeHtml(rec.title||""):"")+'" placeholder="例：〇〇 LIVE TOUR" required></div>';
+    fields += '<div class="field"><label>会場（任意）</label><input type="text" name="venue" value="'+(rec?escapeHtml(rec.venue||""):"")+'" placeholder="例：〇〇ホール"></div>';
+    fields += '<div class="field"><label>配信URL（任意）</label><input type="url" name="streamUrl" autocomplete="off" value="'+(rec?escapeHtml(rec.streamUrl||""):"")+'" placeholder="例：配信ライブの視聴ページURL"><div class="field-hint">配信ライブの場合はこちらにURLを入れてください</div></div>';
+    fields += '<div class="field"><label>チケット種別（任意）</label>'
+      + '<input type="text" name="ticketType" list="ticketTypeOptions" value="'+(rec?escapeHtml(rec.ticketType||""):"")+'" placeholder="例：一般 ／ FC限定 ／ プレイガイド最速">'
+      + '<datalist id="ticketTypeOptions">'
+      +   '<option value="一般"></option>'
+      +   '<option value="FC限定"></option>'
+      +   '<option value="プレイガイド最速"></option>'
+      +   '<option value="プレイガイド一般"></option>'
+      +   '<option value="招待"></option>'
+      +   '<option value="指定席"></option>'
+      +   '<option value="スタンディング"></option>'
+      + '</datalist>'
+      + '</div>';
+    fields += '<div class="field row2">'
+      + '<div><label>座席・ブロック（任意）</label><input type="text" name="seat" value="'+(rec?escapeHtml(rec.seat||""):"")+'" placeholder="例：Aブロック"></div>'
+      + '<div><label>チケット代（任意）</label><input type="number" name="price" min="0" value="'+(rec?rec.price||"":"")+'" placeholder="0"></div>'
+      + '</div>';
+  } else if(type==="cheki"){
+    fields += recordPhotoFieldHtml("チェキ写真（任意）");
+    fields += '<div class="field"><label>イベント名</label><input type="text" name="title" value="'+(rec?escapeHtml(rec.title||""):"")+'" placeholder="例：特典会 〇〇会場" required></div>';
+    fields += '<div class="field row2">'
+      + '<div><label>枚数（任意）</label><input type="number" name="count" min="1" value="'+(rec?rec.count||1:1)+'"></div>'
+      + '<div><label>合計金額（任意）</label><input type="number" name="price" min="0" value="'+(rec?rec.price||"":"")+'" placeholder="0"></div>'
+      + '</div>';
+    fields += '<div class="field"><label>話した内容・会話メモ（任意）</label><input type="text" name="content" value="'+(rec?escapeHtml(rec.content||""):"")+'" placeholder="例：新曲の感想を伝えた"></div>';
+  } else {
+    fields += '<div class="field"><label>イベント名・購入先（任意）</label><input type="text" name="title" value="'+(rec?escapeHtml(rec.title||""):"")+'" placeholder="例：〇〇 グッズ売り場"></div>';
+    fields += '<div class="field"><label>商品名</label><input type="text" name="item" value="'+(rec?escapeHtml(rec.item||""):"")+'" placeholder="例：ペンライト" required></div>';
+    fields += '<div class="field row2">'
+      + '<div><label>単価（任意）</label><input type="number" name="price" min="0" value="'+(rec?rec.price||"":"")+'" placeholder="0"></div>'
+      + '<div><label>数量（任意）</label><input type="number" name="qty" min="1" value="'+(rec?rec.qty||1:1)+'"></div>'
+      + '</div>';
+  }
+  fields += '<div class="field"><label>メモ（任意）</label><textarea name="memo" placeholder="自由にメモを残せます">'+(rec?escapeHtml(rec.memo||""):"")+'</textarea></div>';
+  fields += '<div class="field"><label>タグ（任意）</label><input type="text" name="tag" maxlength="20" value="'+(rec?escapeHtml(rec.tag||""):"")+'" placeholder="例：本命・限定・ソロ"></div>';
+  fields += '<div class="field toggle-row">'
+    + '<button type="button" class="toggle-chip" id="favToggle"><svg viewBox="0 0 24 24"><path d="M12 3l2.6 6 6.4.6-4.9 4.2 1.5 6.2L12 16.9 6.4 20l1.5-6.2-4.9-4.2 6.4-.6z"/></svg>お気に入り</button>'
+    + '<button type="button" class="toggle-chip" id="hideToggle"><svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/><line x1="3" y1="21" x2="21" y2="3"/></svg>非表示にする</button>'
+    + '</div>';
+
+  return ''
+    + '<h2 class="mincho">'+info.title+(rec?"を編集":"を追加")+'</h2>'
+    + '<form id="recordForm">'+fields
+    +   '<div class="sheet-actions">'
+    +     (rec? '<button type="button" class="btn danger" data-action="delete-record" data-type="'+type+'" data-id="'+rec.id+'">削除</button>' : '')
+    +     '<button type="submit" class="btn primary">保存する</button>'
+    +   '</div>'
+    + '</form>';
+}
+
+function bindOshiForm(existingOshi){
+  var form = document.getElementById("oshiForm");
+  var preset = PALETTE[state.oshis.length % PALETTE.length];
+  var chosenPhoto = existingOshi ? (existingOshi.photo || null) : null;
+  var draftGroups = existingOshi ? oshiGroupsList(existingOshi) : [];
+
+  var elName = form.querySelector('[name="name"]');
+  var elAgency = form.querySelector('[name="agency"]');
+  var elBirthMonth = form.querySelector('[name="birthMonth"]');
+  var elBirthDay = form.querySelector('[name="birthDay"]');
+  var elBirthYear = form.querySelector('[name="birthYear"]');
+  var elPhotoInput = form.querySelector('[name="photo"]');
+  var elPhotoImg = form.querySelector('#photoImg');
+  var elPhotoPlaceholder = form.querySelector('#photoPlaceholder');
+  var elClearPhotoBtn = form.querySelector('#clearPhotoBtn');
+  var elPhotoPreviewBtn = form.querySelector('#photoPreviewBtn');
+  var elPhotoMenu = form.querySelector('#photoMenu');
+  var elAddGroupBtn = form.querySelector('#addGroupBtn');
+
+  /* The app's one theme color always follows the top (main) group's own
+     color picker; with no groups yet, it falls back to whatever color this
+     oshi already had, or a fresh palette default for a brand-new oshi. */
+  function effectiveColor(groupsArr){
+    if(groupsArr && groupsArr[0] && groupsArr[0].color) return groupsArr[0].color;
+    return (existingOshi && existingOshi.color) || preset.hex;
+  }
+
+  var snsCombos = [];
+  SNS_KEYS.forEach(function(k){ snsCombos.push("person_"+k); });
+  draftGroups.forEach(function(g,i){ SNS_KEYS.forEach(function(k){ snsCombos.push("grp"+i+"_"+k); }); });
+  var chosenSns = {};
+  SNS_KEYS.forEach(function(k){
+    chosenSns["person_"+k] = existingOshi ? getSnsValue(existingOshi, "person", k) : "";
+  });
+  draftGroups.forEach(function(g,i){
+    SNS_KEYS.forEach(function(k){ chosenSns["grp"+i+"_"+k] = g["sns_"+k] || ""; });
+  });
+
+  /* Accepts a bare ID ("hakane_kono"), an "@handle", or (in case someone
+     pastes one out of habit) a full profile URL — percent-encoded or not —
+     and returns just the plain ID, so the URL builder can safely encode it
+     once when constructing the href (encoding an already-encoded string
+     would otherwise turn "%" into "%25..." and break the link). */
+  function normalizeId(v){
+    v = (v||"").trim();
+    if(!v) return "";
+    if(snsIsLegacyUrl(v)){
+      try{
+        var parts = v.split("?")[0].split("#")[0].split("/").filter(Boolean);
+        v = parts[parts.length-1] || v;
+      }catch(e){}
+    }
+    v = v.replace(/^@+/, "");
+    if(/%[0-9A-Fa-f]{2}/.test(v)){
+      try{ v = decodeURIComponent(v); }catch(e){}
+    }
+    return v;
+  }
+  /* Snapshots every field currently typed into the form (including any
+     unsaved person/group SNS entries) into a plain object shaped like an
+     oshi, so adding or removing a group can re-render the whole sheet
+     without losing anything the person already filled in. */
+  function collectDraft(){
+    var groups = Array.prototype.map.call(form.querySelectorAll(".group-name-input"), function(inp){
+      var idx = inp.getAttribute("data-group-idx");
+      var colorInput = form.querySelector('.group-color-input[data-group-color-idx="'+idx+'"]');
+      var g = {
+        id: (draftGroups[idx] && draftGroups[idx].id) || uuid(),
+        name: inp.value,
+        color: colorInput ? colorInput.value : ""
+      };
+      SNS_KEYS.forEach(function(k){ g["sns_"+k] = chosenSns["grp"+idx+"_"+k] || ""; });
+      return g;
+    });
+    var draft = {
+      id: existingOshi ? existingOshi.id : undefined,
+      agency: elAgency.value,
+      name: elName.value,
+      photo: chosenPhoto,
+      color: effectiveColor(groups),
+      birthMonth: elBirthMonth.value,
+      birthDay: elBirthDay.value,
+      birthYear: elBirthYear.value,
+      mode: "pale",
+      order: existingOshi ? existingOshi.order : state.oshis.length,
+      createdAt: existingOshi ? existingOshi.createdAt : Date.now(),
+      groups: groups
+    };
+    SNS_KEYS.forEach(function(k){ draft["sns_person_"+k] = chosenSns["person_"+k] || ""; });
+    return draft;
+  }
+
+  function refreshPhotoPreview(){
+    if(chosenPhoto){
+      elPhotoImg.src = chosenPhoto;
+      elPhotoImg.style.display = "block";
+      elPhotoPlaceholder.style.display = "none";
+      elClearPhotoBtn.style.display = "block";
+    } else {
+      elPhotoImg.style.display = "none";
+      elPhotoImg.src = "";
+      elPhotoPlaceholder.style.display = "block";
+      elClearPhotoBtn.style.display = "none";
+    }
+  }
+  refreshPhotoPreview();
+
+  function closeAllPickers(){
+    form.querySelectorAll(".photo-menu").forEach(function(m){ m.style.display = "none"; });
+  }
+  function togglePicker(anchorEl, el){
+    var wasOpen = el.style.display === "block";
+    closeAllPickers();
+    if(!wasOpen){ openPopoverNear(anchorEl, el); }
+  }
+  form.querySelectorAll(".group-card-row").forEach(function(row){
+    row.addEventListener("scroll", closeAllPickers);
+  });
+
+  elPhotoPreviewBtn.addEventListener("click", function(e){
+    e.stopPropagation();
+    togglePicker(elPhotoPreviewBtn, elPhotoMenu);
+  });
+  form.addEventListener("click", function(e){
+    if(!e.target.closest(".photo-picker")){ closeAllPickers(); }
+  });
+  elPhotoMenu.querySelectorAll(".photo-menu-item").forEach(function(item){
+    item.addEventListener("click", function(){ closeAllPickers(); });
+  });
+
+  if(elAddGroupBtn){
+    elAddGroupBtn.addEventListener("click", function(e){
+      e.stopPropagation();
+      var draft = collectDraft();
+      draft.groups.push({id:uuid(), name:"", color:"", sns_instagram:"", sns_x:"", sns_tiktok:"", sns_youtube:""});
+      openOshiSheet(draft);
+    });
+  }
+  form.querySelectorAll(".group-remove-btn").forEach(function(btn){
+    btn.addEventListener("click", function(e){
+      e.stopPropagation();
+      var idx = Number(btn.getAttribute("data-group-remove"));
+      var draft = collectDraft();
+      draft.groups.splice(idx, 1);
+      openOshiSheet(draft);
+    });
+  });
+  /* Group order determines main/sub (the top card is always "main"), so
+     reordering is the only control needed: arrow buttons for a reliable
+     single-step move on any device, plus native drag-and-drop on the
+     handle for picking a card up and dropping it further away in one go. */
+  function moveGroup(from, to){
+    var draft = collectDraft();
+    if(to<0 || to>=draft.groups.length || from===to) return;
+    var moved = draft.groups.splice(from,1)[0];
+    draft.groups.splice(to,0,moved);
+    openOshiSheet(draft);
+  }
+  form.querySelectorAll(".group-order-btn").forEach(function(btn){
+    btn.addEventListener("click", function(e){
+      e.stopPropagation();
+      if(btn.disabled) return;
+      var idx = Number(btn.getAttribute("data-group-move"));
+      var dir = btn.getAttribute("data-dir");
+      moveGroup(idx, dir==="up" ? idx-1 : idx+1);
+    });
+  });
+  form.querySelectorAll(".group-color-btn").forEach(function(colorBtn){
+    var idx = colorBtn.getAttribute("data-group-color-btn");
+    var pop = form.querySelector('[data-group-color-pop="'+idx+'"]');
+    var hiddenInput = form.querySelector('.group-color-input[data-group-color-idx="'+idx+'"]');
+    colorBtn.addEventListener("click", function(e){
+      e.stopPropagation();
+      togglePicker(colorBtn, pop);
+    });
+    pop.querySelectorAll(".gcs-swatch").forEach(function(sw){
+      sw.addEventListener("click", function(e){
+        e.stopPropagation();
+        var hex = sw.getAttribute("data-hex");
+        hiddenInput.value = hex;
+        colorBtn.style.background = hex;
+        closeAllPickers();
+      });
+    });
+    var customBtn = pop.querySelector(".gcs-custom-btn");
+    customBtn.addEventListener("click", function(e){
+      e.stopPropagation();
+      closeAllPickers();
+      hiddenInput.click();
+    });
+    hiddenInput.addEventListener("input", function(){
+      colorBtn.style.background = hiddenInput.value;
+    });
+  });
+  var dragFromIdx = null;
+  form.querySelectorAll(".group-card").forEach(function(card){
+    card.addEventListener("dragstart", function(e){
+      dragFromIdx = Number(card.getAttribute("data-group-card"));
+      card.classList.add("dragging");
+      try{ e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", String(dragFromIdx)); }catch(err){}
+    });
+    card.addEventListener("dragend", function(){
+      card.classList.remove("dragging");
+      form.querySelectorAll(".group-card.drag-over").forEach(function(c){ c.classList.remove("drag-over"); });
+    });
+    card.addEventListener("dragover", function(e){
+      e.preventDefault();
+      if(dragFromIdx===null) return;
+      var targetIdx = Number(card.getAttribute("data-group-card"));
+      if(targetIdx===dragFromIdx) return;
+      card.classList.add("drag-over");
+    });
+    card.addEventListener("dragleave", function(){ card.classList.remove("drag-over"); });
+    card.addEventListener("drop", function(e){
+      e.preventDefault();
+      var targetIdx = Number(card.getAttribute("data-group-card"));
+      if(dragFromIdx!==null && targetIdx!==dragFromIdx){ moveGroup(dragFromIdx, targetIdx); }
+      dragFromIdx = null;
+    });
+  });
+
+  snsCombos.forEach(function(combo){
+    var btn = form.querySelector('[data-sns-btn="'+combo+'"]');
+    var pop = form.querySelector('[data-sns-pop="'+combo+'"]');
+    var input = form.querySelector('[data-sns-input="'+combo+'"]');
+    var saveBtn = form.querySelector('[data-sns-save="'+combo+'"]');
+    var clearBtn = form.querySelector('[data-sns-clear="'+combo+'"]');
+
+    function refreshIcon(){
+      btn.classList.toggle("filled", !!chosenSns[combo]);
+      clearBtn.style.display = chosenSns[combo] ? "block" : "none";
+    }
+    refreshIcon();
+
+    btn.addEventListener("click", function(e){
+      e.stopPropagation();
+      togglePicker(btn, pop);
+      if(pop.style.display === "block"){ input.focus(); }
+    });
+    saveBtn.addEventListener("click", function(){
+      chosenSns[combo] = normalizeId(input.value);
+      input.value = chosenSns[combo];
+      refreshIcon();
+      closeAllPickers();
+    });
+    clearBtn.addEventListener("click", function(){
+      chosenSns[combo] = "";
+      input.value = "";
+      refreshIcon();
+      closeAllPickers();
+    });
+  });
+
+  elPhotoInput.addEventListener("change", function(){
+    var file = elPhotoInput.files && elPhotoInput.files[0];
+    if(!file) return;
+    if(file.type.indexOf("image/")!==0){ toast("画像ファイルを選択してください"); return; }
+    resizeImageFile(file, 480, 0.85).then(function(dataUrl){
+      chosenPhoto = dataUrl;
+      refreshPhotoPreview();
+    }).catch(function(){
+      toast("画像の読み込みに失敗しました");
+    });
+  });
+  elClearPhotoBtn.addEventListener("click", function(){
+    chosenPhoto = null;
+    elPhotoInput.value = "";
+    refreshPhotoPreview();
+  });
+
+  form.addEventListener("submit", async function(e){
+    e.preventDefault();
+    var name = elName.value.trim();
+    if(!name){ elName.focus(); toast("人物名を入力してください"); return; }
+    var isEditingReal = !!(existingOshi && existingOshi.id);
+    var groups = Array.prototype.map.call(form.querySelectorAll(".group-name-input"), function(inp){
+      var idx = inp.getAttribute("data-group-idx");
+      var colorInput = form.querySelector('.group-color-input[data-group-color-idx="'+idx+'"]');
+      var g = {
+        id: (draftGroups[idx] && draftGroups[idx].id) || uuid(),
+        name: inp.value.trim(),
+        color: colorInput ? colorInput.value : ""
+      };
+      SNS_KEYS.forEach(function(k){ g["sns_"+k] = chosenSns["grp"+idx+"_"+k] || ""; });
+      return g;
+    }).filter(function(g){
+      return g.name || g.sns_instagram || g.sns_x || g.sns_tiktok || g.sns_youtube;
+    });
+    var oshi = {
+      id: isEditingReal ? existingOshi.id : uuid(),
+      agency: elAgency.value.trim(),
+      groups: groups,
+      name: name,
+      photo: chosenPhoto,
+      color: effectiveColor(groups),
+      birthMonth: elBirthMonth.value ? Number(elBirthMonth.value) : null,
+      birthDay: elBirthDay.value ? Number(elBirthDay.value) : null,
+      birthYear: elBirthYear.value ? Number(elBirthYear.value) : null,
+      mode: "pale",
+      order: isEditingReal ? existingOshi.order : state.oshis.length,
+      createdAt: isEditingReal ? existingOshi.createdAt : Date.now()
+    };
+    SNS_KEYS.forEach(function(k){ oshi["sns_person_"+k] = chosenSns["person_"+k] || ""; });
+    await persistOshi(oshi);
+    if(!state.activeOshiId){ await setActiveOshi(oshi.id); }
+    closeSheet();
+    toast(isEditingReal ? "推しを更新しました" : "推しを登録しました");
+    render();
+  });
+
+  var delBtn = form.querySelector("[data-action=delete-oshi]");
+  if(delBtn){
+    delBtn.addEventListener("click", async function(){
+      if(!confirm("この推しと担当カラーの設定を削除しますか？記録は残ります。")) return;
+      var id = delBtn.getAttribute("data-id");
+      await removeOshi(id);
+      if(state.activeOshiId===id){
+        var next = state.oshis.find(function(o){return o.id!==id;});
+        await setActiveOshi(next?next.id:null);
+      }
+      closeSheet();
+      toast("推しを削除しました");
+      render();
+    });
+  }
+}
+
+function bindRecordForm(type,existingRec){
+  var form = document.getElementById("recordForm");
+  var chosenPhoto = existingRec ? (existingRec.photo || null) : null;
+  var favOn = existingRec ? !!existingRec.favorite : false;
+  var hideOn = existingRec ? !!existingRec.hidden : false;
+  var elFavToggle = form.querySelector("#favToggle");
+  var elHideToggle = form.querySelector("#hideToggle");
+  function refreshToggles(){
+    elFavToggle.classList.toggle("on", favOn);
+    elHideToggle.classList.toggle("on", hideOn);
+  }
+  refreshToggles();
+  elFavToggle.addEventListener("click", function(){ favOn = !favOn; refreshToggles(); });
+  elHideToggle.addEventListener("click", function(){ hideOn = !hideOn; refreshToggles(); });
+
+  /* The group select always mirrors whichever oshi is currently picked: its
+     options are rebuilt from scratch when the oshi changes, defaulting to
+     that oshi's main (top) group unless editing a record that already has
+     a specific group saved on it. */
+  var elOshiSelect = form.querySelector("#recOshiSelect");
+  var elGroupSelect = form.querySelector("#recGroupSelect");
+  function refreshGroupOptions(){
+    var oshi = getOshi(elOshiSelect.value);
+    var groups = oshi ? oshiGroupsList(oshi) : [];
+    if(!groups.length){
+      elGroupSelect.innerHTML = "";
+      elGroupSelect.style.display = "none";
+      return;
+    }
+    var keepSelected = existingRec && oshi && existingRec.oshiId===oshi.id ? existingRec.groupId : null;
+    elGroupSelect.innerHTML = groups.map(function(g,i){
+      var isSel = keepSelected ? (g.id===keepSelected) : (i===0);
+      return '<option value="'+g.id+'" '+(isSel?"selected":"")+'>'+escapeHtml(g.name||"（名称未設定）")+'</option>';
+    }).join("");
+    elGroupSelect.style.display = "block";
+  }
+  refreshGroupOptions();
+  elOshiSelect.addEventListener("change", refreshGroupOptions);
+
+  var hasPhotoField = (type==="cheki" || type==="live");
+  if(hasPhotoField){
+    var elBtn = form.querySelector("#recPhotoPreviewBtn");
+    var elMenu = form.querySelector("#recPhotoMenu");
+    var elImg = form.querySelector("#recPhotoImg");
+    var elPlaceholder = form.querySelector("#recPhotoPlaceholder");
+    var elClearBtn = form.querySelector("#clearRecPhotoBtn");
+    var elInput = form.querySelector("#recPhotoInput");
+
+    function refreshRecPhoto(){
+      if(chosenPhoto){
+        elImg.src = chosenPhoto;
+        elImg.style.display = "block";
+        elPlaceholder.style.display = "none";
+        elClearBtn.style.display = "block";
+      } else {
+        elImg.style.display = "none";
+        elImg.src = "";
+        elPlaceholder.style.display = "block";
+        elClearBtn.style.display = "none";
+      }
+    }
+    refreshRecPhoto();
+
+    elBtn.addEventListener("click", function(e){
+      e.stopPropagation();
+      var wasOpen = elMenu.style.display === "block";
+      elMenu.style.display = "none";
+      if(!wasOpen){ openPopoverNear(elBtn, elMenu); }
+    });
+    form.addEventListener("click", function(e){
+      if(!e.target.closest(".photo-picker")){ elMenu.style.display = "none"; }
+    });
+    elMenu.querySelectorAll(".photo-menu-item").forEach(function(item){
+      item.addEventListener("click", function(){ elMenu.style.display = "none"; });
+    });
+    elInput.addEventListener("change", function(){
+      var file = elInput.files && elInput.files[0];
+      if(!file) return;
+      if(file.type.indexOf("image/")!==0){ toast("画像ファイルを選択してください"); return; }
+      if(type==="cheki"){
+        PhotoEditor.open(file, function(dataUrl){
+          elInput.value = "";
+          if(dataUrl){
+            chosenPhoto = dataUrl;
+            refreshRecPhoto();
+          }
+        });
+      } else {
+        resizeImageFile(file, 640, 0.85).then(function(dataUrl){
+          elInput.value = "";
+          chosenPhoto = dataUrl;
+          refreshRecPhoto();
+        }).catch(function(){
+          toast("画像の読み込みに失敗しました");
+        });
+      }
+    });
+    elClearBtn.addEventListener("click", function(){
+      chosenPhoto = null;
+      elInput.value = "";
+      refreshRecPhoto();
+    });
+  }
+
+  form.addEventListener("submit", async function(e){
+    e.preventDefault();
+    var fd = new FormData(form);
+    var rec = { id: existingRec ? existingRec.id : uuid() };
+    fd.forEach(function(v,k){ rec[k]=v; });
+    if(rec.price!==undefined) rec.price = rec.price===""?0:Number(rec.price);
+    if(rec.count!==undefined) rec.count = rec.count===""?1:Number(rec.count);
+    if(rec.qty!==undefined) rec.qty = rec.qty===""?1:Number(rec.qty);
+    if(hasPhotoField){ rec.photo = chosenPhoto; }
+    rec.favorite = favOn;
+    rec.hidden = hideOn;
+    rec.createdAt = existingRec ? existingRec.createdAt : Date.now();
+    await persistRecord(type,rec);
+    closeSheet();
+    toast(existingRec ? "記録を更新しました" : "記録を追加しました");
+    render();
+  });
+  var delBtn = form.querySelector("[data-action=delete-record]");
+  if(delBtn){
+    delBtn.addEventListener("click", async function(){
+      if(!confirm("この記録を削除しますか？")) return;
+      await removeRecord(type, delBtn.getAttribute("data-id"));
+      closeSheet();
+      toast("記録を削除しました");
+      render();
+    });
+  }
+}
+
+function openOshiSheet(oshi){
+  openSheet(oshiFormHtml(oshi));
+  bindOshiForm(oshi);
+}
+function openRecordSheet(type,rec){
+  if(state.oshis.length===0){
+    toast("先に推しを登録してください");
+    openOshiSheet(null);
+    return;
+  }
+  openSheet(recordFormHtml(type,rec));
+  bindRecordForm(type,rec);
+}
+
+/* ============ events ============ */
+function onAppClick(e){
+  var el = e.target.closest("[data-action]");
+  if(!el) return;
+  var action = el.getAttribute("data-action");
+
+  if(action==="add-oshi"){ openOshiSheet(null); return; }
+  if(action==="edit-oshi"){ openOshiSheet(getOshi(el.getAttribute("data-id"))); return; }
+  if(action==="set-active"){ setActiveOshi(el.getAttribute("data-id")).then(render); return; }
+  if(action==="move-oshi"){ moveOshiStep(el.getAttribute("data-id"), el.getAttribute("data-dir")); return; }
+  if(action==="filter-oshi"){ state.filterOshiId = el.getAttribute("data-id"); render(); return; }
+  if(action==="toggle-hidden"){ state.showHidden = !state.showHidden; render(); return; }
+  if(action==="stats-tab"){
+    state.statsSubView = el.getAttribute("data-tab");
+    state.calendarSelectedDate = null;
+    renderStatsPage();
+    return;
+  }
+  if(action==="share-summary"){ shareSummaryImage(); return; }
+  if(action==="edit-record"){
+    var type = el.getAttribute("data-type"), id = el.getAttribute("data-id");
+    var rec = state[type].find(function(r){return r.id===id;});
+    openRecordSheet(type,rec);
+    return;
+  }
+}
+
+document.addEventListener("DOMContentLoaded", function(){
+  sheetBg = document.getElementById("sheetBg");
+  sheetEl = document.getElementById("sheet");
+  sheetEl.addEventListener("scroll", closePopoversOnSheetScroll);
+
+  document.getElementById("app").addEventListener("click", onAppClick);
+
+  var headerLogoBtn = document.getElementById("headerLogoBtn");
+  var headerLogoMenu = document.getElementById("headerLogoMenu");
+  var headerLogoInput = document.getElementById("headerLogoInput");
+  var clearHeaderLogoBtn = document.getElementById("clearHeaderLogoBtn");
+  headerLogoBtn.addEventListener("click", function(e){
+    e.stopPropagation();
+    var wasOpen = headerLogoMenu.style.display === "block";
+    headerLogoMenu.style.display = "none";
+    if(!wasOpen){ openPopoverNear(headerLogoBtn, headerLogoMenu); }
+  });
+  headerLogoInput.addEventListener("change", function(){
+    var file = headerLogoInput.files && headerLogoInput.files[0];
+    headerLogoMenu.style.display = "none";
+    if(!file) return;
+    if(file.type.indexOf("image/")!==0){ toast("画像ファイルを選択してください"); return; }
+    /* No fixed output size: keep the image reasonably light for storage
+       without forcing a crop, so any logo's natural aspect ratio survives.
+       PNG output (not JPEG) so a transparent background stays transparent. */
+    resizeImageFilePreserveAlpha(file, 480).then(function(dataUrl){
+      headerLogoInput.value = "";
+      state.headerLogo = dataUrl;
+      saveLocal();
+      refreshHeaderLogo();
+    }).catch(function(){
+      toast("画像の読み込みに失敗しました");
+    });
+  });
+  clearHeaderLogoBtn.addEventListener("click", function(){
+    state.headerLogo = null;
+    saveLocal();
+    refreshHeaderLogo();
+    headerLogoMenu.style.display = "none";
+  });
+  document.addEventListener("click", function(e){
+    if(!e.target.closest("#headerLogoBtn") && !e.target.closest("#headerLogoMenu")){
+      headerLogoMenu.style.display = "none";
+    }
+  });
+
+  var topChip = document.getElementById("topChip");
+  var topChipMenu = document.getElementById("topChipMenu");
+  topChip.addEventListener("click", function(e){
+    e.stopPropagation();
+    var wasOpen = topChipMenu.style.display === "block";
+    topChipMenu.style.display = "none";
+    if(!wasOpen && topChipMenu.innerHTML){ openPopoverNear(topChip, topChipMenu); }
+  });
+  topChipMenu.addEventListener("click", function(e){
+    var item = e.target.closest("[data-set-active-oshi]");
+    if(item){
+      topChipMenu.style.display = "none";
+      setActiveOshi(item.getAttribute("data-set-active-oshi")).then(render);
+      return;
+    }
+    if(e.target.closest('[data-action="goto-oshi-page"]')){
+      topChipMenu.style.display = "none";
+      state.view = "oshi";
+      render();
+      return;
+    }
+    if(e.target.closest('[data-action="add-oshi"]')){
+      topChipMenu.style.display = "none";
+    }
+  });
+  document.addEventListener("click", function(e){
+    if(!e.target.closest("#topChip") && !e.target.closest("#topChipMenu")){
+      topChipMenu.style.display = "none";
+    }
+  });
+
+  document.querySelectorAll("nav.tabs button").forEach(function(b){
+    b.addEventListener("click", function(){
+      state.view = b.getAttribute("data-view");
+      state.filterOshiId = "all";
+      render();
+    });
+  });
+
+  document.getElementById("fabBtn").addEventListener("click", function(){
+    var v = state.view;
+    var type = (v==="live"||v==="cheki"||v==="goods") ? v : "live";
+    openRecordSheet(type,null);
+  });
+
+  sheetBg.addEventListener("click", function(e){ if(e.target===sheetBg) closeSheet(); });
+
+  PhotoEditor.init();
+  initStorage();
+});
+})();
+</script>
+</body>
+</html>

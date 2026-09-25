@@ -1,0 +1,9 @@
+{
+  "name": "oshikatsu-diary",
+  "version": "1.0.0",
+  "private": true,
+  "description": "推し活手帳 - a single-file vanilla HTML/CSS/JS web app for tracking oshi-katsu (idol fan) activity, stored entirely in localStorage. No build step required.",
+  "scripts": {
+    "start": "npx --yes serve ."
+  }
+}
