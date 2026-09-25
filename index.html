@@ -2617,8 +2617,10 @@ function ticketHtml(type,r,withOshiTag){
     }).filter(Boolean);
     if(tags.length) oshiLineHtml = '<div class="meta meta-oshi">'+tags.join(" ／ ")+'</div>';
   }
-  var streamLinkHtml = (type==="live" && r.streamUrl)
-    ? '<a href="'+escapeHtml(r.streamUrl)+'" target="_blank" rel="noopener noreferrer" class="stream-link">配信を見る</a>'
+  // 配信URL（LIVE）・ONLINE物販のURL（物販）は http(s) のときだけリンクにする
+  var linkUrl = type==="live" ? safeWebUrl(r.streamUrl) : (type==="goods" ? safeWebUrl(r.shopUrl) : "");
+  var streamLinkHtml = linkUrl
+    ? '<a href="'+escapeHtml(linkUrl)+'" target="_blank" rel="noopener noreferrer" class="stream-link">'+(type==="live" ? "配信を見る" : "購入ページを見る")+'</a>'
     : "";
   var stubHasPhoto = (type==="live" || type==="goods") && !!r.photo;
   var html = '<div class="ticket'+(r.hidden?' is-hidden':'')+'">'
@@ -3288,6 +3290,7 @@ function recordFormHtml(type,rec){
   } else {
     fields += recordPhotoFieldHtml("物販写真（任意）");
     fields += '<div class="field"><label>イベント名・購入先（任意）</label><input type="text" name="title" value="'+(rec?escapeHtml(rec.title||""):"")+'"></div>';
+    fields += '<div class="field"><label>ONLINE物販URL（任意）</label><input type="text" name="shopUrl" inputmode="url" autocomplete="off" value="'+(rec?escapeHtml(rec.shopUrl||""):"")+'"></div>';
     fields += '<div class="field"><label>商品名</label><input type="text" name="item" value="'+(rec?escapeHtml(rec.item||""):"")+'" required></div>';
     fields += '<div class="field row2">'
       + '<div><label>単価（任意）</label><input type="number" name="price" min="0" value="'+(rec?rec.price||"":"")+'" placeholder="0"></div>'
@@ -3812,6 +3815,16 @@ function bindRecordForm(type,existingRec){
     var fd = new FormData(form);
     var rec = { id: existingRec ? existingRec.id : uuid() };
     fd.forEach(function(v,k){ rec[k]=v; });
+    if(rec.shopUrl!==undefined){
+      // https:// を省略しても保存できるようにし、http(s) 以外は受け付けない
+      var shopUrlRaw = String(rec.shopUrl).trim();
+      rec.shopUrl = safeWebUrl(shopUrlRaw);
+      if(shopUrlRaw && !rec.shopUrl){
+        toast("ONLINE物販URLを正しく入力してください");
+        form.querySelector('[name="shopUrl"]').focus();
+        return;
+      }
+    }
     if(rec.price!==undefined) rec.price = rec.price===""?0:Number(rec.price);
     if(rec.count!==undefined) rec.count = rec.count===""?1:Number(rec.count);
     if(rec.qty!==undefined) rec.qty = rec.qty===""?1:Number(rec.qty);
