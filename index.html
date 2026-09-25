@@ -447,9 +447,19 @@
   .venue-place:empty{display:none;}
   .venue-place a{color:var(--accent);}
   .venue-link{color:inherit;text-decoration:underline;text-decoration-color:var(--line-strong);text-underline-offset:2px;}
-  .rec-oshi-row{display:flex;align-items:center;gap:8px;}
+  /* 推し欄：人物名・グループ名（LIVEはさらにチェキ・✕）を列幅をそろえて並べる */
+  .rec-oshi-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:center;gap:8px;}
+  .rec-oshi-row.with-actions{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 34px 34px;}
   .rec-oshi-row + .rec-oshi-row{margin-top:8px;}
-  .field .rec-oshi-row select{flex:1 1 0;min-width:0;width:auto;}
+  .field .rec-oshi-row select{min-width:0;width:100%;}
+  .rec-cell-empty{display:block;}
+  .rec-oshi-icon{
+    width:34px;height:34px;border-radius:50%;border:1px solid var(--line-strong);
+    background:var(--paper);color:var(--ink-soft);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;
+  }
+  .rec-oshi-icon.rec-cell-empty{border:none;background:none;cursor:default;}
+  .rec-oshi-cheki{color:var(--accent);}
+  .rec-oshi-cheki svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.6;}
   .rec-oshi-remove{
     flex:none;width:34px;height:34px;border-radius:50%;border:1px solid var(--line-strong);
     background:var(--paper);color:var(--ink-soft);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;
@@ -1521,6 +1531,9 @@ function applyAuthInfo(user){
   if(user.identities) cloud.user.identities = user.identities;
   var providers = (user.app_metadata && user.app_metadata.providers) || [];
   if(providers.length) cloud.user.providers = providers;
+  // Googleで登録した人があとからパスワードを設定しても、Supabaseのユーザー情報には
+  // それが現れないため、設定時に user_metadata.has_password を立てて判定に使う
+  if(user.user_metadata && user.user_metadata.has_password) cloud.user.passwordSet = true;
 }
 function userHasGoogle(){
   return !!(cloud.user && (cloud.user.identities||[]).some(function(i){ return i.provider==="google"; }));
@@ -2044,7 +2057,11 @@ function openNewPasswordSheet(mode){
     if(p1!==p2){ msg.textContent = "2つのパスワードが一致しません。"; msg.className = "auth-msg error"; return; }
     var btn = document.getElementById("newPwSubmit");
     btn.disabled = true;
-    var res = await sb.auth.updateUser({password:p1});
+    var res = await sb.auth.updateUser({password:p1, data:{has_password:true}});
+    // 「前と同じパスワード」で断られた＝すでにパスワードがあるので、目印だけ付けて成功扱いにする
+    if(res.error && /different from the old password/i.test(res.error.message||"")){
+      res = await sb.auth.updateUser({data:{has_password:true}});
+    }
     btn.disabled = false;
     if(res.error){ msg.textContent = authErrorMessage(res.error); msg.className = "auth-msg error"; return; }
     if(cloud.user) cloud.user.passwordSet = true;
@@ -3701,11 +3718,19 @@ function bindRecordForm(type,existingRec){
         ? '<select class="rec-group-sel" data-row="'+i+'" aria-label="グループ">'+gs.map(function(g){
             return '<option value="'+g.id+'" '+(g.id===row.groupId?"selected":"")+'>'+escapeHtml(g.name||"（名称未設定）")+'</option>';
           }).join("")+'</select>'
+        : '<span class="rec-cell-empty"></span>';
+      // LIVEは「人物名・グループ名・チェキ・✕」の4列。1行目は✕の位置を空けて列をそろえる
+      var chekiBtn = type==="live"
+        ? '<button type="button" class="rec-oshi-icon rec-oshi-cheki" data-cheki-row="'+i+'" title="この推しのチェキを追加" aria-label="この推しのチェキを追加">'+kindIcon("cheki")+'</button>'
         : '';
-      return '<div class="rec-oshi-row">'
+      var removeBtn = i>0
+        ? '<button type="button" class="rec-oshi-icon rec-oshi-remove" data-remove-row="'+i+'" title="この推しを外す" aria-label="この推しを外す"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>'
+        : (type==="live" ? '<span class="rec-oshi-icon rec-cell-empty"></span>' : '');
+      return '<div class="rec-oshi-row'+(type==="live"?' with-actions':'')+'">'
         + '<select class="rec-oshi-sel" data-row="'+i+'" aria-label="推し">'+oshiOpts+'</select>'
         + groupSel
-        + (i>0 ? '<button type="button" class="rec-oshi-remove" data-remove-row="'+i+'" title="この推しを外す" aria-label="この推しを外す"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>' : '')
+        + chekiBtn
+        + removeBtn
         + '</div>';
     }).join("");
     if(elAddOshiBtn){
@@ -3724,11 +3749,28 @@ function bindRecordForm(type,existingRec){
     }
   });
   elOshiRows.addEventListener("click", function(e){
+    var chekiBtn = e.target.closest("[data-cheki-row]");
+    if(chekiBtn){ addChekiFromLive(oshiRows[Number(chekiBtn.getAttribute("data-cheki-row"))]); return; }
     var btn = e.target.closest("[data-remove-row]");
     if(!btn) return;
     oshiRows.splice(Number(btn.getAttribute("data-remove-row")), 1);
     renderOshiRows();
   });
+  /* チェキボタン：この行の推し・グループと、LIVEの日付・公演名でチェキの記録を追加する */
+  async function addChekiFromLive(row){
+    if(!row) return;
+    var title = (form.querySelector('[name="title"]').value||"").trim();
+    var date = form.querySelector('[name="date"]').value;
+    if(!title){ toast("先に公演・ツアー名を入力してください"); form.querySelector('[name="title"]').focus(); return; }
+    if(!date){ toast("先に日付を入力してください"); return; }
+    var o = getOshi(row.oshiId);
+    await persistRecord("cheki", {
+      id: uuid(), oshiId: row.oshiId, groupId: row.groupId||"", date: date, title: title,
+      count: 1, price: 0, content: "", memo: "", tag: "", photo: null,
+      favorite: false, hidden: false, createdAt: Date.now()
+    });
+    toast("チェキを追加しました"+(o ? "（"+o.name+"）" : ""));
+  }
   if(elAddOshiBtn){
     elAddOshiBtn.addEventListener("click", function(){
       var next = state.oshis.find(function(o){ return !oshiRows.some(function(r){ return r.oshiId===o.id; }); });
