@@ -475,6 +475,7 @@
   .stream-url-row{display:grid;grid-template-columns:minmax(0,1fr) 34px;align-items:center;gap:8px;}
   .stream-url-row + .stream-url-row{margin-top:8px;}
   .field .stream-url-row input{min-width:0;width:100%;}
+  .ticket .stream-link-wrap .stream-link + .stream-link{margin-left:10px;}
   .ticket .stream-link-btn{background:none;border:none;padding:0;cursor:pointer;font-family:inherit;}
   .stream-menu a.photo-menu-item{text-decoration:none;}
   .stream-menu .host{display:block;font-size:10.5px;font-weight:500;color:var(--ink-soft);margin-top:2px;}
@@ -2740,6 +2741,11 @@ function ticketHtml(type,r,withOshiTag){
     } else if(sUrls.length>1){
       streamLinkHtml = '<button type="button" class="stream-link stream-link-btn" data-action="stream-menu" data-id="'+r.id+'">配信を見る</button>';
     }
+    var tUrl = safeWebUrl(r.ticketUrl);
+    if(tUrl){
+      streamLinkHtml = '<a href="'+escapeHtml(tUrl)+'" target="_blank" rel="noopener noreferrer" class="stream-link">チケットを見る</a>'
+        + (streamLinkHtml ? ' '+streamLinkHtml : '');
+    }
   } else if(type==="goods" && safeWebUrl(r.shopUrl)){
     streamLinkHtml = '<a href="'+escapeHtml(safeWebUrl(r.shopUrl))+'" target="_blank" rel="noopener noreferrer" class="stream-link">購入ページを見る</a>';
   }
@@ -3468,10 +3474,9 @@ function recordFormHtml(type,rec){
       +   '<option value="スタンディング"></option>'
       + '</datalist>'
       + '</div>';
-    fields += '<div class="field row2">'
-      + '<div><label>座席・ブロック（任意）</label><input type="text" name="seat" value="'+(rec?escapeHtml(rec.seat||""):"")+'"></div>'
-      + '<div><label>チケット代（任意）</label><input type="number" name="price" min="0" value="'+(rec?rec.price||"":"")+'" placeholder="0"></div>'
-      + '</div>';
+    fields += '<div class="field"><label>座席・ブロック（任意）</label><input type="text" name="seat" value="'+(rec?escapeHtml(rec.seat||""):"")+'"></div>';
+    fields += '<div class="field"><label>オンラインチケットURL（任意）</label><input type="text" name="ticketUrl" inputmode="url" autocomplete="off" value="'+(rec?escapeHtml(rec.ticketUrl||""):"")+'"></div>';
+    fields += '<div class="field"><label>チケット代（任意）</label><input type="number" name="price" min="0" value="'+(rec?rec.price||"":"")+'" placeholder="0"></div>';
   } else if(type==="cheki"){
     fields += recordPhotoFieldHtml("チェキ写真（任意）");
     fields += '<div class="field"><label>イベント名</label><input type="text" name="title" value="'+(rec?escapeHtml(rec.title||""):"")+'" required></div>';
@@ -4142,6 +4147,16 @@ function bindRecordForm(type,existingRec){
     var fd = new FormData(form);
     var rec = { id: existingRec ? existingRec.id : uuid() };
     fd.forEach(function(v,k){ rec[k]=v; });
+    if(rec.ticketUrl!==undefined){
+      // オンラインチケットのURLも https:// 省略可、http(s) 以外は受け付けない
+      var ticketUrlRaw = String(rec.ticketUrl).trim();
+      rec.ticketUrl = safeWebUrl(ticketUrlRaw);
+      if(ticketUrlRaw && !rec.ticketUrl){
+        toast("オンラインチケットURLを正しく入力してください");
+        form.querySelector('[name="ticketUrl"]').focus();
+        return;
+      }
+    }
     if(rec.shopUrl!==undefined){
       // https:// を省略しても保存できるようにし、http(s) 以外は受け付けない
       var shopUrlRaw = String(rec.shopUrl).trim();

@@ -97,6 +97,7 @@ python3 -m http.server 8000
 
 - live固有: `title, venue, streamUrl, ticketType, seat, price, photo, extraOshis`
   - `viewing`：観戦方法。`"venue"`（現地）/ `"stream"`（配信）。フォームは日付の下のボタンで選び、一覧のチケットには「LIVE」の横に現地（塗り）／配信（枠線）の印を出す。未設定の以前の記録は、配信URLがあって会場が空なら配信、それ以外は現地とみなす（`recViewing()`）。ホームの「参戦」「参戦回数」や集計の「参戦」は現地観戦だけを数える（配信で観たLIVEは数えない）。
+  - `ticketUrl`：オンラインチケットのURL（`safeWebUrl()` で http(s) のみ）。フォームでは「チケット代」の上に入力欄があり、一覧に「チケットを見る」リンクを出す。
   - `streamUrls`：配信URLの配列（http(s) のみ）。互換のため1件目は `streamUrl` にも入れる。以前の記録は `streamUrl` だけでも表示できる（`recStreamUrls()`）。一覧のリンク表記は件数に関係なく「配信を見る」。複数あるときは押すとメニュー（`#streamMenu`）が開き、「配信1（ドメイン）」「配信2（ドメイン）」…から選ぶ。
   - `venuePlace`：会場を Google マップの候補から選んだときの場所 `{ placeId, name, address, lat, lng }`。手入力のままなら `null`（遠征マップ用）。
   - `extraOshis`：対バンなどで一緒に記録する2人目以降の推し `[{ oshiId, groupId }]`。1人目は従来どおり `oshiId` / `groupId`。
