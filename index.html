@@ -597,11 +597,18 @@
   .oshi-row.drag-over{box-shadow:0 0 0 2px var(--accent);border-radius:8px;}
   .oshi-row .sw{width:38px;height:38px;border-radius:50%;flex:none;box-shadow:0 0 0 3px var(--bg),0 0 0 4px var(--line-strong);}
   .oshi-row .info{flex:1;min-width:0;}
-  .oshi-row .sw-col{flex:none;width:38px;display:flex;flex-direction:column;align-items:center;}
-  .oshi-row .sw-col .oshi-fav-stamp{margin-top:8px;font-size:8px;padding:1px 4px;white-space:nowrap;color:var(--accent);letter-spacing:0;}
+  .oshi-row .sw-col{flex:none;width:38px;position:relative;}
+  /* お気に入りの印は写真の下に重ねて置き、行の高さには影響させない */
+  .oshi-row .sw-col .oshi-fav-stamp{
+    position:absolute;top:46px;left:50%;margin-left:-26px;width:52px;justify-content:center;
+    font-size:8px;padding:1px 0;white-space:nowrap;color:var(--accent);letter-spacing:0;
+  }
   .oshi-row .info .name-line{line-height:1.35;overflow-wrap:anywhere;}
   .oshi-row .info .oshi-meta-line{margin-top:2px;line-height:1.4;}
-  .oshi-row .info .oshi-affil{font-size:11px;color:var(--ink-soft);line-height:1.5;margin-top:3px;overflow-wrap:anywhere;}
+  .oshi-row > .oshi-affil{
+    flex:0 0 100%;box-sizing:border-box;padding-left:74px;margin-top:3px;
+    font-size:11px;color:var(--ink-soft);line-height:1.5;overflow-wrap:anywhere;
+  }
   .oshi-row .info b{font-size:14.5px;color:var(--heading);}
   .oshi-row .info .oshi-bday{font-size:11px;font-weight:600;color:var(--ink-soft);}
   .oshi-row .info span{font-size:11px;color:var(--ink-soft);}
@@ -3029,7 +3036,6 @@ function oshiRowHtml(o, idx, n){
     + '<div class="info">'
     +   '<div class="name-line"><b>'+escapeHtml(o.name)+'</b></div>'
     +   (bdayText? '<div class="oshi-meta-line"><span class="oshi-bday">'+escapeHtml(bdayText)+'</span></div>' : '')
-    +   (subText? '<div class="oshi-affil">'+escapeHtml(subText)+'</div>' : '')
     + '</div>'
     + '<div class="side-actions">'
     +   (o.hidden ? '' : '<button class="star '+(isActive?"active":"")+'" data-action="set-active" data-id="'+o.id+'" title="このカラーを適用">'
@@ -3050,6 +3056,8 @@ function oshiRowHtml(o, idx, n){
     +     '</button>'
     +   '</div>'
     + '</div>'
+    // 所属／グループは右上のボタン列に幅を取られないよう、SNSと同じく行の全幅を使う
+    + (subText? '<div class="oshi-affil">'+escapeHtml(subText)+'</div>' : '')
     + snsLinksHtml(o,"row")
     + '</div>';
 }
