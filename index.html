@@ -4,6 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>推し活手帳</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#FBF8F3">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="推し活手帳">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;600;800&family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap" rel="stylesheet">
@@ -983,6 +991,7 @@ function applyTheme(oshi){
     root.setProperty("--on-accent","#FBF8F3");
     root.setProperty("--line","rgba(33,28,23,0.16)");
     root.setProperty("--line-strong","rgba(33,28,23,0.30)");
+    syncThemeColorMeta("#FBF8F3");
     return;
   }
   var color = oshi.color || "#C9457A";
@@ -1010,6 +1019,12 @@ function applyTheme(oshi){
     root.setProperty("--line", "rgba(33,28,23,0.14)");
     root.setProperty("--line-strong", "rgba(33,28,23,0.28)");
   }
+  syncThemeColorMeta(document.documentElement.style.getPropertyValue("--bg"));
+}
+/* インストールしたアプリのステータスバー等の色を、画面の背景色に合わせる */
+function syncThemeColorMeta(color){
+  var m = document.querySelector('meta[name="theme-color"]');
+  if(m && color) m.setAttribute("content", color.trim());
 }
 
 /* ============ storage: localStorage (reliable, this device/browser only) ============ */
@@ -4464,6 +4479,13 @@ document.addEventListener("DOMContentLoaded", function(){
 
   PhotoEditor.init();
   AvatarCropper.init();
+
+  // アプリとしてインストールできるよう Service Worker を登録する（https と開発用の localhost のみ）
+  if("serviceWorker" in navigator && (location.protocol==="https:" || location.hostname==="localhost")){
+    window.addEventListener("load", function(){
+      navigator.serviceWorker.register("/sw.js").catch(function(e){ console.warn("SW registration failed", e); });
+    });
+  }
   initStorage();
 });
 })();

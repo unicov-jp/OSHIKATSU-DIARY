@@ -133,6 +133,13 @@ LIVE の「会場」欄で2文字以上入力すると、Google Places API (New)
 - Google Cloud で有効にする API：**Maps JavaScript API**、**Places API (New)**。キーは「HTTPリファラー」を `https://oshikatsu-diary.vercel.app/*` に制限し、API の制限もこの2つにしてください。
 - 今後「遠征マップ」を作るときは、`state.live` の `venuePlace.lat / lng` を使います。
 
+## アプリとしてインストール（PWA）
+
+- `manifest.webmanifest`：アプリ名・アイコン・`display: standalone` など。`icons/` にアイコン（192/512、maskable 512、apple-touch-icon 180、favicon 32）。
+- `sw.js`：Service Worker。画面（HTML）はネットワーク優先で、つながらないときだけ保存済みを表示。静的ファイルはキャッシュ優先で裏で更新。`/api/` と外部サービス（Supabase・Google など）はキャッシュしない。内容を大きく変えたときは `CACHE` の名前（`oshikatsu-v1`）を上げると古いキャッシュが消える。
+- `index.html` で https（と開発用の localhost）のときだけ Service Worker を登録する。ブラウザのステータスバー色（`theme-color`）はテーマに合わせて変わる。
+- Android の Chrome：メニュー →「ホーム画面に追加」→「インストール」。iPhone の Safari：共有 →「ホーム画面に追加」。
+
 ## プライバシーポリシー
 
 `privacy.html`（公開URL：`https://oshikatsu-diary.vercel.app/privacy.html`）。ログイン画面とマイページの最下部からリンクしています。Google OAuth 同意画面の「プライバシーポリシーのリンク」にもこのURLを設定します。取得する情報や外部サービスを追加・変更したときは、このページも更新してください。
