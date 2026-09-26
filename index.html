@@ -761,7 +761,7 @@
     min-width:22px;height:22px;border-radius:50%;background:var(--accent);color:#FFFFFF;
     display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;padding:0 4px;
   }
-  .trip-venue.missing{opacity:.55;cursor:default;}
+  .trip-venue.missing{opacity:.55;}
   .trip-venue.missing .n{background:var(--ink-soft);}
   .trip-map-note{font-size:10.5px;color:var(--ink-soft);margin:8px 4px 0;line-height:1.6;white-space:pre-line;}
   .trip-map-note:empty{display:none;}
@@ -4574,6 +4574,7 @@ function bindRecordForm(type,existingRec){
     rec.hidden = hideOn;
     rec.createdAt = existingRec ? existingRec.createdAt : Date.now();
     await persistRecord(type,rec);
+    if(type==="live") await applyVenueToSameName(existingRec, rec);
     closeSheet();
     toast(existingRec ? "記録を更新しました" : "記録を追加しました");
     render();
@@ -4587,6 +4588,25 @@ function bindRecordForm(type,existingRec){
       toast("記録を削除しました");
       render();
     });
+  }
+}
+
+/* 会場を Google マップで選び直して名前が変わったとき、元の会場名のままの
+   ほかの LIVE 記録（位置が分からないもの）もまとめて同じ会場にする */
+async function applyVenueToSameName(oldRec, rec){
+  var place = rec.venuePlace;
+  if(!oldRec || !place || typeof place.lat!=="number") return;
+  var oldKey = (oldRec.venue||"").trim().toLowerCase();
+  if(!oldKey || oldKey===(rec.venue||"").trim().toLowerCase()) return;
+  var others = state.live.filter(function(r){
+    if(r.id===rec.id || (r.venue||"").trim().toLowerCase()!==oldKey) return false;
+    return !(r.venuePlace && typeof r.venuePlace.lat==="number");
+  });
+  if(!others.length) return;
+  if(!confirm("同じ会場名「"+oldRec.venue.trim()+"」の記録があと"+others.length+"件あります。まとめて「"+rec.venue+"」に変更しますか？")) return;
+  for(var i=0;i<others.length;i++){
+    var r = Object.assign({}, others[i], {venue:rec.venue, venuePlace:Object.assign({}, place)});
+    await persistRecord("live", r);
   }
 }
 
@@ -4952,12 +4972,21 @@ var TripMap = (function(){
       venuesEl.innerHTML = shown.map(function(g){
         var missing = g.lat==null && cache[g.key] && cache[g.key].v===2;
         return '<button type="button" class="trip-venue'+(missing?' missing':'')+'" data-trip-venue="'+escapeHtml(g.key)+'"'
-          + (missing?' title="位置が分かりませんでした"':'')+'>'
+          + (missing?' title="位置が分かりませんでした。押すと会場を選び直せます"':'')+'>'
           + '<span class="n">'+g.visits.length+'</span>'+escapeHtml(g.name)
           + (g.dist!=null ? '<span class="km">'+fmtKm(g.dist)+'</span>' : '')+'</button>';
       }).join("");
       venuesEl.querySelectorAll("[data-trip-venue]").forEach(function(b){
-        b.addEventListener("click", function(){ focusVenue(b.getAttribute("data-trip-venue")); });
+        b.addEventListener("click", function(){
+          var key = b.getAttribute("data-trip-venue");
+          // 位置が分からない会場（灰色）は、いちばん新しいLIVEの編集画面を開いて会場を選び直せるようにする
+          if(b.classList.contains("missing")){
+            var g = shown.filter(function(x){ return x.key===key; })[0];
+            if(g && g.visits[0]) openRecordSheet("live", g.visits[0]);
+            return;
+          }
+          focusVenue(key);
+        });
       });
     }
     setNote(groups, shown);
