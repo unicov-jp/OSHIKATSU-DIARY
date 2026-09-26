@@ -133,10 +133,10 @@ python3 -m http.server 8000
 
 ## 会場と Google マップ（遠征マップの準備）
 
-LIVE の「会場」欄の右の「探す」ボタン（または Enter）で、入力した会場名を Google マップで検索します（Places API (New) のテキスト検索 `Place.searchByText`、最大5件）。結果から選ぶと正式名称・住所・緯度経度・Place ID を `venuePlace` に保存し、遠征マップでもその位置を使います。会場名を手で書き換えると `venuePlace` は外れます。APIキーが無いときは「探す」は出ず、手入力だけになります。
+LIVE の「会場」欄の右の「探す」ボタン（または Enter）で、入力した会場名を Google マップで検索します（Places API (New) のテキスト検索 `Place.searchByText`、最大5件）。結果から選ぶと正式名称・住所・緯度経度・Place ID を `venuePlace` に保存し、遠征マップでもその位置を使います。会場名を手で書き換えると `venuePlace` は外れます。APIキーが無いとき（または Google マップが使えないとき）は、「探す」は OpenStreetMap（Nominatim）で検索します（「座標の取得」の回数に数える）。
 
 - 会場名は、記録一覧で Google マップへのリンクになります（APIキー不要の検索URL）。
-- APIキーは Vercel の環境変数 `GOOGLE_MAPS_API_KEY` に設定し、`/api/config` の `googleMapsApiKey` でブラウザに渡します。キーが無いときは手入力のみで動きます。
+- APIキーは Vercel の環境変数 `GOOGLE_MAPS_API_KEY` に設定し、`/api/config` の `googleMapsApiKey` でブラウザに渡します。キーが無いときは OpenStreetMap で検索します。
 - Google Cloud で有効にする API：**Maps JavaScript API**、**Places API (New)**。キーは「HTTPリファラー」を `https://oshikatsu-diary.vercel.app/*` に制限し、API の制限もこの2つにしてください。
 - 今後「遠征マップ」を作るときは、`state.live` の `venuePlace.lat / lng` を使います。
 
@@ -169,7 +169,7 @@ LIVE の「会場」欄の右の「探す」ボタン（または Enter）で、
 | 種類 | 上限/日 | 数えるもの | 上限に達したとき |
 |---|---|---|---|
 | 地図の読み込み（`mapLoad`） | 200回 | 遠征マップを作るたび | 地図を作らず、枠内に案内を表示 |
-| 座標の取得（`geocode`） | 100回 | Nominatim の会場検索 | 残りの会場は翌日に調べる |
+| 座標の取得（`geocode`） | 100回 | Nominatim の会場検索（遠征マップの自動検索と、APIキーが無いときの「探す」） | 残りの会場は翌日に調べる |
 | 会場の検索（`placeSearch`） | 50回 | 「探す」ボタンでの Google マップ検索（`Place.searchByText`） | 検索せず、トーストで1回だけ案内 |
 
 Google Cloud コンソールの「APIとサービス → 割り当て」でも、Maps JavaScript API・Places API (New) の1日あたりの上限を設定してください。

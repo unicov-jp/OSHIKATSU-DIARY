@@ -2066,11 +2066,45 @@ function bindVenueAutocomplete(form, existingRec){
   }
   // 住所の先頭の「日本、〒123-4567 」は省く
   function shortAddress(a){ return (a||"").replace(/^日本、\s*/, "").replace(/^〒\d{3}-?\d{4}\s*/, ""); }
+  // Google マップの APIキーが無い（または使えない）ときは OpenStreetMap（Nominatim）で探す
+  async function searchOsm(q){
+    if(!UsageLimit.take("geocode")){ UsageLimit.warnOnce("geocode"); return []; }
+    var url = "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&countrycodes=jp&accept-language=ja&namedetails=1&q="+encodeURIComponent(q);
+    var res = await fetch(url, {headers:{"Accept":"application/json"}});
+    var list = res.ok ? await res.json() : [];
+    return (list||[]).map(function(p){
+      // display_name は「名前, 町名, 区, 都道府県, 郵便番号, 日本」の順なので、日本の住所の順に並べ直す
+      var parts = String(p.display_name||"").split(/,\s*/);
+      var name = p.name || (p.namedetails && p.namedetails.name) || parts[0] || q;
+      if(parts[0]===name) parts.shift();
+      var seg = parts.filter(function(x){ return x!=="日本" && !/^\d{3}-?\d{4}$/.test(x); }).reverse();
+      // 「高輪」「高輪4丁目」のように続く部分に含まれる地名は省く
+      var addr = seg.filter(function(x, i){ return !(seg[i+1] && seg[i+1].indexOf(x)===0); }).join("");
+      return {placeId:"", name:name, address:addr, lat:Number(p.lat), lng:Number(p.lon)};
+    }).filter(function(it){ return isFinite(it.lat) && isFinite(it.lng); });
+  }
   async function search(){
     var q = input.value.trim();
     if(!q){ toast("会場名を入力してください"); input.focus(); return; }
-    if(!UsageLimit.take("placeSearch")){ hideList(); UsageLimit.warnOnce("placeSearch"); return; }
     var mySeq = ++seq;
+    if(!MapsPlaces.available()){
+      setBusy(true);
+      try{
+        var found = await searchOsm(q);
+        if(mySeq!==seq) return;
+        items = found;
+        if(!items.length) toast("見つかりませんでした");
+        showList();
+      }catch(e){
+        console.warn("venue search (osm) failed", e);
+        toast("会場を検索できませんでした");
+        hideList();
+      }finally{
+        if(mySeq===seq) setBusy(false);
+      }
+      return;
+    }
+    if(!UsageLimit.take("placeSearch")){ hideList(); UsageLimit.warnOnce("placeSearch"); return; }
     setBusy(true);
     try{
       var lib = await MapsPlaces.load();
@@ -2093,22 +2127,29 @@ function bindVenueAutocomplete(form, existingRec){
       showList();
     }catch(e){
       console.warn("venue search failed", e);
-      toast("会場を検索できませんでした");
-      hideList();
+      // Google マップが使えないときは OpenStreetMap で探し直す
+      try{
+        var alt = await searchOsm(q);
+        if(mySeq!==seq) return;
+        items = alt;
+        if(!items.length) toast("見つかりませんでした");
+        showList();
+      }catch(e2){
+        toast("会場を検索できませんでした");
+        hideList();
+      }
     }finally{
       if(mySeq===seq) setBusy(false);
     }
   }
   function choose(it){
     hideList();
-    place = {placeId:it.placeId, name:it.name, address:it.address, lat:it.lat, lng:it.lng};
+    place = {placeId:it.placeId||"", name:it.name, address:it.address, lat:it.lat, lng:it.lng};
     input.value = place.name;
     renderInfo();
   }
 
   input.setAttribute("autocomplete", "off");
-  // APIキーが無いときは「探す」を出さず、手入力だけにする
-  if(!MapsPlaces.available()) btn.hidden = true;
   btn.addEventListener("click", search);
   input.addEventListener("input", function(){
     if(place && input.value.trim()!==place.name) place = null;
@@ -2127,7 +2168,7 @@ function bindVenueAutocomplete(form, existingRec){
     if(e.key==="Enter"){
       e.preventDefault();
       if(!list.hidden && items.length) choose(items[0]);
-      else if(!btn.hidden) search();
+      else search();
     }
   });
   renderInfo();
