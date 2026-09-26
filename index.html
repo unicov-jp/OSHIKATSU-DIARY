@@ -753,8 +753,42 @@
   }
   .trip-venue.missing{opacity:.55;cursor:default;}
   .trip-venue.missing .n{background:var(--ink-soft);}
-  .trip-map-note{font-size:10.5px;color:var(--ink-soft);margin:8px 4px 0;line-height:1.6;}
+  .trip-map-note{font-size:10.5px;color:var(--ink-soft);margin:8px 4px 0;line-height:1.6;white-space:pre-line;}
   .trip-map-note:empty{display:none;}
+  /* 半径で絞る */
+  .trip-radius{display:flex;gap:6px;margin:0 2px 10px;}
+  .trip-radius:empty{display:none;}
+  .trip-radius-chip{
+    flex:1;padding:6px 0;border-radius:99px;border:1px solid var(--line);background:var(--paper);
+    color:var(--text);font-size:12px;font-weight:700;font-family:inherit;cursor:pointer;
+  }
+  .trip-radius-chip.on{background:var(--accent);border-color:var(--accent);color:#FFFFFF;}
+  .trip-venue .km{font-size:10.5px;color:var(--ink-soft);margin-left:-2px;}
+  /* 地図の操作ボタン */
+  .trip-ctl{display:flex;flex-direction:column;border-radius:10px;overflow:hidden;box-shadow:0 4px 12px -4px rgba(33,28,23,.35);}
+  .trip-ctl button{
+    width:30px;height:30px;padding:0;border:none;border-bottom:1px solid var(--line);background:var(--paper);
+    color:var(--heading);cursor:pointer;display:flex;align-items:center;justify-content:center;
+  }
+  .trip-ctl button:last-child{border-bottom:none;}
+  .trip-ctl svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;}
+  .trip-ctl button.busy svg{animation:tripPulse 1s ease-in-out infinite;}
+  @keyframes tripPulse{50%{opacity:.3;}}
+  /* 現在地・半径の円 */
+  .trip-me{background:none;border:none;}
+  .trip-me span{display:block;width:18px;height:18px;border-radius:50%;background:#2F7BEA;border:3px solid #FFFFFF;box-shadow:0 0 0 6px rgba(47,123,234,.22),0 2px 6px rgba(0,0,0,.3);box-sizing:border-box;}
+  .trip-map .trip-radius-circle{stroke:var(--accent);stroke-width:1.5;stroke-dasharray:5 5;fill:var(--accent);fill-opacity:.07;}
+  /* 上限に達したとき */
+  .trip-map.off{display:flex;align-items:center;justify-content:center;}
+  .trip-map-off{padding:0 24px;text-align:center;font-size:12px;line-height:1.8;color:var(--ink-soft);}
+  /* 広げる（全画面） */
+  .trip-map-card.expanded{
+    position:fixed;inset:0;z-index:45;margin:0;border-radius:0;border:none;display:flex;flex-direction:column;
+    padding:calc(12px + var(--safe-t)) 12px calc(12px + var(--safe-b));
+  }
+  .trip-map-card.expanded .trip-map-frame{flex:1;display:flex;min-height:0;}
+  .trip-map-card.expanded .trip-map{flex:1;height:auto;}
+  body.trip-map-open{overflow:hidden;}
   .time-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;}
   .time-row .time-cap{display:block;font-size:10.5px;color:var(--ink-soft);margin-bottom:3px;}
   .field .time-row input[type=time]{padding-left:8px;padding-right:4px;min-width:0;}
@@ -1901,6 +1935,51 @@ async function initStorage(){
   }, 60000);
 }
 
+/* ============ 1日あたりの利用上限（費用の歯止め） ============
+   外部の有料APIを呼ぶ回数を、端末ごとに1日あたりで数えて止める。
+   Google Cloud 側の割り当て上限と二段構えにするための、アプリ側の上限。 */
+var UsageLimit = (function(){
+  var KEY = "oshikatsu_usage_v1";
+  var LIMITS = {
+    mapLoad:     {max:200, label:"地図の読み込み"},
+    geocode:     {max:100, label:"座標の取得"},
+    placeSearch: {max:50,  label:"会場の検索"}
+  };
+  var warned = {};
+  function today(){
+    var d = new Date();
+    return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+  }
+  function read(){
+    var v = null;
+    try{ v = JSON.parse(localStorage.getItem(KEY) || "null"); }catch(e){}
+    if(!v || v.day!==today() || typeof v.counts!=="object" || !v.counts) v = {day:today(), counts:{}};
+    return v;
+  }
+  function used(kind){ return Number(read().counts[kind]) || 0; }
+  function canUse(kind){ return used(kind) < LIMITS[kind].max; }
+  // 1回分を使う。上限に達していれば false を返し、数えない
+  function take(kind){
+    var v = read();
+    var n = Number(v.counts[kind]) || 0;
+    if(n >= LIMITS[kind].max) return false;
+    v.counts[kind] = n+1;
+    try{ localStorage.setItem(KEY, JSON.stringify(v)); }catch(e){}
+    return true;
+  }
+  function message(kind){
+    return "本日の"+LIMITS[kind].label+"の上限（"+LIMITS[kind].max+"回）に達したため停止しています。明日また使えます。";
+  }
+  // 上限の案内をトーストで出す（同じ日に同じ種類は1回だけ）
+  function warnOnce(kind){
+    var k = kind+"@"+today();
+    if(warned[k]) return;
+    warned[k] = true;
+    toast("本日の"+LIMITS[kind].label+"の上限に達しました");
+  }
+  return { take:take, canUse:canUse, used:used, message:message, warnOnce:warnOnce, limits:LIMITS };
+})();
+
 /* ============ Google Maps (会場の検索・位置情報) ============
    会場名の入力中に Places API (New) の候補を出し、選ばれた場所の
    Place ID・正式名称・住所・緯度経度を LIVE 記録の venuePlace に保存する
@@ -1971,6 +2050,7 @@ function bindVenueAutocomplete(form, existingRec){
   }
   async function search(q){
     var mySeq = ++seq;
+    if(!UsageLimit.take("placeSearch")){ hideList(); UsageLimit.warnOnce("placeSearch"); return; }
     try{
       var lib = await MapsPlaces.load();
       if(!sessionToken) sessionToken = new lib.AutocompleteSessionToken();
@@ -1993,6 +2073,14 @@ function bindVenueAutocomplete(form, existingRec){
   }
   async function choose(it){
     hideList();
+    if(!UsageLimit.take("geocode")){
+      UsageLimit.warnOnce("geocode");
+      place = null;
+      input.value = it.main;
+      sessionToken = null;
+      renderInfo();
+      return;
+    }
     try{
       var p = it.prediction.toPlace();
       await p.fetchFields({fields:["id","displayName","formattedAddress","location"]});
@@ -2021,6 +2109,7 @@ function bindVenueAutocomplete(form, existingRec){
     clearTimeout(timer);
     var q = input.value.trim();
     if(!MapsPlaces.available() || q.length<2){ seq++; hideList(); return; }
+    if(!UsageLimit.canUse("placeSearch")){ seq++; hideList(); UsageLimit.warnOnce("placeSearch"); return; }
     timer = setTimeout(function(){ search(q); }, 250);
   });
   // blur より先に選べるよう mousedown で処理する
@@ -2878,6 +2967,7 @@ function renderHome(){
     +     '<div class="trip-map-title"><span class="trip-map-eyebrow">TRIP MAP</span><h3 class="mincho">遠征マップ</h3></div>'
     +     '<div class="trip-map-stats" id="tripMapStats"></div>'
     +   '</div>'
+    +   '<div class="trip-radius" id="tripRadius"></div>'
     +   '<div class="trip-map-frame"><div class="trip-map" id="tripMap"></div></div>'
     +   '<div class="trip-venues" id="tripVenues"></div>'
     +   '<div class="trip-map-note" id="tripMapNote"></div>'
@@ -4600,15 +4690,27 @@ var AvatarCropper = (function(){
 })();
 
 /* ============ trip map (遠征マップ) ============
-   ホームに、お気に入りの推しの「現地」LIVEの会場をピンで表示する。地図は Leaflet + OpenStreetMap。
+   ホームに、お気に入りの推しの「現地」LIVEの会場をピンで表示する。地図は Leaflet + 国土地理院の淡色地図。
    位置は会場を候補から選んだときの venuePlace.lat/lng を使い、無いときは会場名から
-   OpenStreetMap（Nominatim）で調べて端末に保存する（1秒に1件まで・見つからなければ7日間は再検索しない）。 */
+   OpenStreetMap（Nominatim）で調べて端末に保存する（1秒に1件まで・見つからなければ7日間は再検索しない）。
+   現在地はこの画面の中だけで使い、保存も送信もしない。 */
 var TripMap = (function(){
   var GEO_KEY = "oshikatsu_geo_v1";
-  var map = null, layer = null, queue = [], busy = false, currentOshiId = null, markers = {}, popupTimer = null;
+  var RADII = [0, 3, 10, 30];   // km（0 = すべて）
+  var map = null, layer = null, meLayer = null, queue = [], busy = false, currentOshiId = null, markers = {}, popupTimer = null;
+  var userPos = null, radiusKm = 0, locating = null, viewTouched = false, expanded = false, lastShown = [];
   function geoCache(){ return readStored(GEO_KEY) || {}; }
   function saveGeo(c){ try{ localStorage.setItem(GEO_KEY, JSON.stringify(c)); }catch(e){} }
   function venueKey(name){ return (name||"").trim().toLowerCase(); }
+
+  // 2点間の距離（km）
+  function distanceKm(a, b){
+    var R = 6371, rad = Math.PI/180;
+    var dLat = (b.lat-a.lat)*rad, dLng = (b.lng-a.lng)*rad;
+    var h = Math.sin(dLat/2)*Math.sin(dLat/2) + Math.cos(a.lat*rad)*Math.cos(b.lat*rad)*Math.sin(dLng/2)*Math.sin(dLng/2);
+    return 2*R*Math.asin(Math.min(1, Math.sqrt(h)));
+  }
+  function fmtKm(km){ return km<10 ? km.toFixed(1)+"km" : Math.round(km)+"km"; }
 
   // 会場ごとにまとめる：{key, name, lat, lng, visits:[record]}
   function collect(oshi){
@@ -4633,8 +4735,16 @@ var TripMap = (function(){
       return g;
     }).sort(function(a,b){ return b.visits.length-a.visits.length || a.name.localeCompare(b.name,"ja"); });
   }
+  // 半径で絞る（現在地が分かっているときだけ）
+  function applyRadius(groups){
+    groups.forEach(function(g){ g.dist = (userPos && g.lat!=null) ? distanceKm(userPos, g) : null; });
+    if(!radiusKm || !userPos) return groups;
+    return groups.filter(function(g){ return g.dist!=null && g.dist<=radiusKm; })
+      .sort(function(a,b){ return a.dist-b.dist; });
+  }
   function popupHtml(g){
-    return '<div class="trip-pop-head"><b>'+escapeHtml(g.name)+'</b><span>'+g.visits.length+' VISIT'+(g.visits.length>1?'S':'')+'</span></div>'
+    return '<div class="trip-pop-head"><b>'+escapeHtml(g.name)+'</b><span>'+g.visits.length+' VISIT'+(g.visits.length>1?'S':'')
+      + (g.dist!=null ? '・現在地から '+fmtKm(g.dist) : '')+'</span></div>'
       + '<ul class="trip-pop-list">'+g.visits.map(function(r){
           var d = (r.date||"").split("-");
           return '<li><span class="d">'+(d.length===3 ? d[0].slice(2)+"."+d[1]+"."+d[2] : "")+'</span><span>'+escapeHtml(r.title||"")+'</span></li>';
@@ -4653,57 +4763,206 @@ var TripMap = (function(){
   function focusVenue(key){
     var m = markers[key];
     if(!m || !map) return;
+    viewTouched = true;
     var target = map;
     map.flyTo(m.getLatLng(), Math.max(map.getZoom(), 13), {duration:.6});
     clearTimeout(popupTimer);
     popupTimer = setTimeout(function(){ if(map===target) m.openPopup(); }, 650);
   }
+
+  // 表示範囲をピン（と半径の円）に合わせる。アニメーションなし（途中で作り直してもエラーにならないように）
+  function fitView(){
+    if(!map) return;
+    var pts = lastShown.filter(function(g){ return g.lat!=null; }).map(function(g){ return [g.lat, g.lng]; });
+    if(radiusKm && userPos){
+      var b = L.latLng(userPos.lat, userPos.lng).toBounds(radiusKm*2000);
+      pts.forEach(function(p){ b.extend(p); });
+      map.fitBounds(b, {padding:[20,20], maxZoom:15, animate:false});
+    } else if(pts.length===1) map.setView(pts[0], 13, {animate:false});
+    else if(pts.length>1) map.fitBounds(pts, {padding:[36,36], maxZoom:13, animate:false});
+    else if(userPos) map.setView([userPos.lat, userPos.lng], 12, {animate:false});
+    else map.setView([36.2, 138.25], 4.6, {animate:false});   // 日本全体
+  }
+  // 現在地の青い点と、半径の円
+  function drawMe(){
+    if(!map || !meLayer) return;
+    meLayer.clearLayers();
+    if(!userPos) return;
+    if(radiusKm){
+      L.circle([userPos.lat, userPos.lng], {radius:radiusKm*1000, className:"trip-radius-circle", interactive:false}).addTo(meLayer);
+    }
+    L.marker([userPos.lat, userPos.lng], {
+      icon:L.divIcon({className:"trip-me", html:'<span></span>', iconSize:[18,18], iconAnchor:[9,9]}),
+      interactive:false, keyboard:false, zIndexOffset:-100
+    }).addTo(meLayer);
+  }
+  function renderRadius(){
+    var el = document.getElementById("tripRadius");
+    if(!el) return;
+    el.innerHTML = RADII.map(function(km){
+      return '<button type="button" class="trip-radius-chip'+(km===radiusKm?' on':'')+'" data-trip-radius="'+km+'">'
+        + (km ? km+'km' : 'すべて')+'</button>';
+    }).join("");
+    el.querySelectorAll("[data-trip-radius]").forEach(function(b){
+      b.addEventListener("click", function(){ setRadius(Number(b.getAttribute("data-trip-radius"))); });
+    });
+  }
+  function setRadius(km){
+    if(km && !userPos){
+      locate().then(function(){ radiusKm = km; viewTouched = false; renderRadius(); refresh(); }, function(){});
+      return;
+    }
+    radiusKm = km;
+    viewTouched = false;
+    renderRadius();
+    refresh();
+  }
+  // 現在地を取得する（端末の中だけで使い、保存しない）
+  function locate(){
+    if(locating) return locating;
+    if(!navigator.geolocation){
+      toast("この端末では位置情報を使えません");
+      return Promise.reject(new Error("no geolocation"));
+    }
+    setLocating(true);
+    locating = new Promise(function(resolve, reject){
+      navigator.geolocation.getCurrentPosition(function(pos){
+        userPos = {lat:pos.coords.latitude, lng:pos.coords.longitude};
+        resolve(userPos);
+      }, function(err){
+        toast(err && err.code===1 ? "位置情報の利用が許可されていません" : "現在地を取得できませんでした");
+        reject(err);
+      }, {enableHighAccuracy:false, timeout:10000, maximumAge:0});
+    });
+    locating.then(done, done);
+    function done(){ locating = null; setLocating(false); }
+    return locating;
+  }
+  function setLocating(on){
+    var b = map && map.getContainer().querySelector('[data-trip-ctl="locate"]');
+    if(b) b.classList.toggle("busy", !!on);
+  }
+  function goToMe(){
+    locate().then(function(){
+      if(!map) return;
+      viewTouched = true;
+      drawMe();
+      refresh();
+      if(radiusKm) fitView();
+      else map.setView([userPos.lat, userPos.lng], Math.max(map.getZoom(), 13), {animate:false});
+    }, function(){});
+  }
+  function setExpanded(on){
+    expanded = !!on;
+    var card = document.querySelector(".trip-map-card");
+    if(card) card.classList.toggle("expanded", expanded);
+    document.body.classList.toggle("trip-map-open", expanded);
+    var b = map && map.getContainer().querySelector('[data-trip-ctl="expand"]');
+    if(b){
+      b.innerHTML = expanded ? ICONS.shrink : ICONS.expand;
+      b.title = expanded ? "元に戻す" : "広げる";
+      b.setAttribute("aria-label", b.title);
+    }
+    if(map){
+      var target = map;
+      setTimeout(function(){ if(map===target){ map.invalidateSize({animate:false}); if(!viewTouched) fitView(); } }, 60);
+    }
+  }
+  function onKey(e){ if(e.key==="Escape" && expanded) setExpanded(false); }
+  document.addEventListener("keydown", onKey);
+
+  var ICONS = {
+    expand:'<svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>',
+    shrink:'<svg viewBox="0 0 24 24"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>',
+    center:'<svg viewBox="0 0 24 24"><path d="M12 21s-6-5.3-6-10a6 6 0 0112 0c0 4.7-6 10-6 10z"/><circle cx="12" cy="11" r="2.2"/></svg>',
+    locate:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><circle cx="12" cy="12" r="7.5"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22"/></svg>'
+  };
+  // 地図の右上の操作ボタン（広げる・ピンを中央に・現在地）
+  function addControls(){
+    var Ctl = L.Control.extend({
+      options:{position:"topright"},
+      onAdd:function(){
+        var box = L.DomUtil.create("div", "trip-ctl");
+        box.innerHTML =
+            '<button type="button" data-trip-ctl="expand" title="広げる" aria-label="広げる">'+ICONS.expand+'</button>'
+          + '<button type="button" data-trip-ctl="center" title="ピンを中央に" aria-label="ピンを中央に">'+ICONS.center+'</button>'
+          + '<button type="button" data-trip-ctl="locate" title="現在地" aria-label="現在地">'+ICONS.locate+'</button>';
+        L.DomEvent.disableClickPropagation(box);
+        L.DomEvent.disableScrollPropagation(box);
+        box.addEventListener("click", function(e){
+          var b = e.target.closest("[data-trip-ctl]");
+          if(!b) return;
+          var act = b.getAttribute("data-trip-ctl");
+          if(act==="expand") setExpanded(!expanded);
+          else if(act==="center"){ viewTouched = false; map.closePopup(); fitView(); }
+          else if(act==="locate") goToMe();
+        });
+        return box;
+      }
+    });
+    new Ctl().addTo(map);
+  }
+
   function draw(groups){
     if(!map) return;
+    var shown = applyRadius(groups);
+    lastShown = shown;
     layer.clearLayers();
     markers = {};
-    var pts = [];
-    groups.forEach(function(g){
+    shown.forEach(function(g){
       if(g.lat==null) return;
       var m = L.marker([g.lat, g.lng], {icon:pinIcon(g), riseOnHover:true, title:g.name})
         .bindPopup(popupHtml(g), {closeButton:true, maxWidth:240, minWidth:220, autoPanPadding:[24,24]})
         .addTo(layer);
       markers[g.key] = m;
-      pts.push([g.lat, g.lng]);
     });
-    // 表示範囲の自動調整はアニメーションなし（途中で作り直してもエラーにならないように）
-    if(pts.length===1) map.setView(pts[0], 13, {animate:false});
-    else if(pts.length>1) map.fitBounds(pts, {padding:[36,36], maxZoom:13, animate:false});
-    else map.setView([36.2, 138.25], 4.6, {animate:false});   // 日本全体
+    drawMe();
+    if(!viewTouched) fitView();
 
-    var visits = groups.reduce(function(s,g){ return s+g.visits.length; }, 0);
+    var visits = shown.reduce(function(s,g){ return s+g.visits.length; }, 0);
     var stats = document.getElementById("tripMapStats");
     if(stats){
-      stats.innerHTML = '<div class="trip-stat"><b>'+groups.length+'</b><span>VENUES</span></div>'
+      stats.innerHTML = '<div class="trip-stat"><b>'+shown.length+'</b><span>VENUES</span></div>'
         + '<div class="trip-stat"><b>'+visits+'</b><span>現地参戦</span></div>';
     }
     var venuesEl = document.getElementById("tripVenues");
     if(venuesEl){
       var cache = geoCache();
-      venuesEl.innerHTML = groups.map(function(g){
+      venuesEl.innerHTML = shown.map(function(g){
         var missing = g.lat==null && cache[g.key];
         return '<button type="button" class="trip-venue'+(missing?' missing':'')+'" data-trip-venue="'+escapeHtml(g.key)+'"'
           + (missing?' title="位置が分かりませんでした"':'')+'>'
-          + '<span class="n">'+g.visits.length+'</span>'+escapeHtml(g.name)+'</button>';
+          + '<span class="n">'+g.visits.length+'</span>'+escapeHtml(g.name)
+          + (g.dist!=null ? '<span class="km">'+fmtKm(g.dist)+'</span>' : '')+'</button>';
       }).join("");
       venuesEl.querySelectorAll("[data-trip-venue]").forEach(function(b){
         b.addEventListener("click", function(){ focusVenue(b.getAttribute("data-trip-venue")); });
       });
     }
-    var note = document.getElementById("tripMapNote");
-    if(note){
-      var pending = groups.filter(function(g){ return g.lat==null && !geoCache()[g.key]; });
-      note.textContent = pending.length ? "会場の位置を調べています…（"+pending.length+"件）" : "";
-    }
+    setNote(groups, shown);
   }
-  // 会場名から位置を調べる（Nominatim は1秒に1件まで）
+  function setNote(groups, shown){
+    var note = document.getElementById("tripMapNote");
+    if(!note) return;
+    var cache = geoCache();
+    var pending = groups.filter(function(g){ return g.lat==null && !cache[g.key]; });
+    var lines = [];
+    if(radiusKm && userPos && groups.length && !shown.length) lines.push("半径"+radiusKm+"km以内の会場はありません");
+    if(pending.length){
+      lines.push(UsageLimit.canUse("geocode")
+        ? "会場の位置を調べています…（"+pending.length+"件）"
+        : UsageLimit.message("geocode"));
+    }
+    note.textContent = lines.join("\n");
+  }
+  // 会場名から位置を調べる（Nominatim は1秒に1件まで・1日の上限あり）
   function geocodeNext(){
     if(busy || !queue.length) return;
+    if(!UsageLimit.take("geocode")){
+      queue = [];
+      if(currentOshiId && map){ var groups = collect(getOshi(currentOshiId)); setNote(groups, applyRadius(groups)); }
+      return;
+    }
     busy = true;
     var g = queue.shift();
     var url = "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=jp&accept-language=ja&q="+encodeURIComponent(g.name);
@@ -4737,8 +4996,19 @@ var TripMap = (function(){
     clearTimeout(popupTimer);
     // 移動アニメーション中に作り直すとエラーになるため、止めてから破棄する
     if(map){ map.stop(); map.off(); map.remove(); map = null; }
+    expanded = false;
+    document.body.classList.remove("trip-map-open");
+    viewTouched = false;
     if(!el || !window.L){ return; }
     currentOshiId = oshi ? oshi.id : null;
+    // 1日の地図の読み込み上限に達したら、地図を作らずに案内だけ出す
+    if(!UsageLimit.take("mapLoad")){
+      el.classList.add("off");
+      el.innerHTML = '<div class="trip-map-off">'+escapeHtml(UsageLimit.message("mapLoad"))+'</div>';
+      var radiusEl = document.getElementById("tripRadius");
+      if(radiusEl) radiusEl.innerHTML = "";
+      return;
+    }
     map = L.map(el, {zoomControl:true, attributionControl:true, scrollWheelZoom:false});
     map.attributionControl.setPrefix(false);
     // ズームアニメーションの終了処理が、地図を破棄した後に走っても落ちないようにする
@@ -4749,7 +5019,12 @@ var TripMap = (function(){
       minZoom:2, maxZoom:18,
       attribution:'<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院</a>'
     }).addTo(map);
+    meLayer = L.layerGroup().addTo(map);
     layer = L.layerGroup().addTo(map);
+    addControls();
+    // 利用者が動かした後は、会場の位置が分かっても表示範囲を勝手に戻さない
+    map.on("dragstart", function(){ viewTouched = true; });
+    renderRadius();
     refresh();
   }
   return { render:render };
