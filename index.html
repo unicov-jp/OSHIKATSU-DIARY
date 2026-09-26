@@ -4698,7 +4698,7 @@ var TripMap = (function(){
   var GEO_KEY = "oshikatsu_geo_v1";
   var RADII = [0, 3, 10, 30];   // km（0 = すべて）
   var map = null, layer = null, meLayer = null, queue = [], busy = false, currentOshiId = null, markers = {}, popupTimer = null;
-  var userPos = null, radiusKm = 0, locating = null, viewTouched = false, expanded = false, lastShown = [];
+  var userPos = null, radiusKm = 0, locating = null, viewTouched = false, expanded = false, lastShown = [], resizeObs = null;
   function geoCache(){ return readStored(GEO_KEY) || {}; }
   function saveGeo(c){ try{ localStorage.setItem(GEO_KEY, JSON.stringify(c)); }catch(e){} }
   function venueKey(name){ return (name||"").trim().toLowerCase(); }
@@ -4715,6 +4715,16 @@ var TripMap = (function(){
   // 会場ごとにまとめる：{key, name, lat, lng, visits:[record]}
   function collect(oshi){
     var groups = {};
+    // 会場を候補から選んだ記録の位置は、ほかの推しの記録にも使う（同じ会場名なら同じ場所）
+    var known = {};
+    state.live.forEach(function(r){
+      var vp = r.venuePlace;
+      if(!vp || typeof vp.lat!=="number" || typeof vp.lng!=="number") return;
+      [vp.name, r.venue].forEach(function(n){
+        var k = venueKey(n);
+        if(k && !known[k]) known[k] = {lat:vp.lat, lng:vp.lng};
+      });
+    });
     state.live.forEach(function(r){
       if(r.hidden || !oshi || !recHasOshi(r, oshi.id)) return;
       if(recViewing(r)==="stream") return;
@@ -4730,6 +4740,7 @@ var TripMap = (function(){
     var cache = geoCache();
     return Object.keys(groups).map(function(k){
       var g = groups[k];
+      if(g.lat==null && known[k]){ g.lat = known[k].lat; g.lng = known[k].lng; }
       if(g.lat==null && cache[k] && cache[k].lat!=null){ g.lat = cache[k].lat; g.lng = cache[k].lng; }
       g.visits.sort(function(a,b){ return (b.date||"").localeCompare(a.date||""); });
       return g;
@@ -4929,7 +4940,7 @@ var TripMap = (function(){
     if(venuesEl){
       var cache = geoCache();
       venuesEl.innerHTML = shown.map(function(g){
-        var missing = g.lat==null && cache[g.key];
+        var missing = g.lat==null && cache[g.key] && cache[g.key].v===2;
         return '<button type="button" class="trip-venue'+(missing?' missing':'')+'" data-trip-venue="'+escapeHtml(g.key)+'"'
           + (missing?' title="位置が分かりませんでした"':'')+'>'
           + '<span class="n">'+g.visits.length+'</span>'+escapeHtml(g.name)
@@ -4945,9 +4956,11 @@ var TripMap = (function(){
     var note = document.getElementById("tripMapNote");
     if(!note) return;
     var cache = geoCache();
-    var pending = groups.filter(function(g){ return g.lat==null && !cache[g.key]; });
+    var pending = groups.filter(function(g){ return g.lat==null && !(cache[g.key] && cache[g.key].v===2); });
     var lines = [];
     if(radiusKm && userPos && groups.length && !shown.length) lines.push("半径"+radiusKm+"km以内の会場はありません");
+    var unknown = groups.filter(function(g){ return g.lat==null && cache[g.key] && cache[g.key].v===2; }).length;
+    if(radiusKm && userPos && unknown) lines.push("位置が分からない会場が"+unknown+"件あります（「すべて」で確認できます）");
     if(pending.length){
       lines.push(UsageLimit.canUse("geocode")
         ? "会場の位置を調べています…（"+pending.length+"件）"
@@ -4956,6 +4969,19 @@ var TripMap = (function(){
     note.textContent = lines.join("\n");
   }
   // 会場名から位置を調べる（Nominatim は1秒に1件まで・1日の上限あり）
+  // 見つからないときは「(TOKYO)」のような括弧書きを外した名前でもう一度調べる
+  function geoQueries(name){
+    var list = [name];
+    var plain = name.replace(/[（(［\[][^）)］\]]*[）)］\]]/g, " ").replace(/\s+/g, " ").trim();
+    if(plain && plain!==name) list.push(plain);
+    return list;
+  }
+  function nominatim(q){
+    var url = "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=jp&accept-language=ja&q="+encodeURIComponent(q);
+    return fetch(url, {headers:{"Accept":"application/json"}})
+      .then(function(res){ return res.ok ? res.json() : []; })
+      .catch(function(){ return null; });
+  }
   function geocodeNext(){
     if(busy || !queue.length) return;
     if(!UsageLimit.take("geocode")){
@@ -4965,19 +4991,23 @@ var TripMap = (function(){
     }
     busy = true;
     var g = queue.shift();
-    var url = "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=jp&accept-language=ja&q="+encodeURIComponent(g.name);
-    fetch(url, {headers:{"Accept":"application/json"}}).then(function(res){ return res.ok ? res.json() : []; }).catch(function(){ return null; }).then(function(list){
-      if(list===null){ busy = false; return; }   // 通信できないときは次回に回す
-      var c = geoCache();
-      var hit = list && list[0];
-      c[g.key] = hit ? {lat:Number(hit.lat), lng:Number(hit.lon), at:Date.now()} : {lat:null, lng:null, at:Date.now()};
-      saveGeo(c);
-      setTimeout(function(){
-        busy = false;
-        if(currentOshiId && map) refresh();
-        geocodeNext();
-      }, 1100);
-    });
+    var qs = geoQueries(g.name);
+    function tryAt(i){
+      nominatim(qs[i]).then(function(list){
+        if(list===null){ busy = false; return; }   // 通信できないときは次回に回す
+        var hit = list && list[0];
+        if(!hit && i+1<qs.length){ setTimeout(function(){ tryAt(i+1); }, 1100); return; }
+        var c = geoCache();
+        c[g.key] = hit ? {lat:Number(hit.lat), lng:Number(hit.lon), at:Date.now()} : {lat:null, lng:null, at:Date.now(), v:2};
+        saveGeo(c);
+        setTimeout(function(){
+          busy = false;
+          if(currentOshiId && map) refresh();
+          geocodeNext();
+        }, 1100);
+      });
+    }
+    tryAt(0);
   }
   function refresh(){
     var groups = collect(getOshi(currentOshiId));
@@ -4986,7 +5016,8 @@ var TripMap = (function(){
     groups.forEach(function(g){
       if(g.lat!=null) return;
       var c = cache[g.key];
-      if(c && (c.lat!=null || Date.now()-c.at < week)) return;
+      // 見つからなかった会場は7日間は調べ直さない（括弧を外す再検索を入れる前の結果は、すぐ調べ直す）
+      if(c && (c.lat!=null || (c.v===2 && Date.now()-c.at < week))) return;
       if(!queue.some(function(q){ return q.key===g.key; })) queue.push(g);
     });
     geocodeNext();
@@ -4995,6 +5026,7 @@ var TripMap = (function(){
     var el = document.getElementById("tripMap");
     clearTimeout(popupTimer);
     // 移動アニメーション中に作り直すとエラーになるため、止めてから破棄する
+    if(resizeObs){ resizeObs.disconnect(); resizeObs = null; }
     if(map){ map.stop(); map.off(); map.remove(); map = null; }
     expanded = false;
     document.body.classList.remove("trip-map-open");
@@ -5015,10 +5047,27 @@ var TripMap = (function(){
     var endZoom = map._onZoomTransitionEnd;
     map._onZoomTransitionEnd = function(){ if(this._mapPane && this._container) return endZoom.apply(this, arguments); };
     // 落ち着いた色合いの地図（国土地理院 淡色地図。APIキー不要）
-    L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png", {
-      minZoom:2, maxZoom:18,
+    var tiles = L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png", {
+      minZoom:2, maxZoom:18, keepBuffer:4,
       attribution:'<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院</a>'
     }).addTo(map);
+    // 地図の画像が読み込めなかったマスは、少し待って2回まで取り直す（通信が不安定なときに一部が欠けないように）
+    tiles.on("tileerror", function(e){
+      var t = e.tile, n = t._retry || 0;
+      if(n>=2 || !t._src0 && !t.src) return;
+      t._src0 = t._src0 || t.src;
+      t._retry = n+1;
+      setTimeout(function(){
+        if(!t.parentNode) return;
+        t.src = t._src0 + (t._src0.indexOf("?")<0 ? "?" : "&") + "r=" + (n+1);
+      }, 1200*(n+1));
+    });
+    // 画面の向きや文字の読み込みで枠の大きさが変わったら、地図の大きさを合わせ直す
+    if(window.ResizeObserver){
+      var target = map;
+      resizeObs = new ResizeObserver(function(){ if(map===target) map.invalidateSize({animate:false}); });
+      resizeObs.observe(el);
+    }
     meLayer = L.layerGroup().addTo(map);
     layer = L.layerGroup().addTo(map);
     addControls();
