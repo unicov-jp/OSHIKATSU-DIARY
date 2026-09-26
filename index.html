@@ -2509,6 +2509,10 @@ function googleCalendarUrl(r){
   if(r.endTime) details.push("終了 "+r.endTime);
   var groups = recGroupLabels(r);
   if(groups.length) details.push("出演："+groups.join(" / "));
+  var tUrl = safeWebUrl(r.ticketUrl);
+  if(tUrl) details.push("チケット："+tUrl);
+  var sUrls = recStreamUrls(r);
+  sUrls.forEach(function(u, i){ details.push((sUrls.length>1 ? "配信"+(i+1) : "配信")+"："+u); });
   var place = r.venuePlace && r.venuePlace.name ? r.venuePlace.name+(r.venuePlace.address ? " "+r.venuePlace.address : "") : (r.venue||"");
   var q = "action=TEMPLATE&text="+encodeURIComponent(calendarTitleFor(r))
     + (dates ? "&dates="+dates : "")
@@ -2534,7 +2538,7 @@ function calendarTitleFor(r, template){
   var tpl = (template!=null ? template : state.calendarTitle||"").trim() || "{公演名}";
   var values = {
     "公演名": r.title||"",
-    "グループ": recGroupLabels(r).join("／"),
+    "グループ": recGroupLabels(r).join(" / "),
     "会場": r.venue||"",
     "観戦方法": recViewing(r)==="stream" ? "配信" : "現地"
   };
