@@ -690,6 +690,8 @@
   }
   .cal-preview{font-size:11.5px;color:var(--ink-soft);margin-top:9px;overflow-wrap:anywhere;}
   .cal-preview b{color:var(--text);}
+  .cal-setting-actions{display:flex;justify-content:flex-end;margin-top:10px;}
+  .cal-setting-actions .btn{padding:8px 22px;}
   .time-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;}
   .time-row .time-cap{display:block;font-size:10.5px;color:var(--ink-soft);margin-bottom:3px;}
   .field .time-row input[type=time]{padding-left:8px;padding-right:4px;min-width:0;}
@@ -1990,6 +1992,7 @@ function calendarSettingHtml(){
           return '<button type="button" class="cal-token" data-cal-token="'+t+'">'+t+'</button>';
         }).join("")+'</div>'
     +   '<div class="cal-preview">表示例：<b id="calTitlePreview">'+escapeHtml(calendarTitleFor(sample))+'</b></div>'
+    +   '<div class="cal-setting-actions"><button type="button" class="btn primary" id="calTitleSave" disabled>保存</button></div>'
     + '</div>';
 }
 function bindCalendarSetting(){
@@ -1998,18 +2001,21 @@ function bindCalendarSetting(){
   var sample = state.live.slice().sort(function(a,b){ return (b.date||"").localeCompare(a.date||""); })[0]
     || {title:"公演名", venue:"会場", oshiId:null, viewing:"venue"};
   var preview = document.getElementById("calTitlePreview");
-  var timer = null;
+  var saveBtn = document.getElementById("calTitleSave");
+  // 表示例は入力に合わせてすぐ更新し、保存は「保存」ボタンを押したときだけ行う
   function commit(){
     var v = input.value.trim();
     preview.textContent = calendarTitleFor(sample, v);
-    clearTimeout(timer);
-    timer = setTimeout(function(){
-      if((state.calendarTitle||"")===v) return;
-      state.calendarTitle = v;
-      saveLocal();
-    }, 500);
+    saveBtn.disabled = (state.calendarTitle||"")===v;
   }
   input.addEventListener("input", commit);
+  saveBtn.addEventListener("click", function(){
+    state.calendarTitle = input.value.trim();
+    input.value = state.calendarTitle;
+    saveLocal();
+    saveBtn.disabled = true;
+    toast("カレンダーのタイトルを保存しました");
+  });
   document.querySelectorAll("[data-cal-token]").forEach(function(b){
     // タップで入力欄のカーソル位置に {項目} を差し込む
     b.addEventListener("mousedown", function(e){ e.preventDefault(); });
