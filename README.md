@@ -98,6 +98,7 @@ python3 -m http.server 8000
 - live固有: `title, venue, streamUrl, ticketType, seat, price, photo, extraOshis, openTime, startTime, endTime`
   - `openTime` / `startTime` / `endTime`：開場・開始・終了の時刻（`HH:MM`、任意）。
   - 一覧のLIVEは、推しの行にグループ名だけを出し（同じグループは1回、グループのない推しは人物名）、次の行は会場と「カレンダーに追加」ボタン。チケット種別・座席は一覧に出さない。
+  - 予定のタイトルはマイページの「Googleカレンダー」で指定する（`state.calendarTitle`、設定行 `settings:main` の `calendarTitle` として同期）。`{公演名}` `{グループ}` `{会場}` `{観戦方法}` を組み合わせられ、空欄なら `{公演名}`（`calendarTitleFor()`）。
   - 「カレンダーに追加」は `googleCalendarUrl()` で Google カレンダーの予定作成URL（APIキー不要）を開く。開始＝開始時刻→開場時刻、終了＝終了時刻→開始の2時間後、時刻が無ければ終日。メモに開場・開始・終了と出演グループ、場所に会場（住所）を入れる。
   - `viewing`：観戦方法。`"venue"`（現地）/ `"stream"`（配信）。フォームは日付の下のボタンで選び、一覧のチケットには「LIVE」の横に現地（塗り）／配信（枠線）の印を出す。未設定の以前の記録は、配信URLがあって会場が空なら配信、それ以外は現地とみなす（`recViewing()`）。ホームの「参戦」「参戦回数」や集計の「参戦」は現地観戦だけを数える（配信で観たLIVEは数えない）。
   - `ticketUrl`：オンラインチケットのURL（`safeWebUrl()` で http(s) のみ）。フォームでは「チケット代」の上に入力欄があり、一覧に「チケットを見る」リンクを出す。

@@ -677,6 +677,19 @@
   .toggle-chip.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);}
   .toggle-chip.on svg{fill:currentColor;}
   .viewing-toggle .toggle-chip.on svg{fill:none;}
+  .cal-setting{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:12px 14px;}
+  .cal-setting label{display:block;font-size:11.5px;color:var(--ink-soft);font-weight:600;margin-bottom:5px;}
+  .cal-setting input{
+    width:100%;border:1px solid var(--line-strong);border-radius:3px;background:var(--paper);
+    padding:10px 11px;font-size:16px;color:var(--text);font-family:inherit;box-sizing:border-box;
+  }
+  .cal-token-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
+  .cal-token{
+    border:1px solid var(--accent);color:var(--accent);background:var(--paper);border-radius:99px;
+    font-size:11.5px;font-weight:700;padding:4px 10px;cursor:pointer;font-family:inherit;
+  }
+  .cal-preview{font-size:11.5px;color:var(--ink-soft);margin-top:9px;overflow-wrap:anywhere;}
+  .cal-preview b{color:var(--text);}
   .time-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;}
   .time-row .time-cap{display:block;font-size:10.5px;color:var(--ink-soft);margin-bottom:3px;}
   .field .time-row input[type=time]{padding-left:8px;padding-right:4px;min-width:0;}
@@ -924,7 +937,8 @@ var state = {
   calendarMonth:(function(){ var d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); })(),
   calendarSelectedDate:null,
   authMode:"login",
-  showHiddenOshis:false, // マイページで「非表示の推し」を開いているか     // login | signup | reset (ログイン画面の表示モード)
+  showHiddenOshis:false, // マイページで「非表示の推し」を開いているか
+  calendarTitle:"",      // Googleカレンダーの予定タイトルの形（空なら {公演名}）     // login | signup | reset (ログイン画面の表示モード)
   ready:false
 };
 var storageMode = "local";
@@ -1362,11 +1376,12 @@ function applyStored(data){
   state.goods = data.goods||[];
   state.activeOshiId = data.activeOshiId||null;
   state.headerLogo = data.headerLogo||null;
+  state.calendarTitle = data.calendarTitle||"";
 }
 function snapshotData(){
   return {
     oshis:state.oshis, live:state.live, cheki:state.cheki, goods:state.goods,
-    activeOshiId:state.activeOshiId, headerLogo:state.headerLogo
+    activeOshiId:state.activeOshiId, headerLogo:state.headerLogo, calendarTitle:state.calendarTitle||""
   };
 }
 function hasContent(data){
@@ -1437,9 +1452,10 @@ function localRowMap(){
       m[t+":"+r.id] = {kind:t, id:r.id, data:r};
     });
   });
-  m["settings:main"] = {kind:"settings", id:"main", data:{
-    activeOshiId:state.activeOshiId||null, headerLogo:state.headerLogo||null
-  }};
+  var settingsData = {activeOshiId:state.activeOshiId||null, headerLogo:state.headerLogo||null};
+  // 未設定のときはキーを持たせない（以前からの設定行と内容を変えず、他端末の値を上書きしないため）
+  if(state.calendarTitle) settingsData.calendarTitle = state.calendarTitle;
+  m["settings:main"] = {kind:"settings", id:"main", data:settingsData};
   return m;
 }
 function hasPendingChanges(){
@@ -1510,6 +1526,7 @@ function putIntoState(kind, data){
   if(kind==="settings"){
     state.activeOshiId = data.activeOshiId||null;
     state.headerLogo = data.headerLogo||null;
+    state.calendarTitle = data.calendarTitle||"";
     return;
   }
   var arr = kind==="oshi" ? state.oshis : state[kind];
@@ -1621,6 +1638,7 @@ function mergeGuestData(guest){
   });
   if(!state.activeOshiId && guest.activeOshiId) state.activeOshiId = guest.activeOshiId;
   if(!state.headerLogo && guest.headerLogo) state.headerLogo = guest.headerLogo;
+  if(!state.calendarTitle && guest.calendarTitle) state.calendarTitle = guest.calendarTitle;
 }
 
 /* アカウント欄の表示用に、ログイン方法（メール/Google）の情報を持っておく */
@@ -1959,6 +1977,53 @@ var GOOGLE_ICON = '<svg class="google-icon" viewBox="0 0 48 48" aria-hidden="tru
   + '<path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>'
   + '<path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>'
   + '</svg>';
+
+/* マイページ：Googleカレンダーに追加する予定のタイトルの形 */
+function calendarSettingHtml(){
+  var sample = state.live.slice().sort(function(a,b){ return (b.date||"").localeCompare(a.date||""); })[0]
+    || {title:"公演名", venue:"会場", oshiId:null, viewing:"venue"};
+  return '<div class="section-label">Googleカレンダー</div>'
+    + '<div class="cal-setting">'
+    +   '<label for="calTitleInput">予定のタイトル</label>'
+    +   '<input type="text" id="calTitleInput" maxlength="80" autocomplete="off" value="'+escapeHtml(state.calendarTitle||"")+'">'
+    +   '<div class="cal-token-row">'+CAL_TITLE_TOKENS.map(function(t){
+          return '<button type="button" class="cal-token" data-cal-token="'+t+'">'+t+'</button>';
+        }).join("")+'</div>'
+    +   '<div class="cal-preview">表示例：<b id="calTitlePreview">'+escapeHtml(calendarTitleFor(sample))+'</b></div>'
+    + '</div>';
+}
+function bindCalendarSetting(){
+  var input = document.getElementById("calTitleInput");
+  if(!input) return;
+  var sample = state.live.slice().sort(function(a,b){ return (b.date||"").localeCompare(a.date||""); })[0]
+    || {title:"公演名", venue:"会場", oshiId:null, viewing:"venue"};
+  var preview = document.getElementById("calTitlePreview");
+  var timer = null;
+  function commit(){
+    var v = input.value.trim();
+    preview.textContent = calendarTitleFor(sample, v);
+    clearTimeout(timer);
+    timer = setTimeout(function(){
+      if((state.calendarTitle||"")===v) return;
+      state.calendarTitle = v;
+      saveLocal();
+    }, 500);
+  }
+  input.addEventListener("input", commit);
+  document.querySelectorAll("[data-cal-token]").forEach(function(b){
+    // タップで入力欄のカーソル位置に {項目} を差し込む
+    b.addEventListener("mousedown", function(e){ e.preventDefault(); });
+    b.addEventListener("click", function(){
+      var token = "{"+b.getAttribute("data-cal-token")+"}";
+      var s = input.selectionStart!=null ? input.selectionStart : input.value.length;
+      var en = input.selectionEnd!=null ? input.selectionEnd : input.value.length;
+      input.value = input.value.slice(0,s) + token + input.value.slice(en);
+      input.focus();
+      input.setSelectionRange(s+token.length, s+token.length);
+      commit();
+    });
+  });
+}
 
 function accountSectionHtml(){
   if(!cloud.user) return '';
@@ -2442,6 +2507,19 @@ function googleCalendarUrl(r){
   if(r.openTime) details.push("開場 "+r.openTime);
   if(r.startTime) details.push("開始 "+r.startTime);
   if(r.endTime) details.push("終了 "+r.endTime);
+  var groups = recGroupLabels(r);
+  if(groups.length) details.push("出演："+groups.join(" / "));
+  var place = r.venuePlace && r.venuePlace.name ? r.venuePlace.name+(r.venuePlace.address ? " "+r.venuePlace.address : "") : (r.venue||"");
+  var q = "action=TEMPLATE&text="+encodeURIComponent(calendarTitleFor(r))
+    + (dates ? "&dates="+dates : "")
+    + "&ctz=Asia%2FTokyo"
+    + (details.length ? "&details="+encodeURIComponent(details.join("\n")) : "")
+    + (place ? "&location="+encodeURIComponent(place) : "");
+  return "https://calendar.google.com/calendar/render?"+q;
+}
+/* 予定タイトルの差し込み項目。マイページで {公演名}{グループ}{会場}{観戦方法} を組み合わせて指定する */
+var CAL_TITLE_TOKENS = ["公演名","グループ","会場","観戦方法"];
+function recGroupLabels(r){
   var groups = [];
   recOshiEntries(r).forEach(function(e){
     var o = getOshi(e.oshiId); if(!o) return;
@@ -2450,14 +2528,19 @@ function googleCalendarUrl(r){
     var label = g && g.name ? g.name : o.name;
     if(groups.indexOf(label)<0) groups.push(label);
   });
-  if(groups.length) details.push("出演："+groups.join(" / "));
-  var place = r.venuePlace && r.venuePlace.name ? r.venuePlace.name+(r.venuePlace.address ? " "+r.venuePlace.address : "") : (r.venue||"");
-  var q = "action=TEMPLATE&text="+encodeURIComponent(r.title||"LIVE")
-    + (dates ? "&dates="+dates : "")
-    + "&ctz=Asia%2FTokyo"
-    + (details.length ? "&details="+encodeURIComponent(details.join("\n")) : "")
-    + (place ? "&location="+encodeURIComponent(place) : "");
-  return "https://calendar.google.com/calendar/render?"+q;
+  return groups;
+}
+function calendarTitleFor(r, template){
+  var tpl = (template!=null ? template : state.calendarTitle||"").trim() || "{公演名}";
+  var values = {
+    "公演名": r.title||"",
+    "グループ": recGroupLabels(r).join("／"),
+    "会場": r.venue||"",
+    "観戦方法": recViewing(r)==="stream" ? "配信" : "現地"
+  };
+  var out = tpl.replace(/\{(公演名|グループ|会場|観戦方法)\}/g, function(_, k){ return values[k]; })
+    .replace(/\s{2,}/g, " ").trim();
+  return out || r.title || "LIVE";
 }
 function recStreamUrls(r){
   var list = Array.isArray(r.streamUrls) ? r.streamUrls : (r.streamUrl ? [r.streamUrl] : []);
@@ -3167,9 +3250,11 @@ function renderOshiPage(){
       }
     }
   }
+  html += calendarSettingHtml();
   html += accountSectionHtml();
   html += '<p class="legal-links"><a href="privacy.html">プライバシーポリシー</a></p>';
   document.getElementById("main").innerHTML = html;
+  bindCalendarSetting();
   if(state.oshis.length>1) bindOshiPageDragDrop();
 }
 /* Lets the person drag an oshi-row onto another to swap their order, as an
