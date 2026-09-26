@@ -597,7 +597,11 @@
   .oshi-row.drag-over{box-shadow:0 0 0 2px var(--accent);border-radius:8px;}
   .oshi-row .sw{width:38px;height:38px;border-radius:50%;flex:none;box-shadow:0 0 0 3px var(--bg),0 0 0 4px var(--line-strong);}
   .oshi-row .info{flex:1;min-width:0;}
-  .oshi-row .info .name-line{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px;}
+  .oshi-row .sw-col{flex:none;width:38px;display:flex;flex-direction:column;align-items:center;}
+  .oshi-row .sw-col .oshi-fav-stamp{margin-top:8px;font-size:8px;padding:1px 4px;white-space:nowrap;color:var(--accent);letter-spacing:0;}
+  .oshi-row .info .name-line{line-height:1.35;overflow-wrap:anywhere;}
+  .oshi-row .info .oshi-meta-line{margin-top:2px;line-height:1.4;}
+  .oshi-row .info .oshi-affil{font-size:11px;color:var(--ink-soft);line-height:1.5;margin-top:3px;overflow-wrap:anywhere;}
   .oshi-row .info b{font-size:14.5px;color:var(--heading);}
   .oshi-row .info .oshi-bday{font-size:11px;font-weight:600;color:var(--ink-soft);}
   .oshi-row .info span{font-size:11px;color:var(--ink-soft);}
@@ -3018,13 +3022,14 @@ function oshiRowHtml(o, idx, n){
     + '<span class="group-drag-handle" title="ドラッグして並べ替え" aria-hidden="true">'
     +   '<svg viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.4"/><circle cx="15" cy="6" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="9" cy="18" r="1.4"/><circle cx="15" cy="18" r="1.4"/></svg>'
     + '</span>'
-    + '<div class="sw" style="'+oshiSwatchStyle(o)+'"></div>'
+    // お気に入りの印は写真の下に付け、右側は 名前／誕生日／所属・グループ の3行に固定する
+    + '<div class="sw-col"><div class="sw" style="'+oshiSwatchStyle(o)+'"></div>'
+    +   (isActive? '<span class="stamp oshi-fav-stamp">お気に入り</span>' : '')
+    + '</div>'
     + '<div class="info">'
-    +   '<div class="name-line"><b>'+escapeHtml(o.name)+'</b>'
-    +     (bdayText? ' <span class="oshi-bday">'+escapeHtml(bdayText)+'</span>' : '')
-    +     (isActive?' <span class="stamp" style="font-size:9px;padding:1px 6px 1px 5px;vertical-align:2px;">お気に入り</span>':'')
-    +   '</div>'
-    +   (subText? '<span>'+escapeHtml(subText)+'</span>' : '')
+    +   '<div class="name-line"><b>'+escapeHtml(o.name)+'</b></div>'
+    +   (bdayText? '<div class="oshi-meta-line"><span class="oshi-bday">'+escapeHtml(bdayText)+'</span></div>' : '')
+    +   (subText? '<div class="oshi-affil">'+escapeHtml(subText)+'</div>' : '')
     + '</div>'
     + '<div class="side-actions">'
     +   (o.hidden ? '' : '<button class="star '+(isActive?"active":"")+'" data-action="set-active" data-id="'+o.id+'" title="このカラーを適用">'
