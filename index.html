@@ -4698,8 +4698,7 @@ var TripMap = (function(){
     var note = document.getElementById("tripMapNote");
     if(note){
       var pending = groups.filter(function(g){ return g.lat==null && !geoCache()[g.key]; });
-      note.textContent = !groups.length ? "現地で観戦したLIVEの会場がここに表示されます"
-        : (pending.length ? "会場の位置を調べています…（"+pending.length+"件）" : "");
+      note.textContent = pending.length ? "会場の位置を調べています…（"+pending.length+"件）" : "";
     }
   }
   // 会場名から位置を調べる（Nominatim は1秒に1件まで）
@@ -4745,10 +4744,10 @@ var TripMap = (function(){
     // ズームアニメーションの終了処理が、地図を破棄した後に走っても落ちないようにする
     var endZoom = map._onZoomTransitionEnd;
     map._onZoomTransitionEnd = function(){ if(this._mapPane && this._container) return endZoom.apply(this, arguments); };
-    // 落ち着いた色合いの地図（CARTO Positron）
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
-      maxZoom:19, subdomains:"abcd",
-      attribution:'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a>'
+    // 落ち着いた色合いの地図（国土地理院 淡色地図。APIキー不要）
+    L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png", {
+      minZoom:2, maxZoom:18,
+      attribution:'<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院</a>'
     }).addTo(map);
     layer = L.layerGroup().addTo(map);
     refresh();
