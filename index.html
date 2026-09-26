@@ -253,7 +253,6 @@
   .hero .stat{border-top:1px solid rgba(255,255,255,.28);padding-top:8px;}
   .hero .stat b{display:block;font-size:19px;font-weight:800;font-family:"Shippori Mincho",serif;}
   .hero .stat span{display:block;font-size:10.5px;opacity:.82;margin-top:2px;}
-  .hero .stat .stat-sub{font-size:9.5px;opacity:.7;margin-top:1px;}
   .hero .ring{position:absolute;right:-38px;top:-46px;width:130px;height:130px;border-radius:50%;border:1px solid rgba(255,255,255,.22);}
   .hero .ring2{position:absolute;right:14px;top:64px;width:34px;height:34px;border-radius:50%;border:1px dashed rgba(255,255,255,.3);}
   .hero.empty{background:var(--card);color:var(--text);border:1.5px dashed var(--line-strong);box-shadow:none;}
@@ -2449,13 +2448,12 @@ function allRecordsFlat(){
 function aggregateByOshi(){
   return state.oshis.map(function(o){
     var recs = allRecordsFlat().filter(function(item){ return recHasOshi(item.r, o.id); });
-    // 参戦＝現地観戦のみ。配信で観たLIVEは streamN として別に数える
+    // 参戦＝現地観戦のみ（配信で観たLIVEは数えない）
     var liveN = recs.filter(function(i){return i.type==="live" && recViewing(i.r)!=="stream";}).length;
-    var streamN = recs.filter(function(i){return i.type==="live" && recViewing(i.r)==="stream";}).length;
     var chekiN = recs.filter(function(i){return i.type==="cheki";}).reduce(function(s,i){return s+(Number(i.r.count)||1);},0);
     var goodsN = recs.filter(function(i){return i.type==="goods";}).reduce(function(s,i){return s+(Number(i.r.qty)||1);},0);
     var total = Math.round(recs.reduce(function(s,i){ return s+recAmountForOshi(i.type,i.r,o.id); },0));
-    return {oshi:o, liveN:liveN, streamN:streamN, chekiN:chekiN, goodsN:goodsN, total:total, itemCount:recs.length};
+    return {oshi:o, liveN:liveN, chekiN:chekiN, goodsN:goodsN, total:total, itemCount:recs.length};
   }).sort(function(a,b){ return b.total-a.total; });
 }
 function aggregateByEvent(){
@@ -2544,9 +2542,8 @@ function renderHome(){
   }
 
   var recs = allRecordsForOshi(oshi.id);
-  // 参戦＝現地観戦のみ。配信で観たLIVEは streamN として別に表示する
+  // 参戦＝現地観戦のみ（配信で観たLIVEは数えない）
   var liveN = state.live.filter(function(r){return recHasOshi(r,oshi.id) && recViewing(r)!=="stream";}).length;
-  var streamN = state.live.filter(function(r){return recHasOshi(r,oshi.id) && recViewing(r)==="stream";}).length;
   var chekiN = state.cheki.filter(function(r){return recHasOshi(r,oshi.id);}).reduce(function(s,r){return s+(Number(r.count)||1);},0);
   var goodsN = state.goods.filter(function(r){return recHasOshi(r,oshi.id);}).reduce(function(s,r){return s+(Number(r.qty)||1);},0);
   var total = Math.round(recs.reduce(function(s,item){ return s+recAmountForOshi(item.type,item.r,oshi.id); },0));
@@ -2569,7 +2566,7 @@ function renderHome(){
     + (bdayBits.length? '<div class="colorname-tag">'+escapeHtml(bdayBits.join(" ・ "))+'</div>' : '')
     + snsLinksHtml(oshi,"hero")
     + '<div class="stats">'
-    +   '<div class="stat"><b>'+liveN+'</b><span>参戦回数</span>'+(streamN? '<span class="stat-sub">配信 '+streamN+'</span>' : '')+'</div>'
+    +   '<div class="stat"><b>'+liveN+'</b><span>参戦回数</span></div>'
     +   '<div class="stat"><b>'+chekiN+'</b><span>チェキ枚数</span></div>'
     +   '<div class="stat"><b>'+goodsN+'</b><span>物販点数</span></div>'
     + '</div>'
@@ -2806,7 +2803,7 @@ function renderStatsByOshi(){
     html += '<div class="stat-row">'
       + '<div class="sw" style="'+oshiSwatchStyle(row.oshi)+'"></div>'
       + '<div class="info"><b>'+escapeHtml(row.oshi.name)+'</b>'
-      +   '<span>参戦 '+row.liveN+(row.streamN? ' ・ 配信 '+row.streamN : '')+' ・ チェキ '+row.chekiN+' ・ 物販 '+row.goodsN+'</span></div>'
+      +   '<span>参戦 '+row.liveN+' ・ チェキ '+row.chekiN+' ・ 物販 '+row.goodsN+'</span></div>'
       + '<div class="stat-amt">'+fmtYen(row.total)+'</div>'
       + '</div>';
   });
@@ -2959,7 +2956,7 @@ function shareSummaryImage(){
     ctx.fillText(row.oshi.name, 116, rowY+8);
     ctx.font = "400 20px sans-serif";
     ctx.fillStyle = "#6B6259";
-    ctx.fillText("参戦 "+row.liveN+(row.streamN? " ・ 配信 "+row.streamN : "")+" ・ チェキ "+row.chekiN+" ・ 物販 "+row.goodsN, 116, rowY+40);
+    ctx.fillText("参戦 "+row.liveN+" ・ チェキ "+row.chekiN+" ・ 物販 "+row.goodsN, 116, rowY+40);
     ctx.textAlign = "right";
     ctx.fillStyle = accentColor;
     ctx.font = "700 26px sans-serif";
