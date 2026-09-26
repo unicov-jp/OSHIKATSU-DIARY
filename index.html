@@ -442,8 +442,17 @@
   .field textarea{resize:vertical;min-height:56px;line-height:1.6;}
   .field .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
   .venue-field{position:relative;}
+  .venue-row{display:flex;gap:8px;}
+  .venue-row input{flex:1;min-width:0;}
+  .venue-search-btn{
+    flex:none;display:inline-flex;align-items:center;gap:5px;padding:0 14px;border-radius:4px;
+    border:1px solid var(--line-strong);background:var(--paper);color:var(--text);font-size:13.5px;font-weight:700;font-family:inherit;cursor:pointer;
+  }
+  .venue-search-btn[hidden]{display:none;}
+  .venue-search-btn svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;}
+  .venue-search-btn.busy{opacity:.55;}
   .venue-suggest{
-    position:absolute;left:0;right:0;z-index:5;margin-top:4px;background:var(--paper);
+    position:relative;margin-top:6px;background:var(--paper);
     border:1px solid var(--line-strong);border-radius:4px;box-shadow:0 8px 20px -8px rgba(33,28,23,.35);overflow:hidden;
   }
   .venue-suggest-item{display:block;width:100%;text-align:left;background:none;border:none;padding:9px 12px;cursor:pointer;font-family:inherit;color:var(--text);}
@@ -2018,14 +2027,16 @@ function mapsUrlFor(venue, place){
   return url;
 }
 
-/* LIVEフォームの会場欄に候補リストを付ける。返り値の getPlace() で、
+/* LIVEフォームの会場欄に「探す」ボタンを付ける。押すと Google マップ（Places API (New) のテキスト検索）で
+   会場名を探し、選んだ場所の正式名称・住所・緯度経度・Place ID を入れる。返り値の getPlace() で、
    入力中の会場名と一致する選択済みの場所（なければ null）を返す。 */
 function bindVenueAutocomplete(form, existingRec){
   var input = form.querySelector('[name="venue"]');
+  var btn = form.querySelector("#venueSearchBtn");
   var list = form.querySelector("#venueSuggest");
   var info = form.querySelector("#venuePlaceInfo");
   var place = existingRec && existingRec.venuePlace && existingRec.venuePlace.name===existingRec.venue ? existingRec.venuePlace : null;
-  var sessionToken = null, timer = null, seq = 0, items = [];
+  var seq = 0, items = [];
 
   function renderInfo(){
     var v = input.value.trim();
@@ -2043,87 +2054,81 @@ function bindVenueAutocomplete(form, existingRec){
     if(!items.length){ hideList(); return; }
     list.innerHTML = items.map(function(it, i){
       return '<button type="button" class="venue-suggest-item" data-idx="'+i+'">'
-        + '<span class="main">'+escapeHtml(it.main)+'</span>'
-        + (it.sub ? '<span class="sub">'+escapeHtml(it.sub)+'</span>' : '')
+        + '<span class="main">'+escapeHtml(it.name)+'</span>'
+        + (it.address ? '<span class="sub">'+escapeHtml(it.address)+'</span>' : '')
         + '</button>';
     }).join("");
     list.hidden = false;
   }
-  async function search(q){
-    var mySeq = ++seq;
+  function setBusy(on){
+    btn.disabled = !!on;
+    btn.classList.toggle("busy", !!on);
+  }
+  // 住所の先頭の「日本、〒123-4567 」は省く
+  function shortAddress(a){ return (a||"").replace(/^日本、\s*/, "").replace(/^〒\d{3}-?\d{4}\s*/, ""); }
+  async function search(){
+    var q = input.value.trim();
+    if(!q){ toast("会場名を入力してください"); input.focus(); return; }
     if(!UsageLimit.take("placeSearch")){ hideList(); UsageLimit.warnOnce("placeSearch"); return; }
+    var mySeq = ++seq;
+    setBusy(true);
     try{
       var lib = await MapsPlaces.load();
-      if(!sessionToken) sessionToken = new lib.AutocompleteSessionToken();
-      var res = await lib.AutocompleteSuggestion.fetchAutocompleteSuggestions({
-        input:q, sessionToken:sessionToken, language:"ja", region:"jp"
+      var res = await lib.Place.searchByText({
+        textQuery:q,
+        fields:["id","displayName","formattedAddress","location"],
+        language:"ja", region:"jp", maxResultCount:5
       });
       if(mySeq!==seq) return;
-      items = (res.suggestions||[]).map(function(s){ return s.placePrediction; }).filter(Boolean).slice(0,5).map(function(p){
+      items = ((res && res.places) || []).filter(function(p){ return p && p.location; }).slice(0,5).map(function(p){
         return {
-          prediction:p,
-          main:(p.mainText && p.mainText.text) || (p.text && p.text.text) || "",
-          sub:(p.secondaryText && p.secondaryText.text) || ""
+          placeId:p.id,
+          name:p.displayName || q,
+          address:shortAddress(p.formattedAddress),
+          lat:typeof p.location.lat==="function" ? p.location.lat() : p.location.lat,
+          lng:typeof p.location.lng==="function" ? p.location.lng() : p.location.lng
         };
       });
+      if(!items.length) toast("見つかりませんでした");
       showList();
     }catch(e){
-      console.warn("venue autocomplete failed", e);
+      console.warn("venue search failed", e);
+      toast("会場を検索できませんでした");
       hideList();
+    }finally{
+      if(mySeq===seq) setBusy(false);
     }
   }
-  async function choose(it){
+  function choose(it){
     hideList();
-    if(!UsageLimit.take("geocode")){
-      UsageLimit.warnOnce("geocode");
-      place = null;
-      input.value = it.main;
-      sessionToken = null;
-      renderInfo();
-      return;
-    }
-    try{
-      var p = it.prediction.toPlace();
-      await p.fetchFields({fields:["id","displayName","formattedAddress","location"]});
-      place = {
-        placeId:p.id,
-        name:p.displayName || it.main,
-        address:p.formattedAddress || it.sub || "",
-        lat:p.location ? p.location.lat() : null,
-        lng:p.location ? p.location.lng() : null
-      };
-      input.value = place.name;
-    }catch(e){
-      console.warn("place details failed", e);
-      toast("会場の情報を取得できませんでした");
-      place = null;
-      input.value = it.main;
-    }
-    sessionToken = null;
+    place = {placeId:it.placeId, name:it.name, address:it.address, lat:it.lat, lng:it.lng};
+    input.value = place.name;
     renderInfo();
   }
 
   input.setAttribute("autocomplete", "off");
+  // APIキーが無いときは「探す」を出さず、手入力だけにする
+  if(!MapsPlaces.available()) btn.hidden = true;
+  btn.addEventListener("click", search);
   input.addEventListener("input", function(){
     if(place && input.value.trim()!==place.name) place = null;
+    seq++;
+    setBusy(false);
+    hideList();
     renderInfo();
-    clearTimeout(timer);
-    var q = input.value.trim();
-    if(!MapsPlaces.available() || q.length<2){ seq++; hideList(); return; }
-    if(!UsageLimit.canUse("placeSearch")){ seq++; hideList(); UsageLimit.warnOnce("placeSearch"); return; }
-    timer = setTimeout(function(){ search(q); }, 250);
   });
-  // blur より先に選べるよう mousedown で処理する
-  list.addEventListener("mousedown", function(e){
-    var btn = e.target.closest("[data-idx]");
-    if(!btn) return;
-    e.preventDefault();
-    choose(items[Number(btn.getAttribute("data-idx"))]);
+  list.addEventListener("click", function(e){
+    var b = e.target.closest("[data-idx]");
+    if(!b) return;
+    choose(items[Number(b.getAttribute("data-idx"))]);
   });
-  input.addEventListener("blur", function(){ setTimeout(hideList, 150); });
   input.addEventListener("keydown", function(e){
     if(e.key==="Escape"){ hideList(); }
-    if(e.key==="Enter" && !list.hidden && items.length){ e.preventDefault(); choose(items[0]); }
+    if(e.key==="Enter"){
+      e.preventDefault();
+      if(!list.hidden && items.length) choose(items[0]);
+      else if(!btn.hidden) search();
+    }
   });
   renderInfo();
   return {
@@ -3827,7 +3832,9 @@ function recordFormHtml(type,rec){
     fields += recordPhotoFieldHtml("LIVE写真（任意）");
     fields += '<div class="field"><label>公演・ツアー名</label><input type="text" name="title" value="'+(rec?escapeHtml(rec.title||""):"")+'" required></div>';
     fields += '<div class="field venue-field"><label>会場（任意）</label>'
-      + '<input type="text" name="venue" value="'+(rec?escapeHtml(rec.venue||""):"")+'">'
+      + '<div class="venue-row"><input type="text" name="venue" value="'+(rec?escapeHtml(rec.venue||""):"")+'">'
+      + '<button type="button" class="venue-search-btn" id="venueSearchBtn">'
+      +   '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>探す</button></div>'
       + '<div class="venue-suggest" id="venueSuggest" hidden></div>'
       + '<div class="venue-place" id="venuePlaceInfo"></div>'
       + '</div>';
