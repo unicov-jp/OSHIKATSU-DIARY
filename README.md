@@ -147,6 +147,15 @@ LIVE の「会場」欄で2文字以上入力すると、Google Places API (New)
 - `index.html` で https（と開発用の localhost）のときだけ Service Worker を登録する。ブラウザのステータスバー色（`theme-color`）はテーマに合わせて変わる。
 - Android の Chrome：メニュー →「ホーム画面に追加」→「インストール」。iPhone の Safari：共有 →「ホーム画面に追加」。
 
+## 遠征マップ（ホーム）
+
+ホームの「最近の記録」の代わりに、お気に入りの推しの「現地」LIVEの会場を地図にピンで表示する（`TripMap`）。
+
+- 地図は Leaflet 1.9.4（`vendor/leaflet/` に同梱）＋ OpenStreetMap のタイル。APIキー不要。
+- 位置は、会場を候補から選んだときの `venuePlace.lat/lng` を優先。無いときは会場名を OpenStreetMap の Nominatim で検索し、結果を端末の `localStorage`（`oshikatsu_geo_v1`）に保存する。検索は1秒に1件まで、見つからなかった会場は7日間は再検索しない。
+- ピンは会場ごとにまとめ、回数に応じて大きくなる。押すと会場名・回数・公演の一覧を表示。見つからなかった会場は地図の下に一覧で出す。
+- 配信で観たLIVE（`viewing: "stream"`）と非表示の記録は含めない。
+
 ## プライバシーポリシー
 
 `privacy.html`（公開URL：`https://oshikatsu-diary.vercel.app/privacy.html`）。ログイン画面とマイページの最下部からリンクしています。Google OAuth 同意画面の「プライバシーポリシーのリンク」にもこのURLを設定します。取得する情報や外部サービスを追加・変更したときは、このページも更新してください。

@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>推し活手帳</title>
 <link rel="manifest" href="/manifest.webmanifest">
+<link rel="stylesheet" href="vendor/leaflet/leaflet-1.9.4.css">
 <meta name="theme-color" content="#FBF8F3">
 <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
@@ -695,6 +696,15 @@
   }
   .cal-setting-actions{display:flex;justify-content:flex-end;margin-top:10px;}
   .cal-setting-actions .btn{padding:8px 22px;}
+  .trip-map-card{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:10px;}
+  .trip-map-summary{font-size:12px;color:var(--ink-soft);margin:2px 4px 8px;}
+  .trip-map-summary b{color:var(--heading);font-size:14px;}
+  .trip-map{height:300px;border-radius:4px;overflow:hidden;position:relative;z-index:0;isolation:isolate;background:#E8E4DC;}
+  .trip-map-missing{font-size:11px;color:var(--ink-soft);margin:8px 4px 2px;line-height:1.6;}
+  .trip-map-missing:empty{display:none;}
+  .trip-pop b{display:block;font-size:13px;margin-bottom:2px;}
+  .trip-pop-count{font-size:11px;color:#6B6259;}
+  .trip-pop ul{margin:6px 0 0;padding-left:16px;font-size:11.5px;line-height:1.6;}
   .time-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;}
   .time-row .time-cap{display:block;font-size:10.5px;color:var(--ink-soft);margin-bottom:3px;}
   .field .time-row input[type=time]{padding-left:8px;padding-right:4px;min-width:0;}
@@ -923,6 +933,7 @@
 </div>
 
 <script src="vendor/supabase-js-2.117.2.js"></script>
+<script src="vendor/leaflet/leaflet-1.9.4.js"></script>
 <script>
 (function(){
 "use strict";
@@ -2811,20 +2822,16 @@ function renderHome(){
   });
   html += '</div></div>';
 
-  html += '<div class="section-label">最近の記録</div>';
-  var visibleRecs = recs.filter(function(item){ return !item.r.hidden; });
-  if(visibleRecs.length===0){
-    html += '<div class="empty-state">'
-      + iconCluster()
-      + '<p>まだ記録がありません。右下の＋ボタンからLIVE・チェキ・物販の記録を追加してみましょう。</p>'
-      + '</div>';
-  } else {
-    visibleRecs.slice(0,8).forEach(function(item){
-      html += ticketHtml(item.type,item.r);
-    });
-  }
+  // 最近の記録の代わりに、現地で観戦したLIVEの会場を地図に出す（遠征マップ）
+  html += '<div class="section-label">遠征マップ</div>'
+    + '<div class="trip-map-card">'
+    +   '<div class="trip-map-summary" id="tripMapSummary"></div>'
+    +   '<div class="trip-map" id="tripMap"></div>'
+    +   '<div class="trip-map-missing" id="tripMapMissing"></div>'
+    + '</div>';
 
   document.getElementById("main").innerHTML = html;
+  TripMap.render(oshi);
 }
 
 /* ============ rendering: record list pages (live/cheki/goods) ============ */
@@ -4537,6 +4544,125 @@ var AvatarCropper = (function(){
     im.src = src;
   }
   return { init:init, open:open };
+})();
+
+/* ============ trip map (遠征マップ) ============
+   ホームに、お気に入りの推しの「現地」LIVEの会場をピンで表示する。地図は Leaflet + OpenStreetMap。
+   位置は会場を候補から選んだときの venuePlace.lat/lng を使い、無いときは会場名から
+   OpenStreetMap（Nominatim）で調べて端末に保存する（1秒に1件まで・見つからなければ7日間は再検索しない）。 */
+var TripMap = (function(){
+  var GEO_KEY = "oshikatsu_geo_v1";
+  var map = null, layer = null, queue = [], busy = false, currentOshiId = null;
+  function geoCache(){ return readStored(GEO_KEY) || {}; }
+  function saveGeo(c){ try{ localStorage.setItem(GEO_KEY, JSON.stringify(c)); }catch(e){} }
+  function venueKey(name){ return (name||"").trim().toLowerCase(); }
+
+  // 会場ごとにまとめる：{key, name, lat, lng, visits:[record]}
+  function collect(oshi){
+    var groups = {};
+    state.live.forEach(function(r){
+      if(r.hidden || !oshi || !recHasOshi(r, oshi.id)) return;
+      if(recViewing(r)==="stream") return;
+      var name = (r.venuePlace && r.venuePlace.name) || (r.venue||"").trim();
+      if(!name) return;
+      var key = venueKey(name);
+      var g = groups[key] || (groups[key] = {key:key, name:name, lat:null, lng:null, visits:[]});
+      g.visits.push(r);
+      if(g.lat==null && r.venuePlace && typeof r.venuePlace.lat==="number" && typeof r.venuePlace.lng==="number"){
+        g.lat = r.venuePlace.lat; g.lng = r.venuePlace.lng;
+      }
+    });
+    var cache = geoCache();
+    return Object.keys(groups).map(function(k){
+      var g = groups[k];
+      if(g.lat==null && cache[k] && cache[k].lat!=null){ g.lat = cache[k].lat; g.lng = cache[k].lng; }
+      g.visits.sort(function(a,b){ return (b.date||"").localeCompare(a.date||""); });
+      return g;
+    });
+  }
+  function popupHtml(g){
+    return '<div class="trip-pop"><b>'+escapeHtml(g.name)+'</b><span class="trip-pop-count">'+g.visits.length+'回</span>'
+      + '<ul>'+g.visits.slice(0,8).map(function(r){
+          return '<li>'+escapeHtml((r.date||"").replace(/-/g,"/"))+'　'+escapeHtml(r.title||"")+'</li>';
+        }).join("")+(g.visits.length>8 ? '<li>ほか'+(g.visits.length-8)+'件</li>' : '')+'</ul></div>';
+  }
+  function draw(groups){
+    if(!map) return;
+    layer.clearLayers();
+    var color = readableColor(getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#C9457A");
+    var pts = [];
+    groups.forEach(function(g){
+      if(g.lat==null) return;
+      var radius = Math.min(16, 7 + g.visits.length*1.5);
+      L.circleMarker([g.lat, g.lng], {radius:radius, color:"#FFFFFF", weight:2, fillColor:color, fillOpacity:.9})
+        .bindPopup(popupHtml(g)).addTo(layer);
+      pts.push([g.lat, g.lng]);
+    });
+    if(pts.length===1) map.setView(pts[0], 13);
+    else if(pts.length>1) map.fitBounds(pts, {padding:[28,28], maxZoom:13});
+    else map.setView([36.2, 138.25], 4.6);   // 日本全体
+    var visits = groups.reduce(function(s,g){ return s+g.visits.length; }, 0);
+    var summary = document.getElementById("tripMapSummary");
+    if(summary){
+      summary.innerHTML = groups.length
+        ? '会場 <b>'+groups.length+'</b>か所・現地 <b>'+visits+'</b>回'
+        : '現地で観戦したLIVEの会場がここに表示されます';
+    }
+    var missing = groups.filter(function(g){ return g.lat==null; });
+    var mEl = document.getElementById("tripMapMissing");
+    if(mEl){
+      var pending = missing.filter(function(g){ var c = geoCache()[g.key]; return !c; });
+      mEl.innerHTML = missing.length
+        ? (pending.length ? '位置を調べています…（'+pending.length+'件）' : '位置が分からなかった会場：'+missing.map(function(g){ return escapeHtml(g.name); }).join("、"))
+        : '';
+    }
+  }
+  // 会場名から位置を調べる（Nominatim は1秒に1件まで）
+  function geocodeNext(){
+    if(busy || !queue.length) return;
+    busy = true;
+    var g = queue.shift();
+    var url = "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=jp&accept-language=ja&q="+encodeURIComponent(g.name);
+    fetch(url, {headers:{"Accept":"application/json"}}).then(function(res){ return res.ok ? res.json() : []; }).catch(function(){ return null; }).then(function(list){
+      if(list===null){ busy = false; return; }   // 通信できないときは次回に回す
+      var c = geoCache();
+      var hit = list && list[0];
+      c[g.key] = hit ? {lat:Number(hit.lat), lng:Number(hit.lon), at:Date.now()} : {lat:null, lng:null, at:Date.now()};
+      saveGeo(c);
+      setTimeout(function(){
+        busy = false;
+        if(currentOshiId) refresh();
+        geocodeNext();
+      }, 1100);
+    });
+  }
+  function refresh(){
+    var oshi = getOshi(currentOshiId);
+    var groups = collect(oshi);
+    draw(groups);
+    var cache = geoCache(), week = 7*24*3600*1000;
+    groups.forEach(function(g){
+      if(g.lat!=null) return;
+      var c = cache[g.key];
+      if(c && (c.lat!=null || Date.now()-c.at < week)) return;
+      if(!queue.some(function(q){ return q.key===g.key; })) queue.push(g);
+    });
+    geocodeNext();
+  }
+  function render(oshi){
+    var el = document.getElementById("tripMap");
+    if(map){ map.remove(); map = null; }
+    if(!el || !window.L){ return; }
+    currentOshiId = oshi ? oshi.id : null;
+    map = L.map(el, {zoomControl:true, attributionControl:true, scrollWheelZoom:false});
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom:18, subdomains:"abc",
+      attribution:'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>'
+    }).addTo(map);
+    layer = L.layerGroup().addTo(map);
+    refresh();
+  }
+  return { render:render };
 })();
 
 /* ============ photo viewer ============ */
