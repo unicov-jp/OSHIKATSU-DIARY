@@ -434,7 +434,7 @@
   .sheet h2{font-size:17px;margin:0 0 14px;color:var(--heading);}
   .field{margin-bottom:13px;}
   .field label{display:block;font-size:11.5px;color:var(--ink-soft);margin-bottom:5px;font-weight:600;}
-  .field input[type=text],.field input[type=number],.field input[type=date],.field input[type=url],.field input[type=email],.field input[type=password],.field select,.field textarea{
+  .field input[type=text],.field input[type=number],.field input[type=date],.field input[type=url],.field input[type=email],.field input[type=password],.field input[type=time],.field select,.field textarea{
     width:100%;border:1px solid var(--line-strong);border-radius:3px;background:var(--paper);
     padding:10px 11px;font-size:16px;color:var(--text);font-family:inherit;
   }
@@ -677,6 +677,17 @@
   .toggle-chip.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);}
   .toggle-chip.on svg{fill:currentColor;}
   .viewing-toggle .toggle-chip.on svg{fill:none;}
+  .time-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;}
+  .time-row .time-cap{display:block;font-size:10.5px;color:var(--ink-soft);margin-bottom:3px;}
+  .field .time-row input[type=time]{padding-left:8px;padding-right:4px;min-width:0;}
+  .ticket .meta-venue{display:flex;align-items:center;gap:8px;}
+  .ticket .meta-venue .meta-venue-text{flex:1;min-width:0;}
+  .cal-btn{
+    flex:none;display:inline-flex;align-items:center;gap:4px;margin-left:auto;
+    font-size:10.5px;font-weight:700;color:var(--accent);text-decoration:none;
+    border:1px solid var(--accent);border-radius:99px;padding:3px 9px 3px 7px;background:var(--paper);white-space:nowrap;
+  }
+  .cal-btn svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:1.8;}
   .view-chip{
     display:inline-flex;align-items:center;gap:3px;font-size:9.5px;font-weight:700;
     border-radius:99px;padding:2px 8px 2px 6px;border:1px solid currentColor;
@@ -2403,6 +2414,51 @@ function recViewing(r){
   if(r.viewing==="venue" || r.viewing==="stream") return r.viewing;
   return (recStreamUrls(r).length && !(r.venue||"").trim()) ? "stream" : "venue";
 }
+/* LIVE記録から Google カレンダーの予定作成URLを作る（APIキー不要）。
+   開始＝開始時刻→開場時刻、終了＝終了時刻→開始の2時間後。時刻が無ければ終日の予定。 */
+function googleCalendarUrl(r){
+  var d = (r.date||"").replace(/-/g,"");
+  function hm(t){ return /^\d{2}:\d{2}$/.test(t||"") ? t.replace(":","")+"00" : ""; }
+  function addDays(ymd, n){
+    var dt = new Date(Number(ymd.slice(0,4)), Number(ymd.slice(4,6))-1, Number(ymd.slice(6,8))+n);
+    return dt.getFullYear()+String(dt.getMonth()+1).padStart(2,"0")+String(dt.getDate()).padStart(2,"0");
+  }
+  var startT = hm(r.startTime) || hm(r.openTime);
+  var dates;
+  if(d.length===8 && startT){
+    var endT = hm(r.endTime), endD = d;
+    if(!endT){
+      var h2 = Number(startT.slice(0,2))+2;
+      if(h2>=24){ h2 -= 24; endD = addDays(d,1); }
+      endT = String(h2).padStart(2,"0")+startT.slice(2);
+    } else if(endT<=startT){
+      endD = addDays(d,1);   // 日付をまたぐ公演
+    }
+    dates = d+"T"+startT+"/"+endD+"T"+endT;
+  } else if(d.length===8){
+    dates = d+"/"+addDays(d,1);
+  }
+  var details = [];
+  if(r.openTime) details.push("開場 "+r.openTime);
+  if(r.startTime) details.push("開始 "+r.startTime);
+  if(r.endTime) details.push("終了 "+r.endTime);
+  var groups = [];
+  recOshiEntries(r).forEach(function(e){
+    var o = getOshi(e.oshiId); if(!o) return;
+    var gs = oshiGroupsList(o);
+    var g = gs.find(function(x){ return x.id===e.groupId; }) || gs[0];
+    var label = g && g.name ? g.name : o.name;
+    if(groups.indexOf(label)<0) groups.push(label);
+  });
+  if(groups.length) details.push("出演："+groups.join(" / "));
+  var place = r.venuePlace && r.venuePlace.name ? r.venuePlace.name+(r.venuePlace.address ? " "+r.venuePlace.address : "") : (r.venue||"");
+  var q = "action=TEMPLATE&text="+encodeURIComponent(r.title||"LIVE")
+    + (dates ? "&dates="+dates : "")
+    + "&ctz=Asia%2FTokyo"
+    + (details.length ? "&details="+encodeURIComponent(details.join("\n")) : "")
+    + (place ? "&location="+encodeURIComponent(place) : "");
+  return "https://calendar.google.com/calendar/render?"+q;
+}
 function recStreamUrls(r){
   var list = Array.isArray(r.streamUrls) ? r.streamUrls : (r.streamUrl ? [r.streamUrl] : []);
   return list.map(safeWebUrl).filter(Boolean);
@@ -2719,9 +2775,8 @@ function ticketHtml(type,r,withOshiTag){
   var titleText = r.title || (type==="goods"?r.item:"") || "(無題)";
   var metaBits = [];
   if(type==="live"){
+    // LIVEの詳細行は会場だけ（チケット種別・座席は一覧に出さない）。右端にGoogleカレンダー追加ボタン
     if(r.venue) metaBits.push('<a class="venue-link" href="'+escapeHtml(mapsUrlFor(r.venue, r.venuePlace))+'" target="_blank" rel="noopener noreferrer">'+escapeHtml(r.venue)+'</a>');
-    if(r.ticketType) metaBits.push(escapeHtml(r.ticketType));
-    if(r.seat) metaBits.push(escapeHtml(r.seat));
   } else if(type==="cheki"){
     metaBits.push((Number(r.count)||1)+"枚");
     if(r.content) metaBits.push(escapeHtml(r.content));
@@ -2736,10 +2791,26 @@ function ticketHtml(type,r,withOshiTag){
     var tagEntries = recOshiEntries(r).filter(function(e){
       return state.filterOshiId==="all" || e.oshiId===state.filterOshiId;
     });
-    var tags = tagEntries.map(function(e){
-      var o = getOshi(e.oshiId);
-      return o ? '<span style="color:'+readableColor(o.color)+';font-weight:700;">'+escapeHtml(oshiFullLabel(o))+'</span>' : '';
-    }).filter(Boolean);
+    var tags;
+    if(type==="live"){
+      // LIVEはグループ名だけを出す（同じグループは1回。グループのない推しは人物名）
+      var seenGroup = {};
+      tags = tagEntries.map(function(e){
+        var o = getOshi(e.oshiId);
+        if(!o) return "";
+        var gs = oshiGroupsList(o);
+        var g = gs.find(function(x){ return x.id===e.groupId; }) || gs[0];
+        var label = g && g.name ? g.name : o.name;
+        if(seenGroup[label]) return "";
+        seenGroup[label] = true;
+        return '<span style="color:'+readableColor((g && g.color) || o.color)+';font-weight:700;">'+escapeHtml(label)+'</span>';
+      }).filter(Boolean);
+    } else {
+      tags = tagEntries.map(function(e){
+        var o = getOshi(e.oshiId);
+        return o ? '<span style="color:'+readableColor(o.color)+';font-weight:700;">'+escapeHtml(oshiFullLabel(o))+'</span>' : '';
+      }).filter(Boolean);
+    }
     if(tags.length) oshiLineHtml = '<div class="meta meta-oshi">'+tags.join(" ／ ")+'</div>';
   }
   // 配信URL（LIVE）・ONLINE物販のURL（物販）は http(s) のときだけリンクにする
@@ -2771,7 +2842,12 @@ function ticketHtml(type,r,withOshiTag){
     +     (r.tag?'<span class="tag-chip">'+escapeHtml(r.tag)+'</span>':'')+(streamLinkHtml? '<span class="stream-link-wrap">'+streamLinkHtml+'</span>' : '')+'</div>'
     +   '<div class="title">'+escapeHtml(titleText)+'</div>'
     +   oshiLineHtml
-    +   (metaBits.length? '<div class="meta">'+metaBits.join(" ・ ")+'</div>' : '')
+    +   (type==="live"
+          ? '<div class="meta meta-venue"><span class="meta-venue-text">'+metaBits.join(" ・ ")+'</span>'
+            + '<a class="cal-btn" href="'+escapeHtml(googleCalendarUrl(r))+'" target="_blank" rel="noopener noreferrer" title="Googleカレンダーに追加">'
+            +   '<svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M8 3v4M16 3v4M12 12.5v5M9.5 15h5"/></svg>カレンダーに追加</a>'
+            + '</div>'
+          : (metaBits.length? '<div class="meta">'+metaBits.join(" ・ ")+'</div>' : ''))
     +   (r.memo? '<div class="memo">'+escapeHtml(r.memo)+'</div>' : '')
     + '</div>'
     + '<div class="stub'+(stubHasPhoto?' has-photo':'')+'"'+(stubHasPhoto?' style="background-image:linear-gradient(175deg, rgba(20,17,13,.1), rgba(20,17,13,.62)), url('+r.photo+');"':'')+'>'
@@ -3460,6 +3536,11 @@ function recordFormHtml(type,rec){
       + '<div class="field toggle-row viewing-toggle" style="margin-bottom:0;">'
       +   '<button type="button" class="toggle-chip'+(viewing==="venue"?" on":"")+'" data-viewing="venue">'+VIEWING_ICON.venue+'現地</button>'
       +   '<button type="button" class="toggle-chip'+(viewing==="stream"?" on":"")+'" data-viewing="stream">'+VIEWING_ICON.stream+'配信</button>'
+      + '</div></div>';
+    fields += '<div class="field"><label>時間（任意）</label><div class="time-row">'
+      + '<div><span class="time-cap">開場</span><input type="time" name="openTime" value="'+(rec?escapeHtml(rec.openTime||""):"")+'"></div>'
+      + '<div><span class="time-cap">開始</span><input type="time" name="startTime" value="'+(rec?escapeHtml(rec.startTime||""):"")+'"></div>'
+      + '<div><span class="time-cap">終了</span><input type="time" name="endTime" value="'+(rec?escapeHtml(rec.endTime||""):"")+'"></div>'
       + '</div></div>';
   }
 
