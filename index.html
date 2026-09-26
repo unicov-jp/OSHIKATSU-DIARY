@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>推し活手帳</title>
 <link rel="manifest" href="/manifest.webmanifest">
+<link rel="stylesheet" href="vendor/leaflet/leaflet-1.9.4.css">
 <meta name="theme-color" content="#FBF8F3">
 <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
@@ -695,6 +696,65 @@
   }
   .cal-setting-actions{display:flex;justify-content:flex-end;margin-top:10px;}
   .cal-setting-actions .btn{padding:8px 22px;}
+  /* ---------- 遠征マップ ---------- */
+  .trip-map-card{
+    background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 14px 14px;
+    box-shadow:0 10px 24px -18px rgba(33,28,23,.45);margin-top:22px;
+  }
+  .trip-map-head{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin:0 2px 12px;}
+  .trip-map-eyebrow{display:block;font-size:9.5px;letter-spacing:.22em;color:var(--accent);font-weight:700;}
+  .trip-map-title h3{margin:2px 0 0;font-size:19px;color:var(--heading);letter-spacing:.04em;}
+  .trip-map-stats{display:flex;gap:14px;}
+  .trip-stat{text-align:right;line-height:1.1;}
+  .trip-stat b{display:block;font-family:"Shippori Mincho",serif;font-size:24px;font-weight:800;color:var(--heading);}
+  .trip-stat span{font-size:9.5px;color:var(--ink-soft);letter-spacing:.08em;}
+  .trip-map-frame{border-radius:12px;padding:4px;background:var(--paper);box-shadow:inset 0 0 0 1px var(--line);}
+  .trip-map{height:300px;border-radius:9px;overflow:hidden;position:relative;z-index:0;isolation:isolate;background:#F1EDE6;}
+  .trip-map .leaflet-tile-pane{filter:sepia(.18) saturate(.9) brightness(1.02);}
+  .trip-map .leaflet-control-zoom{border:none;box-shadow:0 4px 12px -4px rgba(33,28,23,.35);border-radius:10px;overflow:hidden;}
+  .trip-map .leaflet-control-zoom a{
+    width:30px;height:30px;line-height:28px;background:var(--paper);color:var(--heading);border-bottom:1px solid var(--line);font-weight:400;
+  }
+  .trip-map .leaflet-control-zoom a:last-child{border-bottom:none;}
+  .trip-map .leaflet-control-attribution{background:rgba(251,248,243,.78);font-size:8.5px;border-radius:6px 0 0 0;color:var(--ink-soft);}
+  .trip-map .leaflet-control-attribution a{color:var(--ink-soft);}
+  /* しずく型のピン（中に回数） */
+  .trip-pin{background:none;border:none;}
+  .trip-pin .pin{
+    position:relative;width:30px;height:30px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);
+    background:var(--accent);border:2.5px solid #FFFFFF;box-shadow:0 6px 12px -4px rgba(33,28,23,.55);
+    display:flex;align-items:center;justify-content:center;
+  }
+  .trip-pin .pin b{transform:rotate(45deg);color:#FFFFFF;font-size:12px;font-weight:800;font-family:"Zen Kaku Gothic New",sans-serif;}
+  .trip-pin.big .pin{width:36px;height:36px;}
+  .trip-pin.big .pin b{font-size:13.5px;}
+  /* 吹き出し */
+  .trip-map .leaflet-popup-content-wrapper{border-radius:12px;padding:0;overflow:hidden;box-shadow:0 12px 28px -12px rgba(33,28,23,.55);}
+  .trip-map .leaflet-popup-content{margin:0;width:220px !important;}
+  .trip-map .leaflet-popup-tip{box-shadow:none;}
+  .trip-pop-head{background:var(--accent);color:#FFFFFF;padding:10px 32px 9px 12px;}
+  .trip-pop-head b{display:block;font-size:13.5px;line-height:1.35;}
+  .trip-pop-head span{font-size:10.5px;opacity:.85;letter-spacing:.06em;}
+  .trip-pop-list{list-style:none;margin:0;padding:6px 12px 10px;max-height:150px;overflow-y:auto;}
+  .trip-pop-list li{display:flex;gap:8px;padding:5px 0;border-bottom:1px dashed rgba(33,28,23,.14);font-size:11.5px;line-height:1.45;color:#211C17;}
+  .trip-pop-list li:last-child{border-bottom:none;}
+  .trip-pop-list .d{flex:none;font-family:"Shippori Mincho",serif;font-weight:700;color:var(--accent);}
+  .trip-map .leaflet-popup-close-button{color:#FFFFFF !important;top:6px !important;right:6px !important;}
+  /* 会場チップ */
+  .trip-venues{display:flex;gap:8px;overflow-x:auto;padding:12px 2px 2px;scrollbar-width:none;}
+  .trip-venues::-webkit-scrollbar{display:none;}
+  .trip-venue{
+    flex:none;display:flex;align-items:center;gap:7px;padding:6px 12px 6px 6px;border-radius:99px;
+    background:var(--paper);border:1px solid var(--line);font-size:12px;color:var(--text);cursor:pointer;font-family:inherit;white-space:nowrap;
+  }
+  .trip-venue .n{
+    min-width:22px;height:22px;border-radius:50%;background:var(--accent);color:#FFFFFF;
+    display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;padding:0 4px;
+  }
+  .trip-venue.missing{opacity:.55;cursor:default;}
+  .trip-venue.missing .n{background:var(--ink-soft);}
+  .trip-map-note{font-size:10.5px;color:var(--ink-soft);margin:8px 4px 0;line-height:1.6;}
+  .trip-map-note:empty{display:none;}
   .time-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;}
   .time-row .time-cap{display:block;font-size:10.5px;color:var(--ink-soft);margin-bottom:3px;}
   .field .time-row input[type=time]{padding-left:8px;padding-right:4px;min-width:0;}
@@ -923,6 +983,7 @@
 </div>
 
 <script src="vendor/supabase-js-2.117.2.js"></script>
+<script src="vendor/leaflet/leaflet-1.9.4.js"></script>
 <script>
 (function(){
 "use strict";
@@ -2811,20 +2872,19 @@ function renderHome(){
   });
   html += '</div></div>';
 
-  html += '<div class="section-label">最近の記録</div>';
-  var visibleRecs = recs.filter(function(item){ return !item.r.hidden; });
-  if(visibleRecs.length===0){
-    html += '<div class="empty-state">'
-      + iconCluster()
-      + '<p>まだ記録がありません。右下の＋ボタンからLIVE・チェキ・物販の記録を追加してみましょう。</p>'
-      + '</div>';
-  } else {
-    visibleRecs.slice(0,8).forEach(function(item){
-      html += ticketHtml(item.type,item.r);
-    });
-  }
+  // 最近の記録の代わりに、現地で観戦したLIVEの会場を地図に出す（遠征マップ）
+  html += '<div class="trip-map-card">'
+    +   '<div class="trip-map-head">'
+    +     '<div class="trip-map-title"><span class="trip-map-eyebrow">TRIP MAP</span><h3 class="mincho">遠征マップ</h3></div>'
+    +     '<div class="trip-map-stats" id="tripMapStats"></div>'
+    +   '</div>'
+    +   '<div class="trip-map-frame"><div class="trip-map" id="tripMap"></div></div>'
+    +   '<div class="trip-venues" id="tripVenues"></div>'
+    +   '<div class="trip-map-note" id="tripMapNote"></div>'
+    + '</div>';
 
   document.getElementById("main").innerHTML = html;
+  TripMap.render(oshi);
 }
 
 /* ============ rendering: record list pages (live/cheki/goods) ============ */
@@ -4537,6 +4597,163 @@ var AvatarCropper = (function(){
     im.src = src;
   }
   return { init:init, open:open };
+})();
+
+/* ============ trip map (遠征マップ) ============
+   ホームに、お気に入りの推しの「現地」LIVEの会場をピンで表示する。地図は Leaflet + OpenStreetMap。
+   位置は会場を候補から選んだときの venuePlace.lat/lng を使い、無いときは会場名から
+   OpenStreetMap（Nominatim）で調べて端末に保存する（1秒に1件まで・見つからなければ7日間は再検索しない）。 */
+var TripMap = (function(){
+  var GEO_KEY = "oshikatsu_geo_v1";
+  var map = null, layer = null, queue = [], busy = false, currentOshiId = null, markers = {}, popupTimer = null;
+  function geoCache(){ return readStored(GEO_KEY) || {}; }
+  function saveGeo(c){ try{ localStorage.setItem(GEO_KEY, JSON.stringify(c)); }catch(e){} }
+  function venueKey(name){ return (name||"").trim().toLowerCase(); }
+
+  // 会場ごとにまとめる：{key, name, lat, lng, visits:[record]}
+  function collect(oshi){
+    var groups = {};
+    state.live.forEach(function(r){
+      if(r.hidden || !oshi || !recHasOshi(r, oshi.id)) return;
+      if(recViewing(r)==="stream") return;
+      var name = (r.venuePlace && r.venuePlace.name) || (r.venue||"").trim();
+      if(!name) return;
+      var key = venueKey(name);
+      var g = groups[key] || (groups[key] = {key:key, name:name, lat:null, lng:null, visits:[]});
+      g.visits.push(r);
+      if(g.lat==null && r.venuePlace && typeof r.venuePlace.lat==="number" && typeof r.venuePlace.lng==="number"){
+        g.lat = r.venuePlace.lat; g.lng = r.venuePlace.lng;
+      }
+    });
+    var cache = geoCache();
+    return Object.keys(groups).map(function(k){
+      var g = groups[k];
+      if(g.lat==null && cache[k] && cache[k].lat!=null){ g.lat = cache[k].lat; g.lng = cache[k].lng; }
+      g.visits.sort(function(a,b){ return (b.date||"").localeCompare(a.date||""); });
+      return g;
+    }).sort(function(a,b){ return b.visits.length-a.visits.length || a.name.localeCompare(b.name,"ja"); });
+  }
+  function popupHtml(g){
+    return '<div class="trip-pop-head"><b>'+escapeHtml(g.name)+'</b><span>'+g.visits.length+' VISIT'+(g.visits.length>1?'S':'')+'</span></div>'
+      + '<ul class="trip-pop-list">'+g.visits.map(function(r){
+          var d = (r.date||"").split("-");
+          return '<li><span class="d">'+(d.length===3 ? d[0].slice(2)+"."+d[1]+"."+d[2] : "")+'</span><span>'+escapeHtml(r.title||"")+'</span></li>';
+        }).join("")+'</ul>';
+  }
+  function pinIcon(g){
+    var big = g.visits.length>=3;
+    return L.divIcon({
+      className:"trip-pin"+(big?" big":""),
+      html:'<div class="pin"><b>'+g.visits.length+'</b></div>',
+      iconSize: big ? [36,36] : [30,30],
+      iconAnchor: big ? [18,38] : [15,32],
+      popupAnchor:[0, big ? -36 : -30]
+    });
+  }
+  function focusVenue(key){
+    var m = markers[key];
+    if(!m || !map) return;
+    var target = map;
+    map.flyTo(m.getLatLng(), Math.max(map.getZoom(), 13), {duration:.6});
+    clearTimeout(popupTimer);
+    popupTimer = setTimeout(function(){ if(map===target) m.openPopup(); }, 650);
+  }
+  function draw(groups){
+    if(!map) return;
+    layer.clearLayers();
+    markers = {};
+    var pts = [];
+    groups.forEach(function(g){
+      if(g.lat==null) return;
+      var m = L.marker([g.lat, g.lng], {icon:pinIcon(g), riseOnHover:true, title:g.name})
+        .bindPopup(popupHtml(g), {closeButton:true, maxWidth:240, minWidth:220, autoPanPadding:[24,24]})
+        .addTo(layer);
+      markers[g.key] = m;
+      pts.push([g.lat, g.lng]);
+    });
+    // 表示範囲の自動調整はアニメーションなし（途中で作り直してもエラーにならないように）
+    if(pts.length===1) map.setView(pts[0], 13, {animate:false});
+    else if(pts.length>1) map.fitBounds(pts, {padding:[36,36], maxZoom:13, animate:false});
+    else map.setView([36.2, 138.25], 4.6, {animate:false});   // 日本全体
+
+    var visits = groups.reduce(function(s,g){ return s+g.visits.length; }, 0);
+    var stats = document.getElementById("tripMapStats");
+    if(stats){
+      stats.innerHTML = '<div class="trip-stat"><b>'+groups.length+'</b><span>VENUES</span></div>'
+        + '<div class="trip-stat"><b>'+visits+'</b><span>現地参戦</span></div>';
+    }
+    var venuesEl = document.getElementById("tripVenues");
+    if(venuesEl){
+      var cache = geoCache();
+      venuesEl.innerHTML = groups.map(function(g){
+        var missing = g.lat==null && cache[g.key];
+        return '<button type="button" class="trip-venue'+(missing?' missing':'')+'" data-trip-venue="'+escapeHtml(g.key)+'"'
+          + (missing?' title="位置が分かりませんでした"':'')+'>'
+          + '<span class="n">'+g.visits.length+'</span>'+escapeHtml(g.name)+'</button>';
+      }).join("");
+      venuesEl.querySelectorAll("[data-trip-venue]").forEach(function(b){
+        b.addEventListener("click", function(){ focusVenue(b.getAttribute("data-trip-venue")); });
+      });
+    }
+    var note = document.getElementById("tripMapNote");
+    if(note){
+      var pending = groups.filter(function(g){ return g.lat==null && !geoCache()[g.key]; });
+      note.textContent = !groups.length ? "現地で観戦したLIVEの会場がここに表示されます"
+        : (pending.length ? "会場の位置を調べています…（"+pending.length+"件）" : "");
+    }
+  }
+  // 会場名から位置を調べる（Nominatim は1秒に1件まで）
+  function geocodeNext(){
+    if(busy || !queue.length) return;
+    busy = true;
+    var g = queue.shift();
+    var url = "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=jp&accept-language=ja&q="+encodeURIComponent(g.name);
+    fetch(url, {headers:{"Accept":"application/json"}}).then(function(res){ return res.ok ? res.json() : []; }).catch(function(){ return null; }).then(function(list){
+      if(list===null){ busy = false; return; }   // 通信できないときは次回に回す
+      var c = geoCache();
+      var hit = list && list[0];
+      c[g.key] = hit ? {lat:Number(hit.lat), lng:Number(hit.lon), at:Date.now()} : {lat:null, lng:null, at:Date.now()};
+      saveGeo(c);
+      setTimeout(function(){
+        busy = false;
+        if(currentOshiId && map) refresh();
+        geocodeNext();
+      }, 1100);
+    });
+  }
+  function refresh(){
+    var groups = collect(getOshi(currentOshiId));
+    draw(groups);
+    var cache = geoCache(), week = 7*24*3600*1000;
+    groups.forEach(function(g){
+      if(g.lat!=null) return;
+      var c = cache[g.key];
+      if(c && (c.lat!=null || Date.now()-c.at < week)) return;
+      if(!queue.some(function(q){ return q.key===g.key; })) queue.push(g);
+    });
+    geocodeNext();
+  }
+  function render(oshi){
+    var el = document.getElementById("tripMap");
+    clearTimeout(popupTimer);
+    // 移動アニメーション中に作り直すとエラーになるため、止めてから破棄する
+    if(map){ map.stop(); map.off(); map.remove(); map = null; }
+    if(!el || !window.L){ return; }
+    currentOshiId = oshi ? oshi.id : null;
+    map = L.map(el, {zoomControl:true, attributionControl:true, scrollWheelZoom:false});
+    map.attributionControl.setPrefix(false);
+    // ズームアニメーションの終了処理が、地図を破棄した後に走っても落ちないようにする
+    var endZoom = map._onZoomTransitionEnd;
+    map._onZoomTransitionEnd = function(){ if(this._mapPane && this._container) return endZoom.apply(this, arguments); };
+    // 落ち着いた色合いの地図（CARTO Positron）
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+      maxZoom:19, subdomains:"abcd",
+      attribution:'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a>'
+    }).addTo(map);
+    layer = L.layerGroup().addTo(map);
+    refresh();
+  }
+  return { render:render };
 })();
 
 /* ============ photo viewer ============ */
