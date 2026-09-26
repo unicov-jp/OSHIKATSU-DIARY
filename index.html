@@ -699,8 +699,9 @@
   /* ---------- 遠征マップ ---------- */
   .trip-map-card{
     background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 14px 14px;
-    box-shadow:0 10px 24px -18px rgba(33,28,23,.45);margin-top:22px;
+    box-shadow:0 10px 24px -18px rgba(33,28,23,.45);margin-top:12px;
   }
+  .trip-map-card + .chart-card{margin-top:16px;}
   .trip-map-head{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin:0 2px 12px;}
   .trip-map-eyebrow{display:block;font-size:9.5px;letter-spacing:.22em;color:var(--accent);font-weight:700;}
   .trip-map-title h3{margin:2px 0 0;font-size:19px;color:var(--heading);letter-spacing:.04em;}
@@ -2952,16 +2953,16 @@ function renderHome(){
     return s;
   });
   var maxV = Math.max.apply(null, sums.concat([1]));
-  html += '<div class="chart-card">'
+  var chartHtml = '<div class="chart-card">'
     + '<h3>月別 推し活費用</h3><span class="unit">直近6ヶ月・合計 '+fmtYen(total)+'</span>'
     + '<div class="bars">';
   months.forEach(function(m,i){
     var h = Math.round((sums[i]/maxV)*72)+4;
-    html += '<div class="col"><div class="fill" style="height:'+h+'px" title="'+fmtYen(sums[i])+'"></div><div class="mo">'+m.label+'</div></div>';
+    chartHtml += '<div class="col"><div class="fill" style="height:'+h+'px" title="'+fmtYen(sums[i])+'"></div><div class="mo">'+m.label+'</div></div>';
   });
-  html += '</div></div>';
+  chartHtml += '</div></div>';
 
-  // 最近の記録の代わりに、現地で観戦したLIVEの会場を地図に出す（遠征マップ）
+  // 現地で観戦したLIVEの会場を地図に出す（遠征マップ）。月別の費用グラフはその下
   html += '<div class="trip-map-card">'
     +   '<div class="trip-map-head">'
     +     '<div class="trip-map-title"><span class="trip-map-eyebrow">TRIP MAP</span><h3 class="mincho">遠征マップ</h3></div>'
@@ -2972,6 +2973,8 @@ function renderHome(){
     +   '<div class="trip-venues" id="tripVenues"></div>'
     +   '<div class="trip-map-note" id="tripMapNote"></div>'
     + '</div>';
+
+  html += chartHtml;
 
   document.getElementById("main").innerHTML = html;
   TripMap.render(oshi);
