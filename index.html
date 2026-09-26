@@ -2448,7 +2448,8 @@ function allRecordsFlat(){
 function aggregateByOshi(){
   return state.oshis.map(function(o){
     var recs = allRecordsFlat().filter(function(item){ return recHasOshi(item.r, o.id); });
-    var liveN = recs.filter(function(i){return i.type==="live";}).length;
+    // 参戦＝現地観戦のみ（配信で観たLIVEは数えない）
+    var liveN = recs.filter(function(i){return i.type==="live" && recViewing(i.r)!=="stream";}).length;
     var chekiN = recs.filter(function(i){return i.type==="cheki";}).reduce(function(s,i){return s+(Number(i.r.count)||1);},0);
     var goodsN = recs.filter(function(i){return i.type==="goods";}).reduce(function(s,i){return s+(Number(i.r.qty)||1);},0);
     var total = Math.round(recs.reduce(function(s,i){ return s+recAmountForOshi(i.type,i.r,o.id); },0));
@@ -2541,7 +2542,8 @@ function renderHome(){
   }
 
   var recs = allRecordsForOshi(oshi.id);
-  var liveN = state.live.filter(function(r){return recHasOshi(r,oshi.id);}).length;
+  // 参戦＝現地観戦のみ（配信で観たLIVEは数えない）
+  var liveN = state.live.filter(function(r){return recHasOshi(r,oshi.id) && recViewing(r)!=="stream";}).length;
   var chekiN = state.cheki.filter(function(r){return recHasOshi(r,oshi.id);}).reduce(function(s,r){return s+(Number(r.count)||1);},0);
   var goodsN = state.goods.filter(function(r){return recHasOshi(r,oshi.id);}).reduce(function(s,r){return s+(Number(r.qty)||1);},0);
   var total = Math.round(recs.reduce(function(s,item){ return s+recAmountForOshi(item.type,item.r,oshi.id); },0));
@@ -2801,7 +2803,7 @@ function renderStatsByOshi(){
     html += '<div class="stat-row">'
       + '<div class="sw" style="'+oshiSwatchStyle(row.oshi)+'"></div>'
       + '<div class="info"><b>'+escapeHtml(row.oshi.name)+'</b>'
-      +   '<span>LIVE '+row.liveN+' ・ チェキ '+row.chekiN+' ・ 物販 '+row.goodsN+'</span></div>'
+      +   '<span>参戦 '+row.liveN+' ・ チェキ '+row.chekiN+' ・ 物販 '+row.goodsN+'</span></div>'
       + '<div class="stat-amt">'+fmtYen(row.total)+'</div>'
       + '</div>';
   });
@@ -2954,7 +2956,7 @@ function shareSummaryImage(){
     ctx.fillText(row.oshi.name, 116, rowY+8);
     ctx.font = "400 20px sans-serif";
     ctx.fillStyle = "#6B6259";
-    ctx.fillText("LIVE "+row.liveN+" ・ チェキ "+row.chekiN+" ・ 物販 "+row.goodsN, 116, rowY+40);
+    ctx.fillText("参戦 "+row.liveN+" ・ チェキ "+row.chekiN+" ・ 物販 "+row.goodsN, 116, rowY+40);
     ctx.textAlign = "right";
     ctx.fillStyle = accentColor;
     ctx.font = "700 26px sans-serif";
