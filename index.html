@@ -2105,6 +2105,7 @@ async function enterUserMode(user){
 }
 function leaveUserMode(){
   clearTimeout(cloud.timer);
+  DrivePhotos.forget();
   cloud.user = null;
   cloud.hashes = {};
   cloud.tomb = {};
@@ -2246,8 +2247,18 @@ var DrivePhotos = (function(){
   var TOKEN_KEY = "oshikatsu_gdrive_token_v1";
   var EVER_KEY = "oshikatsu_gdrive_connected_v1";
   var BLANK = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
-  var token = null, tokenExp = 0, tokenClient = null, gisLoading = null, pendingResolve = null, pendingReject = null;
-  var folderId = null, dbp = null, mem = {}, loading = {};
+  var token = null, tokenExp = 0, tokenClient = null, codeClient = null, gisLoading = null, pendingResolve = null, pendingReject = null;
+  /* サーバーで接続を続ける方式（/api/gdrive-token。クライアントシークレットがサーバーにあるとき）：
+     一度つなぐとサーバーがリフレッシュトークンを本人の行として保存し、1時間ごとのアクセストークンを
+     つなぎ直しなしで発行する。同じアカウントなら PC・スマホのどちらでも使える。
+     linked：サーバーに保存済みか（null = まだ確かめていない） */
+  var LINK_KEY = "oshikatsu_gdrive_linked_v1:";
+  var linked = null, refreshing = null, linkChecked = false;
+  var folderId = null, folderLock = null, subIds = {}, subLocks = {}, dbp = null, mem = {}, loading = {};
+  // 「推し活手帳」フォルダの中の振り分け先（Backup・LIVE・チェキ・物販・その他）
+  var SUB_BACKUP = "Backup", SUB_LIVE = "LIVE", SUB_CHEKI = "チェキ", SUB_GOODS = "物販", SUB_OTHER = "その他";
+  var SUB_NAMES = [SUB_BACKUP, SUB_LIVE, SUB_CHEKI, SUB_GOODS, SUB_OTHER];
+  var FOLDER_MIME = "application/vnd.google-apps.folder";
   var migrating = false, migrateTimer = null, missing = false;
 
   (function restore(){
@@ -2259,8 +2270,82 @@ var DrivePhotos = (function(){
   function isData(s){ return typeof s==="string" && s.indexOf("data:")===0; }
   function idOf(s){ return s.slice(PREFIX.length); }
   function available(){ return !!(appConfig && appConfig.googleClientId); }
-  function connected(){ return !!token && Date.now() < tokenExp-60000; }
+  function serverMode(){ return available() && !!appConfig.googleDriveServer; }
+  function tokenValid(){ return !!token && Date.now() < tokenExp-60000; }
+  function linkKey(){ return LINK_KEY + (cloud.user ? cloud.user.id : ""); }
+  function isLinked(){
+    if(linked!==null) return linked;
+    try{ return localStorage.getItem(linkKey())==="1"; }catch(e){ return false; }
+  }
+  function setLinked(v){
+    linked = !!v;
+    try{ if(v) localStorage.setItem(linkKey(), "1"); else localStorage.removeItem(linkKey()); }catch(e){}
+  }
+  // 接続中か：アクセストークンが有効、またはサーバーで接続を続けている
+  function connected(){ return tokenValid() || (serverMode() && !!cloud.user && isLinked()); }
   function everConnected(){ try{ return localStorage.getItem(EVER_KEY)==="1"; }catch(e){ return false; } }
+  function saveToken(t, expiresIn){
+    token = t;
+    tokenExp = Date.now() + (Number(expiresIn)||3600)*1000;
+    try{
+      localStorage.setItem(TOKEN_KEY, JSON.stringify({token:token, exp:tokenExp}));
+      localStorage.setItem(EVER_KEY, "1");
+    }catch(e){}
+  }
+  async function serverCall(action, extra){
+    var jwt = "";
+    try{ var r = await sb.auth.getSession(); jwt = r && r.data && r.data.session ? r.data.session.access_token : ""; }catch(e){}
+    if(!jwt) throw new Error("login required");
+    var res = await fetch("/api/gdrive-token", {
+      method:"POST",
+      headers:{"Content-Type":"application/json", Authorization:"Bearer "+jwt},
+      body:JSON.stringify(Object.assign({action:action}, extra||{}))
+    });
+    var j = {};
+    try{ j = await res.json(); }catch(e){}
+    if(!res.ok){ var err = new Error(j.error || ("server "+res.status)); err.code = j.error; err.status = res.status; throw err; }
+    return j;
+  }
+  // サーバーから新しいアクセストークンをもらう（同時に何度も呼ばれても1回にまとめる）
+  function refreshAccess(){
+    if(refreshing) return refreshing;
+    refreshing = (async function(){
+      try{
+        var j = await serverCall("refresh");
+        saveToken(j.access_token, j.expires_in);
+        setLinked(true);
+        return true;
+      }catch(e){
+        if(e.code==="not_linked") setLinked(false);
+        throw e;
+      }finally{
+        linkChecked = true;
+        setTimeout(function(){ refreshing = null; }, 0);
+      }
+    })();
+    return refreshing;
+  }
+  // API を呼ぶ前に、使えるアクセストークンを用意する
+  async function ensureToken(){
+    if(tokenValid()) return;
+    if(serverMode() && cloud.user && isLinked()){ await refreshAccess(); return; }
+    throw new Error("not connected");
+  }
+  // 起動後に一度、サーバーで接続が続いているかを確かめる（別の端末でつないだ場合もここで分かる）
+  function checkLink(){
+    if(linkChecked || !serverMode() || !cloud.user || refreshing) return;
+    linkChecked = true;
+    var before = connected();
+    refreshAccess().catch(function(){}).then(function(){
+      if(connected()!==before) render();
+      if(connected()) migrateSoon();
+    });
+  }
+  // ログアウトしたとき：この端末に覚えたアクセストークンを忘れる（サーバーの接続はそのまま）
+  function forget(){
+    token = null; tokenExp = 0; linked = null; linkChecked = false; folderId = null; folderLock = null; subIds = {}; subLocks = {};
+    try{ localStorage.removeItem(TOKEN_KEY); }catch(e){}
+  }
 
   /* ---- 端末に覚えておく写真（IndexedDB） ---- */
   function db(){
@@ -2306,34 +2391,63 @@ var DrivePhotos = (function(){
   }
   // 先に読み込んでおく（ボタンを押したときに、すぐGoogleの画面を開けるように）
   function prepare(){
-    if(!available() || tokenClient) return;
+    if(!available()) return;
+    checkLink();
+    if(serverMode() ? codeClient : tokenClient) return;
     loadGis().then(initClient).catch(function(){});
   }
   // ボタンを押したときに呼ぶ（Googleの小さな画面が開く）
   function connect(){
     if(!available()) return Promise.reject(new Error("not configured"));
-    if(tokenClient) return request();
+    if(serverMode() ? codeClient : tokenClient) return request();
     return loadGis().then(function(){ initClient(); return request(); });
   }
   function request(){
     return new Promise(function(resolve, reject){
       pendingResolve = resolve; pendingReject = reject;
-      tokenClient.requestAccessToken({prompt: everConnected() ? "" : "consent"});
+      if(serverMode()){
+        // リフレッシュトークンを受け取るため、同意の画面を出す
+        codeClient.requestCode();
+      } else {
+        tokenClient.requestAccessToken({prompt: everConnected() ? "" : "consent"});
+      }
     });
   }
   function initClient(){
+    if(serverMode()){
+      if(codeClient) return;
+      codeClient = google.accounts.oauth2.initCodeClient({
+        client_id: appConfig.googleClientId,
+        scope: "https://www.googleapis.com/auth/drive.file",
+        ux_mode: "popup",
+        select_account: false,
+        callback: function(resp){
+          var res = pendingResolve, rej = pendingReject;
+          pendingResolve = pendingReject = null;
+          if(!resp || !resp.code){ if(rej) rej(new Error((resp && resp.error) || "no code")); return; }
+          serverCall("exchange", {code:resp.code}).then(function(j){
+            saveToken(j.access_token, j.expires_in);
+            setLinked(!!j.linked);
+            linkChecked = true;
+            // 以前の許可のままで続けるための鍵が受け取れなかったとき（1時間だけ使える）
+            if(!j.linked) setTimeout(function(){ toast("接続を続ける設定ができませんでした。Googleアカウントの「サードパーティ製のアプリとサービス」で推し活手帳の許可を外してから、もう一度接続してください"); }, 1800);
+            if(res) res();
+          }).catch(function(e){ if(rej) rej(e); });
+        },
+        error_callback: function(err){
+          if(pendingReject) pendingReject(new Error((err && err.type) || "popup error"));
+          pendingResolve = pendingReject = null;
+        }
+      });
+      return;
+    }
     if(!tokenClient){
       tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: appConfig.googleClientId,
         scope: "https://www.googleapis.com/auth/drive.file",
         callback: function(resp){
           if(resp && resp.access_token){
-            token = resp.access_token;
-            tokenExp = Date.now() + (Number(resp.expires_in)||3600)*1000;
-            try{
-              localStorage.setItem(TOKEN_KEY, JSON.stringify({token:token, exp:tokenExp}));
-              localStorage.setItem(EVER_KEY, "1");
-            }catch(e){}
+            saveToken(resp.access_token, resp.expires_in);
             if(pendingResolve) pendingResolve();
           } else if(pendingReject){ pendingReject(new Error((resp && resp.error) || "no token")); }
           pendingResolve = pendingReject = null;
@@ -2346,37 +2460,85 @@ var DrivePhotos = (function(){
     }
   }
   function disconnect(){
-    if(token && window.google && google.accounts && google.accounts.oauth2){ try{ google.accounts.oauth2.revoke(token, function(){}); }catch(e){} }
+    if(serverMode() && cloud.user) serverCall("revoke").catch(function(){});
+    else if(token && window.google && google.accounts && google.accounts.oauth2){ try{ google.accounts.oauth2.revoke(token, function(){}); }catch(e){} }
     token = null; tokenExp = 0;
+    setLinked(false);
     try{ localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(EVER_KEY); }catch(e){}
   }
-  async function api(url, opts){
+  async function api(url, opts, retried){
     opts = opts || {};
-    opts.headers = Object.assign({}, opts.headers||{}, {Authorization:"Bearer "+token});
-    var res = await fetch(url, opts);
-    if(res.status===401){ token = null; tokenExp = 0; try{ localStorage.removeItem(TOKEN_KEY); }catch(e){} throw new Error("unauthorized"); }
+    await ensureToken();
+    var o = Object.assign({}, opts, {headers:Object.assign({}, opts.headers||{}, {Authorization:"Bearer "+token})});
+    var res = await fetch(url, o);
+    if(res.status===401){
+      token = null; tokenExp = 0;
+      try{ localStorage.removeItem(TOKEN_KEY); }catch(e){}
+      // サーバーで接続を続けているときは、新しいトークンをもらって1回だけやり直す
+      if(!retried && serverMode() && cloud.user && isLinked()) return api(url, opts, true);
+      throw new Error("unauthorized");
+    }
     if(!res.ok) throw new Error("drive "+res.status);
     return res;
   }
 
   /* ---- フォルダとアップロード ---- */
-  async function ensureFolder(){
-    if(folderId) return folderId;
-    var q = "name='"+FOLDER_NAME+"' and mimeType='application/vnd.google-apps.folder' and trashed=false";
-    var res = await api("https://www.googleapis.com/drive/v3/files?spaces=drive&fields=files(id)&q="+encodeURIComponent(q));
-    var j = await res.json();
-    if(j.files && j.files.length){ folderId = j.files[0].id; return folderId; }
-    res = await api("https://www.googleapis.com/drive/v3/files?fields=id", {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({name:FOLDER_NAME, mimeType:"application/vnd.google-apps.folder"})
-    });
-    folderId = (await res.json()).id;
-    return folderId;
+  // 「推し活手帳」フォルダ。同時に何度呼ばれても1回だけ探す・作る（重複フォルダを作らないため）。
+  // 複数あるときは、いちばん古いものを使う（「整理」で1つにまとめる）
+  function ensureFolder(){
+    if(folderId) return Promise.resolve(folderId);
+    if(folderLock) return folderLock;
+    folderLock = (async function(){
+      var roots = await listRootFolders();
+      if(roots.length){ folderId = roots[0].id; return folderId; }
+      var res = await api("https://www.googleapis.com/drive/v3/files?fields=id", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({name:FOLDER_NAME, mimeType:FOLDER_MIME})
+      });
+      folderId = (await res.json()).id;
+      return folderId;
+    })();
+    folderLock.catch(function(){ folderLock = null; });
+    return folderLock;
+  }
+  async function listRootFolders(){
+    var q = "name='"+FOLDER_NAME+"' and mimeType='"+FOLDER_MIME+"' and trashed=false";
+    var res = await api("https://www.googleapis.com/drive/v3/files?spaces=drive&orderBy=createdTime&fields=files(id,createdTime)&q="+encodeURIComponent(q));
+    return ((await res.json()).files || []);
+  }
+  // 振り分け先のフォルダ（Backup・LIVE・チェキ・物販・その他）
+  function ensureSub(name){
+    if(subIds[name]) return Promise.resolve(subIds[name]);
+    if(subLocks[name]) return subLocks[name];
+    subLocks[name] = (async function(){
+      var root = await ensureFolder();
+      var q = "name='"+name+"' and mimeType='"+FOLDER_MIME+"' and '"+root+"' in parents and trashed=false";
+      var res = await api("https://www.googleapis.com/drive/v3/files?spaces=drive&orderBy=createdTime&fields=files(id)&q="+encodeURIComponent(q));
+      var f = (await res.json()).files || [];
+      if(f.length){ subIds[name] = f[0].id; return subIds[name]; }
+      res = await api("https://www.googleapis.com/drive/v3/files?fields=id", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({name:name, mimeType:FOLDER_MIME, parents:[root]})
+      });
+      subIds[name] = (await res.json()).id;
+      return subIds[name];
+    })();
+    subLocks[name].catch(function(){ subLocks[name] = null; });
+    return subLocks[name];
+  }
+  // ファイル名から振り分け先を決める
+  function subFor(fileName){
+    fileName = fileName || "";
+    if(fileName.indexOf(BACKUP_PREFIX)===0) return SUB_BACKUP;
+    if(fileName.indexOf("live_")===0) return SUB_LIVE;
+    if(fileName.indexOf("cheki_")===0) return SUB_CHEKI;
+    if(fileName.indexOf("goods_")===0) return SUB_GOODS;
+    return SUB_OTHER;   // ギャラリー・推しの写真・ヘッダーロゴなど
   }
   async function dataUrlToBlob(u){ return await (await fetch(u)).blob(); }
   async function upload(dataUrl, name){
     var blob = await dataUrlToBlob(dataUrl);
-    var parent = await ensureFolder();
+    var parent = await ensureSub(subFor(name));
     var meta = {name:name, parents:[parent], mimeType:blob.type || "image/jpeg"};
     var boundary = "oshikatsu" + Math.random().toString(36).slice(2);
     var body = new Blob([
@@ -2421,6 +2583,15 @@ var DrivePhotos = (function(){
     b = await (await api("https://www.googleapis.com/drive/v3/files/"+encodeURIComponent(id)+"?alt=media")).blob();
     await idbPut(id, b);
     return b;
+  }
+  // 切り抜きなどで使う、端末内のURL（ドライブの写真は取り込んでから）
+  async function localUrl(ref){
+    if(!isRef(ref)) return ref;
+    var u = await urlOf(ref);
+    if(u) return u;
+    var b = await blobOf(ref);
+    mem[idOf(ref)] = URL.createObjectURL(b);
+    return mem[idOf(ref)];
   }
   // 表示用のURL。端末に無く、接続もしていなければ null（あとで接続を促す）
   async function urlOf(ref){
@@ -2493,7 +2664,7 @@ var DrivePhotos = (function(){
   }
   function afterRender(){
     prepare();
-    hydrate(document.getElementById("main"));
+    hydrate(document.body);   // 一覧に加えて、上部の推しの丸・ヘッダーロゴ・メニューも
     setTimeout(function(){ autoBackup(); }, 3000);   // 接続中なら1日1回、自動でバックアップ
   }
   async function openViewer(ref){
@@ -2519,7 +2690,10 @@ var DrivePhotos = (function(){
     });
     state.oshis.forEach(function(o){
       if(Array.isArray(o.gallery)) o.gallery.forEach(function(p){ if(isData(p)) n++; });
+      if(isData(o.photo)) n++;
+      if(isData(o.photoOriginal)) n++;
     });
+    if(isData(state.headerLogo)) n++;
     return n;
   }
   function migrateSoon(){
@@ -2597,6 +2771,41 @@ var DrivePhotos = (function(){
         });
         if(gch) await persistOshi(Object.assign({}, o1, {gallery:gal}));
       }
+      // 推しの写真（丸いアイコン）と、切り抜く前の元の写真
+      for(var pi2=0; pi2<oids.length; pi2++){
+        var op = getOshi(oids[pi2]);
+        if(!op) continue;
+        var pf = ["photo","photoOriginal"].filter(function(k){ return isData(op[k]); });
+        if(!pf.length) continue;
+        var up = {};
+        for(var k2=0; k2<pf.length; k2++){
+          try{
+            up[pf[k2]] = {v:op[pf[k2]], ref:await upload(op[pf[k2]], "oshi_"+op.id+"_"+pf[k2]+"_"+Date.now()+".jpg")};
+            done++;
+            if(done===1 || done%3===0) toast("写真をGoogleドライブに移しています（"+done+"/"+total+"）");
+          }catch(e){
+            console.warn("drive upload failed", e); failed++;
+            if(!connected()) throw e;
+          }
+        }
+        var oq = getOshi(oids[pi2]);
+        if(!oq) continue;
+        var nx = Object.assign({}, oq), och = false;
+        Object.keys(up).forEach(function(k){ if(nx[k]===up[k].v){ nx[k] = up[k].ref; och = true; } });
+        if(och) await persistOshi(nx);
+      }
+      // ヘッダーのロゴ
+      if(isData(state.headerLogo)){
+        var logo = state.headerLogo;
+        try{
+          var lref = await upload(logo, "header_logo_"+Date.now()+".png");
+          done++;
+          if(state.headerLogo===logo){ state.headerLogo = lref; saveLocal(); refreshHeaderLogo(); }
+        }catch(e){
+          console.warn("drive upload failed", e); failed++;
+          if(!connected()) throw e;
+        }
+      }
     }catch(e){
       console.warn("drive migrate stopped", e);
     }finally{
@@ -2619,7 +2828,7 @@ var DrivePhotos = (function(){
     return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+"-"+p(d.getHours())+p(d.getMinutes());
   }
   async function saveBackup(payload){
-    var parent = await ensureFolder();
+    var parent = await ensureSub(SUB_BACKUP);
     var name = BACKUP_PREFIX+stamp()+".json";
     var meta = {name:name, parents:[parent], mimeType:"application/json"};
     var boundary = "oshikatsu" + Math.random().toString(36).slice(2);
@@ -2636,8 +2845,9 @@ var DrivePhotos = (function(){
     return name;
   }
   async function listBackups(){
-    var parent = await ensureFolder();
-    var q = "'"+parent+"' in parents and name contains '"+BACKUP_PREFIX+"' and trashed=false";
+    // 「Backup」フォルダに加え、振り分け前の「推し活手帳」直下も見る
+    var parent = await ensureSub(SUB_BACKUP), root = await ensureFolder();
+    var q = "('"+parent+"' in parents or '"+root+"' in parents) and name contains '"+BACKUP_PREFIX+"' and trashed=false";
     var res = await api("https://www.googleapis.com/drive/v3/files?spaces=drive&orderBy=createdTime%20desc&pageSize=100&fields=files(id,name,createdTime,size)&q="+encodeURIComponent(q));
     return ((await res.json()).files || []);
   }
@@ -2664,10 +2874,105 @@ var DrivePhotos = (function(){
     finally{ backingUp = false; }
   }
 
+  /* ---- ドライブの整理：フォルダ分けと、重複（使われていない写真）の片付け ----
+     ・「推し活手帳」が複数あれば、いちばん古いものに中身をまとめ、空になったものはゴミ箱へ
+     ・写真とバックアップを「Backup」「LIVE」「チェキ」「物販」「その他」に振り分ける
+     ・どの記録からも使われていない写真（2台で同時に移したときなどにできる重複）はゴミ箱へ
+       （作ってから1時間以内のものは、別の端末の記録がまだ届いていないことがあるので残す）
+     ゴミ箱へ移したファイルは、Google ドライブのゴミ箱から30日以内なら戻せる。 */
+  function referencedIds(){
+    var ids = {};
+    function add(v){ if(isRef(v)) ids[idOf(v)] = true; }
+    ["live","goods","cheki"].forEach(function(t){
+      state[t].forEach(function(r){ add(r.photo); if(Array.isArray(r.photos)) r.photos.forEach(add); });
+    });
+    state.oshis.forEach(function(o){ add(o.photo); add(o.photoOriginal); if(Array.isArray(o.gallery)) o.gallery.forEach(add); });
+    add(state.headerLogo);
+    // 削除した記録（まだクラウドへ送っていないもの）の写真も残す
+    Object.keys(cloud.tomb||{}).forEach(function(k){ var d = cloud.tomb[k] && cloud.tomb[k].data; if(d){ add(d.photo); if(Array.isArray(d.photos)) d.photos.forEach(add); } });
+    return ids;
+  }
+  async function listChildren(parent){
+    var out = [], pageToken = "";
+    do{
+      var q = "'"+parent+"' in parents and trashed=false";
+      var res = await api("https://www.googleapis.com/drive/v3/files?spaces=drive&pageSize=1000&fields=nextPageToken,files(id,name,mimeType,createdTime,parents)&q="+encodeURIComponent(q)+(pageToken?"&pageToken="+encodeURIComponent(pageToken):""));
+      var j = await res.json();
+      out = out.concat(j.files || []);
+      pageToken = j.nextPageToken || "";
+    }while(pageToken);
+    return out;
+  }
+  // 整理の計画を立てる（まだ何も動かさない）
+  async function planOrganize(){
+    var roots = await listRootFolders();
+    if(!roots.length) return {moves:[], trash:[], extraRoots:[], total:0};
+    folderId = roots[0].id;
+    var subs = {};
+    for(var n=0; n<SUB_NAMES.length; n++) subs[SUB_NAMES[n]] = await ensureSub(SUB_NAMES[n]);
+    var subIdSet = {};
+    Object.keys(subs).forEach(function(k){ subIdSet[subs[k]] = true; });
+    // 調べる場所：すべての「推し活手帳」と、その中のフォルダ
+    var files = [], extraFolders = [];
+    for(var i=0; i<roots.length; i++){
+      var kids = await listChildren(roots[i].id);
+      for(var k=0; k<kids.length; k++){
+        var f = kids[k];
+        if(f.mimeType===FOLDER_MIME){
+          if(!subIdSet[f.id]) extraFolders.push(f);
+          var inner = await listChildren(f.id);
+          inner.forEach(function(x){ if(x.mimeType!==FOLDER_MIME){ x._from = f.id; files.push(x); } });
+        } else {
+          f._from = roots[i].id;
+          files.push(f);
+        }
+      }
+    }
+    var used = referencedIds(), cutoff = Date.now() - 3600*1000;
+    var moves = [], trash = [];
+    files.forEach(function(f){
+      var isBackup = f.name.indexOf(BACKUP_PREFIX)===0;
+      var isImage = /^image\//.test(f.mimeType||"");
+      if(isImage && !used[f.id] && Date.parse(f.createdTime) < cutoff){ trash.push(f); return; }
+      var target = subs[subFor(f.name)];
+      if(isBackup) target = subs[SUB_BACKUP];
+      if(f._from!==target) moves.push({file:f, to:target});
+    });
+    return {moves:moves, trash:trash, extraRoots:roots.slice(1), extraFolders:extraFolders, total:files.length};
+  }
+  async function runOrganize(plan, onStep){
+    var done = 0, all = plan.moves.length + plan.trash.length;
+    for(var i=0; i<plan.moves.length; i++){
+      var m = plan.moves[i];
+      await api("https://www.googleapis.com/drive/v3/files/"+encodeURIComponent(m.file.id)+"?addParents="+encodeURIComponent(m.to)+"&removeParents="+encodeURIComponent(m.file._from)+"&fields=id", {
+        method:"PATCH", headers:{"Content-Type":"application/json"}, body:"{}"
+      });
+      done++; if(onStep) onStep(done, all);
+    }
+    for(var t=0; t<plan.trash.length; t++){
+      await api("https://www.googleapis.com/drive/v3/files/"+encodeURIComponent(plan.trash[t].id)+"?fields=id", {
+        method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({trashed:true})
+      });
+      done++; if(onStep) onStep(done, all);
+    }
+    // 空になった余分なフォルダ（重複した「推し活手帳」や、振り分け先以外のフォルダ）はゴミ箱へ
+    var extra = (plan.extraFolders||[]).concat(plan.extraRoots||[]), removed = 0;
+    for(var e=0; e<extra.length; e++){
+      var left = await listChildren(extra[e].id);
+      if(left.some(function(x){ return x.mimeType!==FOLDER_MIME; })) continue;
+      await api("https://www.googleapis.com/drive/v3/files/"+encodeURIComponent(extra[e].id)+"?fields=id", {
+        method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({trashed:true})
+      });
+      removed++;
+    }
+    return {moved:plan.moves.length, trashed:plan.trash.length, removedFolders:removed};
+  }
+
   return {
+    planOrganize:planOrganize, runOrganize:runOrganize,
     isRef:isRef, available:available, connected:connected, everConnected:everConnected,
-    connect:connect, disconnect:disconnect, imgAttrs:imgAttrs, bgStyle:bgStyle, cachedUrl:cachedUrl,
-    blobOf:blobOf, hydrate:hydrate, afterRender:afterRender, openViewer:openViewer,
+    connect:connect, disconnect:disconnect, forget:forget, serverMode:serverMode, imgAttrs:imgAttrs, bgStyle:bgStyle, cachedUrl:cachedUrl,
+    blobOf:blobOf, localUrl:localUrl, hydrate:hydrate, afterRender:afterRender, openViewer:openViewer,
     pendingCount:pendingCount, migrateSoon:migrateSoon, migrate:migrate,
     saveBackup:saveBackup, listBackups:listBackups, readBackup:readBackup, autoBackup:autoBackup,
     uploadNow:uploadNow, requireConnection:requireConnection, isData:isData,
@@ -2718,7 +3023,7 @@ function googleStorageRowsHtml(){
   return '<div class="account-row">'
     +   '<span class="account-row-label">Googleドライブ</span>'
     +   '<span class="account-row-value'+(on?'':' muted')+'">'+status+'</span>'
-    +   (on ? '' : '<button type="button" class="account-row-btn" data-action="gdrive-connect"'+dis+'>'+(ever?'再接続':'接続')+'</button>')
+    +   (on ? '<button type="button" class="account-row-btn" data-action="gdrive-organize">整理</button>' : '<button type="button" class="account-row-btn" data-action="gdrive-connect"'+dis+'>'+(ever?'再接続':'接続')+'</button>')
     + '</div>'
     + '<div class="account-row">'
     +   '<span class="account-row-label">Googleカレンダー</span>'
@@ -2747,6 +3052,33 @@ function backupLinksHtml(){
     +   '<label class="gd-link">ファイルから戻す<input type="file" id="backupImportInput" accept="application/json,.json" style="display:none;"></label>'
     +   '<button type="button" class="gd-link" data-action="restore-deleted">削除された記録を探す</button>'
     + '</div>';
+}
+
+/* マイページ「Googleドライブ」の「整理」：フォルダ分けと、使われていない重複写真の片付け */
+var organizingDrive = false;
+async function organizeDrive(){
+  if(organizingDrive) return;
+  organizingDrive = true;
+  try{
+    toast("Googleドライブを確認しています…");
+    await syncNow();   // 別の端末で付けた写真が、使われていないと判断されないように先に同期する
+    var plan = await DrivePhotos.planOrganize();
+    var nMove = plan.moves.length, nTrash = plan.trash.length, nFolders = (plan.extraRoots||[]).length + (plan.extraFolders||[]).length;
+    if(!nMove && !nTrash && !nFolders){ toast("Googleドライブは整理済みです（"+plan.total+"件）"); return; }
+    var msg = "Googleドライブの「推し活手帳」フォルダを整理します。\n\n"
+      + "・「Backup」「LIVE」「チェキ」「物販」「その他」に振り分け："+nMove+"件\n"
+      + "・どの記録にも使われていない写真（重複など）をゴミ箱へ："+nTrash+"件\n"
+      + (nFolders ? "・重複したフォルダをまとめる："+nFolders+"件\n" : "")
+      + "\nゴミ箱へ移したファイルは、Googleドライブのゴミ箱から30日以内なら戻せます。実行しますか？";
+    if(!confirm(msg)) return;
+    var r = await DrivePhotos.runOrganize(plan, function(d, all){ if(d===1 || d%10===0) toast("整理しています（"+d+"/"+all+"）"); });
+    toast("整理しました（振り分け "+r.moved+"件・ゴミ箱へ "+r.trashed+"件"+(r.removedFolders?"・フォルダ "+r.removedFolders+"件":"")+"）");
+  }catch(e){
+    console.warn("drive organize failed", e);
+    toast("Googleドライブを整理できませんでした");
+  }finally{
+    organizingDrive = false;
+  }
 }
 
 /* ============ バックアップと復元 ============
@@ -3541,9 +3873,28 @@ function isBirthdayToday(o){
   var now = new Date();
   return Number(o.birthMonth)===now.getMonth()+1 && Number(o.birthDay)===now.getDate();
 }
+// 推しの写真（丸いアイコン）。ドライブの写真で端末に無いときは、担当カラーで表示してから後で写真を入れる
+var AVATAR_GRAD = "linear-gradient(transparent,transparent)";
 function oshiSwatchStyle(o){
-  if(o.photo) return "background-image:url("+o.photo+");background-size:cover;background-position:center;";
+  if(o.photo){
+    var u = DrivePhotos.cachedUrl(o.photo);
+    if(u) return "background-image:url("+u+");background-size:cover;background-position:center;";
+    return "background-color:"+o.color+";background-size:cover;background-position:center;"+DrivePhotos.bgStyle(o.photo, AVATAR_GRAD);
+  }
   return "background:"+o.color+";";
+}
+// JS で style を入れる要素（上部の推しの丸など）用
+function applyOshiSwatch(el, o){
+  if(!el) return;
+  el.removeAttribute("data-gd-bg");
+  if(o.photo && !DrivePhotos.cachedUrl(o.photo)){
+    el.setAttribute("style", "background-color:"+o.color+";background-size:cover;background-position:center;");
+    el.setAttribute("data-gd-bg", o.photo);
+    el.setAttribute("data-gd-grad", AVATAR_GRAD);
+    DrivePhotos.hydrate(el.parentNode || document);
+    return;
+  }
+  el.setAttribute("style", oshiSwatchStyle(o));
 }
 function oshiAvatarHtml(o,size){
   var style = oshiSwatchStyle(o);
@@ -4896,13 +5247,16 @@ function refreshHeaderLogo(){
   var clearBtn = document.getElementById("clearHeaderLogoBtn");
   if(!img) return;
   if(state.headerLogo){
-    img.src = state.headerLogo;
+    var hu = DrivePhotos.cachedUrl(state.headerLogo);
+    if(hu){ img.src = hu; img.removeAttribute("data-gd"); }
+    else if(img.getAttribute("data-gd")!==state.headerLogo){ img.setAttribute("data-gd", state.headerLogo); DrivePhotos.hydrate(img.parentNode); }
     img.style.display = "block";
     placeholder.style.display = "none";
     if(clearBtn) clearBtn.style.display = "block";
   } else {
     img.style.display = "none";
     img.src = "";
+    img.removeAttribute("data-gd");
     placeholder.style.display = "flex";
     if(clearBtn) clearBtn.style.display = "none";
   }
@@ -4955,7 +5309,7 @@ function render(){
   if(oshi){
     chip.style.display="flex";
     var topDot = document.getElementById("topDot");
-    topDot.setAttribute("style", oshiSwatchStyle(oshi));
+    applyOshiSwatch(topDot, oshi);
     document.getElementById("topName").textContent = oshi.name;
   } else {
     chip.style.display="none";
@@ -5356,6 +5710,10 @@ function bindOshiForm(existingOshi){
   var elClearPhotoBtn = form.querySelector('#clearPhotoBtn');
   var elPhotoPreviewBtn = form.querySelector('#photoPreviewBtn');
   var elPhotoMenu = form.querySelector('#photoMenu');
+  // 推しの写真を撮る・選ぶ前に、Googleドライブへ接続しておく
+  elPhotoMenu.querySelectorAll("label").forEach(function(l){
+    l.addEventListener("click", function(e){ DrivePhotos.requireConnection(e); }, true);
+  });
   var elAddGroupBtn = form.querySelector('#addGroupBtn');
 
   /* The app's one theme color always follows the top (main) group's own
@@ -5434,7 +5792,10 @@ function bindOshiForm(existingOshi){
 
   function refreshPhotoPreview(){
     if(chosenPhoto){
-      elPhotoImg.src = chosenPhoto;
+      var pu = DrivePhotos.cachedUrl(chosenPhoto);
+      elPhotoImg.removeAttribute("data-gd");
+      if(pu) elPhotoImg.src = pu;
+      else { elPhotoImg.setAttribute("data-gd", chosenPhoto); DrivePhotos.hydrate(elPhotoImg.parentNode); }
       elPhotoImg.style.display = "block";
       elPhotoPlaceholder.style.display = "none";
       elClearPhotoBtn.style.display = "block";
@@ -5450,12 +5811,15 @@ function bindOshiForm(existingOshi){
   var elAdjustPhotoBtn = form.querySelector("#adjustPhotoBtn");
   refreshPhotoPreview();
   elAdjustPhotoBtn.addEventListener("click", function(){
-    AvatarCropper.open(chosenPhotoOriginal || chosenPhoto, function(cropped){
+    // ドライブの写真は、端末に取り込んでから切り抜きの画面を開く
+    DrivePhotos.localUrl(chosenPhotoOriginal || chosenPhoto).then(function(src){
+      AvatarCropper.open(src, function(cropped){
       if(!cropped) return;
       if(!chosenPhotoOriginal) chosenPhotoOriginal = chosenPhoto;
       chosenPhoto = cropped;
       refreshPhotoPreview();
-    });
+      });
+    }).catch(function(){ toast("写真を読み込めませんでした"); });
   });
 
   function closeAllPickers(){
@@ -5699,8 +6063,14 @@ function bindOshiForm(existingOshi){
     }).filter(function(g){
       return g.name || g.sns_web || g.sns_instagram || g.sns_x || g.sns_tiktok || g.sns_youtube;
     });
+    // 推しの写真（切り抜き後と元の写真）も Google ドライブへ保存し、記録には置き場所だけを入れる
+    var oshiIdForSave = isEditingReal ? existingOshi.id : uuid();
+    if(chosenPhoto){
+      if(DrivePhotos.isData(chosenPhoto)) chosenPhoto = await DrivePhotos.uploadNow(chosenPhoto, "oshi_"+oshiIdForSave+"_photo_"+Date.now()+".jpg");
+      if(DrivePhotos.isData(chosenPhotoOriginal)) chosenPhotoOriginal = await DrivePhotos.uploadNow(chosenPhotoOriginal, "oshi_"+oshiIdForSave+"_original_"+Date.now()+".jpg");
+    }
     var oshi = {
-      id: isEditingReal ? existingOshi.id : uuid(),
+      id: oshiIdForSave,
       agency: elAgency.value.trim(),
       groups: groups,
       name: name,
@@ -6975,6 +7345,7 @@ function onAppClick(e){
   if(action==="backup-drive-save"){ saveBackupToDrive(); return; }
   if(action==="backup-drive-restore"){ openDriveBackups(); return; }
   if(action==="restore-deleted"){ openRestoreDeleted(); return; }
+  if(action==="gdrive-organize"){ organizeDrive(); return; }
   if(action==="gdrive-connect"){
     if(DrivePhotos.connected()){ DrivePhotos.migrate(); return; }
     DrivePhotos.connect().then(function(){
@@ -7065,6 +7436,9 @@ document.addEventListener("DOMContentLoaded", function(){
     headerLogoMenu.style.display = "none";
     if(!wasOpen){ openPopoverNear(headerLogoBtn, headerLogoMenu); }
   });
+  headerLogoMenu.querySelectorAll("label").forEach(function(l){
+    l.addEventListener("click", function(e){ if(DrivePhotos.requireConnection(e)) headerLogoMenu.style.display = "none"; }, true);
+  });
   headerLogoInput.addEventListener("change", function(){
     var file = headerLogoInput.files && headerLogoInput.files[0];
     headerLogoMenu.style.display = "none";
@@ -7075,7 +7449,11 @@ document.addEventListener("DOMContentLoaded", function(){
        PNG output (not JPEG) so a transparent background stays transparent. */
     resizeImageFilePreserveAlpha(file, 480).then(function(dataUrl){
       headerLogoInput.value = "";
-      state.headerLogo = dataUrl;
+      // 画像は Google ドライブへ保存し、設定には置き場所だけを入れる
+      return DrivePhotos.uploadNow(dataUrl, "header_logo_"+Date.now()+".png");
+    }).then(function(ref){
+      if(!ref) return;
+      state.headerLogo = ref;
       saveLocal();
       refreshHeaderLogo();
     }).catch(function(){

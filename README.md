@@ -210,14 +210,20 @@ LIVE の「会場」欄の右の「探す」ボタン（または Enter）で、
 
 ## 写真の保存先（Google ドライブ）
 
-LIVE・チェキ・物販の写真と、ホームのギャラリーの写真は、本人の Google ドライブの「推し活手帳」フォルダに保存し、記録には `gdrive:<ファイルID>` だけを入れる（`DrivePhotos`）。クラウドの行と端末の控えが小さくなり、容量不足が起きにくくなる。推しの写真・ヘッダーロゴはこれまでどおり記録の中に持つ。
+画像はすべて本人の Google ドライブの「推し活手帳」フォルダに保存し、記録には `gdrive:<ファイルID>` だけを入れる（`DrivePhotos`）。対象は LIVE・チェキ・物販の写真、ホームのギャラリーの写真、推しの写真（切り抜き後 `photo` と元の写真 `photoOriginal`）、ヘッダーロゴ（設定 `headerLogo`）。Supabase には画像データを持たない。推しの写真・ヘッダーロゴを選ぶ前にもドライブへの接続を求め、以前から記録の中にある画像データは、接続中に自動でドライブへ移す（`DrivePhotos.migrate`）。
+
+- **フォルダ分け**：「推し活手帳」の中を「Backup」「LIVE」「チェキ」「物販」「その他」に分け、ファイル名で振り分けて保存する（`subFor`：`oshikatsu-backup-` → Backup、`live_` → LIVE、`cheki_` → チェキ、`goods_` → 物販、ギャラリー・推しの写真・ヘッダーロゴなど → その他）。フォルダの作成は同時に呼ばれても1回にまとめる（重複フォルダを作らない）。
+- **整理**：マイページのアカウントのカード「Googleドライブ」が接続中のときの「整理」ボタン（`organizeDrive` → `DrivePhotos.planOrganize` / `runOrganize`）。先に同期してから、(1) 「推し活手帳」が複数あればいちばん古いものにまとめ、空になったものをゴミ箱へ、(2) 振り分け前のファイルを各フォルダへ移し、(3) どの記録にも使われていない写真（2台で同時に移したときなどにできる重複）をゴミ箱へ移す。作って1時間以内の写真は、別の端末の記録がまだ届いていないことがあるので残す。実行前に件数を確認のダイアログで示す。ゴミ箱のファイルは Google ドライブから30日以内なら戻せる。
+- **Supabase に残った画像データの削除**：`supabase/migrations/20260928010000_oshikatsu_strip_images.sql` を SQL Editor で実行すると、変更履歴（`oshikatsu_records_history`）と削除済みの記録に残る画像データを null に置き換え、以後は変更履歴に残すときも画像データを消す（`oshikatsu_strip_images`）。表示中の記録の画像データは、アプリがドライブへ移して置き場所に書き換える。
 
 - 権限は `https://www.googleapis.com/auth/drive.file`（このアプリが作ったファイルだけ）。ログインとは別に Google Identity Services のトークン（約1時間）をもらい、`localStorage`（`oshikatsu_gdrive_token_v1`）に期限付きで置く。
+- **接続を続ける（推奨）**：Vercel に `GOOGLE_OAUTH_CLIENT_SECRET` があると（`/api/config` の `googleDriveServer: true`）、接続は認可コード方式（`initCodeClient`）になる。受け取ったコードを `/api/gdrive-token`（`exchange`）でトークンに交換し、リフレッシュトークンを Supabase の `oshikatsu_gdrive_tokens`（本人の行だけ読み書きできる。`supabase/migrations/20260928000000_oshikatsu_gdrive_tokens.sql`）に保存する。アクセストークンが切れたら `refresh` で新しいものをもらうので、つなぎ直しは不要。同じアカウントでログインしていれば、別の端末（PC・スマホ）でもつなぎ直さずに「接続中」になる（起動後に一度 `refresh` で確かめる）。Google 側で許可が外されたときは保存したトークンを消し、「再接続が必要」に戻る。サーバーへの呼び出しにはログイン中の Supabase のトークンが必要で、クライアントシークレットはサーバーの中だけで使う。シークレットが無いときは、これまでどおり1時間ごとにつなぎ直す方式で動く。
+- Google Auth Platform の公開ステータスが「テスト」のままだと、リフレッシュトークンは7日で失効する。`drive.file` は機密性の低いスコープなので、「本番環境に公開」しても審査は不要。
 - 未保存の写真を作らないよう、ドライブの設定があるときは、写真を撮る・選ぶ前に接続を求め（`requireConnection`）、記録を保存した時点で写真をドライブへ送る（`uploadNow`）。通信の失敗などで送れなかった写真と、以前の写真は、接続中に自動でドライブへ移す（`migrate`）。
 - 表示した写真は端末の IndexedDB（`oshikatsu_photos`）に覚え、2回目からは通信しない。端末に無く、トークンも切れているときは、画面下に「Googleドライブの写真を表示する」を出し、押すと接続して表示し直す。
 - 別の端末でも同じ Google アカウントで接続すれば表示できる（drive.file は、そのアカウントでこのアプリが作ったファイルにだけアクセスできる）。
 - ドライブのフォルダやファイルを削除すると、アプリから写真が見えなくなる。記録を削除してもドライブのファイルは消さない。
-- 設定：Vercel の環境変数 `GOOGLE_OAUTH_CLIENT_ID`（ウェブアプリの OAuth クライアントID。シークレットは不要）。未設定なら「写真の保存先」は出ず、写真は記録の中に持つ。Google Cloud で Google Drive API を有効にし、OAuth 同意画面に `drive.file` を追加し、OAuth クライアントの「承認済みの JavaScript 生成元」に `https://oshikatsu-diary.vercel.app` を入れる。
+- 設定：Vercel の環境変数 `GOOGLE_OAUTH_CLIENT_ID`（ウェブアプリの OAuth クライアントID）と、接続を続けるための `GOOGLE_OAUTH_CLIENT_SECRET`（同じクライアントのシークレット。サーバーだけで使い、ブラウザへは返さない）。シークレットを使うときは、Supabase の SQL Editor で `20260928000000_oshikatsu_gdrive_tokens.sql` を実行しておく。未設定なら「写真の保存先」は出ず、写真は記録の中に持つ。Google Cloud で Google Drive API を有効にし、OAuth 同意画面に `drive.file` を追加し、OAuth クライアントの「承認済みの JavaScript 生成元」に `https://oshikatsu-diary.vercel.app` を入れる。
 
 ## 端末の控え（キャッシュ）が保存できないとき
 

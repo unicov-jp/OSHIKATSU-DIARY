@@ -39,11 +39,13 @@ module.exports = function handler(req, res){
   if(key && isSecretKey(key)) key = "";
   // Google Maps のブラウザ用キー（HTTPリファラーで制限して使う前提）
   var mapsKey = pick(env, ["GOOGLE_MAPS_API_KEY", "NEXT_PUBLIC_GOOGLE_MAPS_API_KEY"]);
-  // 写真を Google ドライブに保存するための OAuth クライアントID（公開してよい値。シークレットは使わない）
+  // 写真を Google ドライブに保存するための OAuth クライアントID（公開してよい値）
   var clientId = pick(env, ["GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_CLIENT_ID", "NEXT_PUBLIC_GOOGLE_CLIENT_ID"]);
+  // クライアントシークレットがサーバーにあれば、/api/gdrive-token で接続を続けられる（値そのものは返さない）
+  var driveServer = !!pick(env, ["GOOGLE_OAUTH_CLIENT_SECRET", "GOOGLE_CLIENT_SECRET"]) && !!clientId && !!url && !!key;
 
   res.statusCode = 200;
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.setHeader("Cache-Control", "no-store");
-  res.end(JSON.stringify({ supabaseUrl: url, supabaseAnonKey: key, googleMapsApiKey: mapsKey, googleClientId: clientId }));
+  res.end(JSON.stringify({ supabaseUrl: url, supabaseAnonKey: key, googleMapsApiKey: mapsKey, googleClientId: clientId, googleDriveServer: driveServer }));
 };
