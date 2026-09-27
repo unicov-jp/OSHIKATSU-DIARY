@@ -531,7 +531,8 @@
   .account-row-btn:disabled{opacity:.45;cursor:default;}
   .account-row-btn{
     flex:none;border:1px solid var(--line-strong);background:var(--paper);color:var(--text);
-    border-radius:3px;font-size:12px;font-weight:600;padding:6px 12px;cursor:pointer;font-family:inherit;
+    border-radius:3px;font-size:12px;font-weight:600;padding:6px 4px;cursor:pointer;font-family:inherit;
+    width:68px;text-align:center;white-space:nowrap;   /* 変更・連携する・接続・保存などの横幅をそろえる */
   }
   .btn.account-logout{margin-top:12px;border-color:var(--line);color:#B23A3A;background:transparent;}
   .btn.google-btn{background:#FFFFFF;color:#1F1F1F;border-color:var(--line-strong);gap:10px;padding:11px 16px;}
@@ -2229,10 +2230,24 @@ var DrivePhotos = (function(){
     });
     return gisLoading;
   }
+  // 先に読み込んでおく（ボタンを押したときに、すぐGoogleの画面を開けるように）
+  function prepare(){
+    if(!available() || tokenClient) return;
+    loadGis().then(initClient).catch(function(){});
+  }
   // ボタンを押したときに呼ぶ（Googleの小さな画面が開く）
-  async function connect(){
-    if(!available()) throw new Error("not configured");
-    await loadGis();
+  function connect(){
+    if(!available()) return Promise.reject(new Error("not configured"));
+    if(tokenClient) return request();
+    return loadGis().then(function(){ initClient(); return request(); });
+  }
+  function request(){
+    return new Promise(function(resolve, reject){
+      pendingResolve = resolve; pendingReject = reject;
+      tokenClient.requestAccessToken({prompt: everConnected() ? "" : "consent"});
+    });
+  }
+  function initClient(){
     if(!tokenClient){
       tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: appConfig.googleClientId,
@@ -2255,10 +2270,6 @@ var DrivePhotos = (function(){
         }
       });
     }
-    return new Promise(function(resolve, reject){
-      pendingResolve = resolve; pendingReject = reject;
-      tokenClient.requestAccessToken({prompt: everConnected() ? "" : "consent"});
-    });
   }
   function disconnect(){
     if(token && window.google && google.accounts && google.accounts.oauth2){ try{ google.accounts.oauth2.revoke(token, function(){}); }catch(e){} }
@@ -2306,6 +2317,22 @@ var DrivePhotos = (function(){
     await idbPut(id, blob);
     mem[id] = URL.createObjectURL(blob);
     return PREFIX + id;
+  }
+
+  // 記録を保存するときに、画像データのままの写真をすぐドライブへ送る（失敗したらそのまま。あとで自動で移す）
+  async function uploadNow(value, name){
+    if(!isData(value) || !available() || !connected()) return value;
+    try{ return await upload(value, name); }
+    catch(e){ console.warn("drive upload failed", e); return value; }
+  }
+  // 写真を撮る・選ぶ前に、ドライブへ接続しておく（未保存の写真を作らないため）。接続が必要なら true
+  function requireConnection(e){
+    if(!available() || connected()) return false;
+    e.preventDefault();
+    e.stopPropagation();
+    connect().then(function(){ toast("Googleドライブに接続しました。もう一度写真を選んでください"); })
+      .catch(function(){ toast("Googleドライブに接続できませんでした"); });
+    return true;
   }
 
   /* ---- 表示 ---- */
@@ -2391,6 +2418,7 @@ var DrivePhotos = (function(){
     bar.hidden = false;
   }
   function afterRender(){
+    prepare();
     hydrate(document.getElementById("main"));
     setTimeout(function(){ autoBackup(); }, 3000);   // 接続中なら1日1回、自動でバックアップ
   }
@@ -2538,6 +2566,7 @@ var DrivePhotos = (function(){
     blobOf:blobOf, hydrate:hydrate, afterRender:afterRender, openViewer:openViewer,
     pendingCount:pendingCount, migrateSoon:migrateSoon, migrate:migrate,
     saveBackup:saveBackup, listBackups:listBackups, readBackup:readBackup, autoBackup:autoBackup,
+    uploadNow:uploadNow, requireConnection:requireConnection, isData:isData,
     lastBackupAt:function(){ try{ return Number(localStorage.getItem(AUTO_KEY+(cloud.user ? cloud.user.id : ""))||0); }catch(e){ return 0; } }
   };
 })();
@@ -2552,7 +2581,6 @@ function fmtDateTime(ms){
 function googleStorageRowsHtml(){
   var ready = DrivePhotos.available();
   var on = ready && DrivePhotos.connected();
-  var pending = DrivePhotos.pendingCount();
   var last = DrivePhotos.lastBackupAt();
   var ever = DrivePhotos.everConnected();
   var status = !ready ? "未設定" : on ? "接続中" : ever ? "再接続が必要" : "未接続";
@@ -2561,11 +2589,6 @@ function googleStorageRowsHtml(){
     +   '<span class="account-row-label">Googleドライブ</span>'
     +   '<span class="account-row-value'+(on?'':' muted')+'">'+status+'</span>'
     +   (on ? '' : '<button type="button" class="account-row-btn" data-action="gdrive-connect"'+dis+'>'+(ever?'再接続':'接続')+'</button>')
-    + '</div>'
-    + '<div class="account-row">'
-    +   '<span class="account-row-label">写真の保存</span>'
-    +   '<span class="account-row-value'+(pending?' muted':'')+'">'+(pending ? '未保存 '+pending+'枚' : 'すべて保存済み')+'</span>'
-    +   (pending ? '<button type="button" class="account-row-btn" data-action="gdrive-connect"'+dis+'>保存</button>' : '')
     + '</div>'
     + '<div class="account-row">'
     +   '<span class="account-row-label">バックアップ</span>'
@@ -3057,6 +3080,11 @@ function accountSectionHtml(){
   return '<div class="section-label">アカウント</div>'
     + '<div class="account-list">'
     +   '<div class="account-row">'
+    +     '<span class="account-row-label">Google認証</span>'
+    +     '<span class="account-row-value'+(hasGoogle?'':' muted')+'">'+(hasGoogle?'連携済み':'未連携')+'</span>'
+    +     googleBtn
+    +   '</div>'
+    +   '<div class="account-row">'
     +     '<span class="account-row-label">メールアドレス</span>'
     +     '<span class="account-row-value">'+escapeHtml(cloud.user.email||"")+'</span>'
     +   '</div>'
@@ -3064,11 +3092,6 @@ function accountSectionHtml(){
     +     '<span class="account-row-label">パスワード</span>'
     +     '<span class="account-row-value'+(hasPw?'':' muted')+'">'+(hasPw?'設定済み':'未設定')+'</span>'
     +     '<button type="button" class="account-row-btn" data-action="change-password">'+(hasPw?'変更':'設定')+'</button>'
-    +   '</div>'
-    +   '<div class="account-row">'
-    +     '<span class="account-row-label">Google認証</span>'
-    +     '<span class="account-row-value'+(hasGoogle?'':' muted')+'">'+(hasGoogle?'連携済み':'未連携')+'</span>'
-    +     googleBtn
     +   '</div>'
     +   googleStorageRowsHtml()
     + '</div>'
@@ -5719,6 +5742,11 @@ function bindRecordForm(type,existingRec){
     });
   }
 
+  // 写真を撮る・選ぶ前に、Googleドライブへ接続しておく
+  form.querySelectorAll("#recPhotoMenu label, #ckAddMenu label").forEach(function(l){
+    l.addEventListener("click", function(e){ DrivePhotos.requireConnection(e); }, true);
+  });
+
   var hasPhotoField = (type==="live" || type==="goods");
   if(hasPhotoField){
     var elBtn = form.querySelector("#recPhotoPreviewBtn");
@@ -5856,6 +5884,18 @@ function bindRecordForm(type,existingRec){
       rec.streamUrl = urls[0] || "";
       rec.extraOshis = oshiRows.slice(1).map(function(r){ return {oshiId:r.oshiId, groupId:r.groupId||""}; });
       rec.venuePlace = venueAc ? venueAc.getPlace() : null;
+    }
+    // 写真はこの時点でGoogleドライブへ送る（記録には置き場所だけを入れる）
+    var needUpload = (hasPhotoField && DrivePhotos.isData(chosenPhoto)) || (type==="cheki" && ckPhotos.some(DrivePhotos.isData));
+    if(needUpload && DrivePhotos.available() && DrivePhotos.connected()){
+      var submitBtn = form.querySelector('button[type="submit"]');
+      if(submitBtn) submitBtn.disabled = true;
+      toast("写真をGoogleドライブに保存しています…");
+      if(hasPhotoField) chosenPhoto = await DrivePhotos.uploadNow(chosenPhoto, type+"_"+rec.id+"_0.jpg");
+      if(type==="cheki"){
+        for(var ui=0; ui<ckPhotos.length; ui++) ckPhotos[ui] = await DrivePhotos.uploadNow(ckPhotos[ui], "cheki_"+rec.id+"_"+(ui+1)+".jpg");
+      }
+      if(submitBtn) submitBtn.disabled = false;
     }
     if(hasPhotoField){ rec.photo = chosenPhoto; }
     if(type==="cheki"){
