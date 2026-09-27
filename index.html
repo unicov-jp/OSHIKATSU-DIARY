@@ -724,7 +724,6 @@
   .ck-ph.empty{display:flex;align-items:center;justify-content:center;cursor:pointer;}
   .ck-ph.empty svg{width:34%;stroke:var(--accent);fill:none;stroke-width:1.4;opacity:.6;}
   .ck-ph-wrap{position:relative;}
-  .ck-count{background:var(--accent);color:var(--on-accent);font-size:10px;font-weight:700;border-radius:99px;padding:2px 7px;line-height:1.3;}
   /* 左上：LIVE・物販のアイコンと枚数 */
   .ck-tl{position:absolute;display:flex;align-items:center;gap:4px;z-index:2;pointer-events:none;}
   .ck-src{width:26px;height:26px;border-radius:50%;background:var(--paper);border:1px solid var(--line-strong);color:var(--accent);display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px -2px rgba(33,28,23,.35);}
@@ -797,7 +796,6 @@
   .ck-day.has img + i{color:#FFFFFF;font-weight:700;text-shadow:0 1px 2px rgba(0,0,0,.6);}
   .ck-day-icon{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--accent);}
   .ck-day-icon svg{width:46%;stroke:currentColor;fill:none;stroke-width:1.5;}
-  .ck-day em{position:absolute;right:2px;bottom:2px;font-style:normal;background:var(--accent);color:var(--on-accent);border-radius:99px;font-size:9px;font-weight:700;padding:0 5px;z-index:1;}
   .ck-day.on{box-shadow:0 0 0 2px var(--accent);}
   .ck-cal-sel{display:flex;flex-direction:column;gap:10px;}
   /* 詳しいカード（カレンダー・スワイプ） */
@@ -844,6 +842,7 @@
     box-shadow:0 10px 24px -18px rgba(33,28,23,.45);margin-top:12px;
   }
   .trip-map-card + .chart-card{margin-top:16px;}
+  .hero + .trip-map-card{margin-top:16px;}
   .trip-map-head{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin:0 2px 12px;}
   .trip-map-eyebrow{display:block;font-size:9.5px;letter-spacing:.22em;color:var(--accent);font-weight:700;}
   .trip-map-title h3{margin:2px 0 0;font-size:19px;color:var(--heading);letter-spacing:.04em;}
@@ -3091,8 +3090,6 @@ function renderHome(){
   var recs = allRecordsForOshi(oshi.id);
   // 参戦＝現地観戦のみ（配信で観たLIVEは数えない）
   var liveN = state.live.filter(function(r){return recHasOshi(r,oshi.id) && recViewing(r)!=="stream";}).length;
-  var chekiN = state.cheki.filter(function(r){return recHasOshi(r,oshi.id);}).reduce(function(s,r){return s+(Number(r.count)||1);},0);
-  var goodsN = state.goods.filter(function(r){return recHasOshi(r,oshi.id);}).reduce(function(s,r){return s+(Number(r.qty)||1);},0);
   var total = Math.round(recs.reduce(function(s,item){ return s+recAmountForOshi(item.type,item.r,oshi.id); },0));
 
   var subLabel = oshiSubLabel(oshi) || "推し活中";
@@ -3112,20 +3109,7 @@ function renderHome(){
     + '</div>'
     + (bdayBits.length? '<div class="colorname-tag">'+escapeHtml(bdayBits.join(" ・ "))+'</div>' : '')
     + snsLinksHtml(oshi,"hero")
-    + '<div class="stats">'
-    +   '<div class="stat"><b>'+liveN+'</b><span>参戦回数</span></div>'
-    +   '<div class="stat"><b>'+chekiN+'</b><span>チェキ枚数</span></div>'
-    +   '<div class="stat"><b>'+goodsN+'</b><span>物販点数</span></div>'
-    + '</div>'
     + '</div>';
-
-  html += '<div class="oshi-pills">';
-  visibleOshis().forEach(function(o){
-    html += '<button class="oshi-pill '+(o.id===oshi.id?'on':'')+'" data-action="set-active" data-id="'+o.id+'">'
-      + '<span class="d" style="'+oshiSwatchStyle(o)+'"></span>'+escapeHtml(o.name)+'</button>';
-  });
-  html += '<button class="oshi-pill add" data-action="add-oshi">＋ 推しを追加</button>';
-  html += '</div>';
 
   // monthly chart, last 6 months
   var now = new Date();
@@ -3293,10 +3277,6 @@ function chekiPhotoHtml(r){
 function chekiEditBtn(r){
   return '<button type="button" class="ck-edit" data-action="edit-record" data-type="cheki" data-id="'+r.id+'" title="編集" aria-label="編集">'+CHEKI_PENCIL+'</button>';
 }
-function chekiCountBadge(r){
-  var n = Number(r.count)||1;
-  return n>1 ? '<span class="ck-count">×'+n+'</span>' : '';
-}
 /* どの記録から来たチェキか（live / goods / ""）。LIVE・物販のチェキボタンで作ったものは source を持つ。
    それ以前のものは、同じ日付・同じ名前・同じ推しのLIVE（なければ物販）があればそれとみなす。 */
 function chekiSource(r){
@@ -3328,9 +3308,8 @@ function chekiTitle(r){
 // 左上：LIVE・物販のアイコンと枚数
 function chekiTopLeft(r){
   var src = chekiSource(r);
-  var srcHtml = src ? '<span class="ck-src" title="'+(src==="live"?"LIVE":"物販")+'のチェキ">'+kindIcon(src)+'</span>' : '';
-  var cnt = chekiCountBadge(r);
-  return (srcHtml || cnt) ? '<div class="ck-tl">'+srcHtml+cnt+'</div>' : '';
+  // チェキは1枚ずつ登録するので、枚数（×2 など）は出さない
+  return src ? '<div class="ck-tl"><span class="ck-src" title="'+(src==="live"?"LIVE":"物販")+'のチェキ">'+kindIcon(src)+'</span></div>' : '';
 }
 // 右上：お気に入り（押すたびに ON/OFF）
 function chekiFavBtn(r){
@@ -3351,14 +3330,13 @@ function chekiPolaroidHtml(r, withYear){
 }
 // 詳しいカード（カレンダーの選んだ日・スワイプで使う）
 function chekiDetailHtml(r, big){
-  var n = Number(r.count)||1;
   var label = chekiLabel(r);
   return '<div class="ck-detail'+(big?' big':'')+(r.hidden?' is-hidden':'')+'">'
     + '<div class="ck-ph-wrap">'+chekiPhotoHtml(r)+'</div>'
     + '<div class="ck-detail-body">'
     +   '<div class="t'+(big?' mincho':'')+'">'+escapeHtml(chekiTitle(r)||"(無題)")+'</div>'
     +   (label ? '<div class="g">'+escapeHtml(label)+'</div>' : '')
-    +   '<div class="m"><span>'+chekiDate(r, true)+'</span><span>'+n+'枚</span></div>'
+    +   '<div class="m"><span>'+chekiDate(r, true)+'</span></div>'
     +   (r.content ? '<div class="talk">'+escapeHtml(r.content)+'</div>' : '')
     +   (r.memo ? '<div class="memo">'+escapeHtml(r.memo)+'</div>' : '')
     + '</div>'
@@ -3371,10 +3349,10 @@ function chekiPageHtml(list){
   // 集計（絞り込み前の一覧で数える）
   var thisMonth = (function(){ var d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); })();
   var totalN = 0, monthN = 0;
+  // 1件＝1枚として数える
   list.forEach(function(r){
-    var n = Number(r.count)||1;
-    totalN += n;
-    if((r.date||"").slice(0,7)===thisMonth) monthN += n;
+    totalN += 1;
+    if((r.date||"").slice(0,7)===thisMonth) monthN += 1;
   });
   html += '<div class="ck-sum">'
     + '<div><b>'+totalN+'</b><span>総枚数</span></div>'
@@ -3406,9 +3384,8 @@ function chekiAlbumHtml(items){
   });
   return months.map(function(k){
     var rs = byMonth[k];
-    var n = rs.reduce(function(s,r){ return s+(Number(r.count)||1); }, 0);
     return '<div class="ck-month">'
-      + '<div class="ck-month-head"><b class="mincho">'+(k==="----" ? "日付なし" : k.replace("-", ". "))+'</b><span>'+n+'枚 ・ '+rs.length+'件</span></div>'
+      + '<div class="ck-month-head"><b class="mincho">'+(k==="----" ? "日付なし" : k.replace("-", ". "))+'</b><span>'+rs.length+'枚</span></div>'
       + '<div class="ck-month-row">'+rs.map(function(r){ return chekiPolaroidHtml(r, false); }).join("")+'</div>'
       + '</div>';
   }).join("");
@@ -3470,11 +3447,9 @@ function chekiCalendarHtml(items){
     var rs = byDate[ds];
     if(!rs){ html += '<span class="ck-day"><i>'+d+'</i></span>'; continue; }
     var withPhoto = rs.filter(function(r){ return r.photo; })[0];
-    var n = rs.reduce(function(s,r){ return s+(Number(r.count)||1); }, 0);
     html += '<button type="button" class="ck-day has'+(ds===sel?' on':'')+'" data-action="cheki-cal-day" data-date="'+ds+'">'
       + (withPhoto ? '<img src="'+withPhoto.photo+'" alt="" loading="lazy">' : '<span class="ck-day-icon">'+kindIcon("cheki")+'</span>')
       + '<i>'+d+'</i>'
-      + (n>1 ? '<em>×'+n+'</em>' : '')
       + '</button>';
   }
   html += '</div></div>';
