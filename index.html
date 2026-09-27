@@ -307,6 +307,9 @@
   .ticket .main{flex:1;min-width:0;padding:16px 14px 12px;overflow:hidden;border-radius:3px 0 0 3px;}
   .ticket .kind{display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap;}
   .ticket .kind .stream-link-wrap{margin-left:auto;}
+  /* LIVEのチケット右上の「…」（チケット・配信・カレンダーのメニュー） */
+  .ticket .kind .live-more{margin-left:auto;flex:none;width:34px;height:24px;border-radius:99px;border:1px solid var(--accent);background:var(--paper);color:var(--accent);display:flex;align-items:center;justify-content:center;padding:0;cursor:pointer;}
+  .ticket .kind .live-more svg{width:16px;height:16px;fill:currentColor;stroke:none;}
   .ticket.is-hidden{opacity:.55;}
   .fav-badge{
     position:absolute;top:-8px;left:18px;z-index:2;width:26px;height:26px;border-radius:50%;
@@ -4529,7 +4532,8 @@ function renderListPage(type){
 
   var total = list.reduce(function(s,r){ return s+recAmount(type,r); },0);
   if(list.length>0){
-    html += '<div class="filter-note">'+dayNote+list.length+'件・合計 <b>'+fmtYen(total)+'</b></div>';
+    // LIVEタブでは金額（合計）を出さず、件数だけにする
+    html += '<div class="filter-note">'+dayNote+list.length+'件'+(type==="live" ? '' : '・合計 <b>'+fmtYen(total)+'</b>')+'</div>';
   }
 
   if(list.length===0){
@@ -4909,23 +4913,17 @@ function ticketHtml(type,r,withOshiTag){
   }
   // 配信URL（LIVE）・ONLINE物販のURL（物販）は http(s) のときだけリンクにする
   var streamLinkHtml = "";
+  var moreBtnHtml = "";
   if(type==="live"){
-    // 表記は件数に関係なく「配信を見る」。複数あるときは押すとメニューから選ぶ
-    var sUrls = recStreamUrls(r);
-    if(sUrls.length===1){
-      streamLinkHtml = '<a href="'+escapeHtml(sUrls[0])+'" target="_blank" rel="noopener noreferrer" class="stream-link">配信を見る</a>';
-    } else if(sUrls.length>1){
-      streamLinkHtml = '<button type="button" class="stream-link stream-link-btn" data-action="stream-menu" data-id="'+r.id+'">配信を見る</button>';
-    }
-    var tUrl = safeWebUrl(r.ticketUrl);
-    if(tUrl){
-      streamLinkHtml = '<a href="'+escapeHtml(tUrl)+'" target="_blank" rel="noopener noreferrer" class="stream-link">チケットを見る</a>'
-        + (streamLinkHtml ? ' '+streamLinkHtml : '');
-    }
+    // チケット・配信・Googleカレンダーへの追加は、右上の「…」から開くメニューにまとめる
+    moreBtnHtml = '<button type="button" class="live-more" data-action="live-menu" data-id="'+r.id+'" title="チケット・配信・カレンダー" aria-label="チケット・配信・カレンダーのメニュー">'
+      + '<svg viewBox="0 0 24 24"><circle cx="5.5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18.5" cy="12" r="1.6"/></svg></button>';
   } else if(type==="goods" && safeWebUrl(r.shopUrl)){
     streamLinkHtml = '<a href="'+escapeHtml(safeWebUrl(r.shopUrl))+'" target="_blank" rel="noopener noreferrer" class="stream-link">購入ページを見る</a>';
   }
   var stubHasPhoto = (type==="live" || type==="goods") && !!r.photo;
+  // LIVEタブでは、チケット代などの金額を出さない
+  var hideAmt = type==="live" && state.view==="live";
   // LIVE・物販のカードは高さを固定し、はみ出す文字は1行で省略する
   var html = '<div class="ticket'+(type!=="cheki"?' fixed':'')+(r.hidden?' is-hidden':'')+'">'
     + '<div class="tape"></div>'
@@ -4935,21 +4933,18 @@ function ticketHtml(type,r,withOshiTag){
     + '<div class="main">'
     +   '<div class="kind"><span class="stamp">'+kindIcon(type)+KIND_LABEL[type]+'</span>'
     +     (type==="live" ? (function(v){ return '<span class="view-chip '+v+'">'+VIEWING_ICON[v]+(v==="stream"?"配信":"現地")+'</span>'; })(recViewing(r)) : '')
-    +     (r.tag?'<span class="tag-chip">'+escapeHtml(r.tag)+'</span>':'')+(streamLinkHtml? '<span class="stream-link-wrap">'+streamLinkHtml+'</span>' : '')+'</div>'
+    +     (r.tag?'<span class="tag-chip">'+escapeHtml(r.tag)+'</span>':'')+(streamLinkHtml? '<span class="stream-link-wrap">'+streamLinkHtml+'</span>' : '')+moreBtnHtml+'</div>'
     +   '<div class="title">'+escapeHtml(titleText)+'</div>'
     +   oshiLineHtml
     +   (type==="live"
-          ? '<div class="meta meta-venue"><span class="meta-venue-text">'+metaBits.join(" ・ ")+'</span>'
-            + '<a class="cal-btn" href="'+escapeHtml(googleCalendarUrl(r))+'" target="_blank" rel="noopener noreferrer" title="Googleカレンダーに追加">'
-            +   '<svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M8 3v4M16 3v4M12 12.5v5M9.5 15h5"/></svg>カレンダーに追加</a>'
-            + '</div>'
+          ? (metaBits.length ? '<div class="meta meta-venue"><span class="meta-venue-text">'+metaBits.join(" ・ ")+'</span></div>' : '')
           : (metaBits.length? '<div class="meta">'+metaBits.join(" ・ ")+'</div>' : ''))
     +   (r.memo? '<div class="memo">'+escapeHtml(r.memo)+'</div>' : '')
     + '</div>'
     + '<div class="stub'+(stubHasPhoto?' has-photo':'')+'"'+(stubHasPhoto?' style="'+DrivePhotos.bgStyle(r.photo, 'linear-gradient(175deg, rgba(20,17,13,.1), rgba(20,17,13,.62))')+'"':'')+'>'
     +   '<div class="day">'+day+'</div>'
     +   '<div class="ym">'+fmtYm(r.date)+'</div>'
-    +   (amt? '<div class="amt">'+fmtYen(amt)+'</div>' : '')
+    +   ((amt && !hideAmt)? '<div class="amt">'+fmtYen(amt)+'</div>' : '')
     + '</div>'
     + ((r.photo && type!=="cheki") ? '<button class="zoombtn" data-action="view-photo" data-type="'+type+'" data-id="'+r.id+'" title="写真を拡大" aria-label="写真を拡大">'
         + '<svg viewBox="0 0 24 24"><path d="M14 4h6v6"/><path d="M10 20H4v-6"/><path d="M20 4l-6.5 6.5"/><path d="M4 20l6.5-6.5"/></svg>'
@@ -7480,6 +7475,26 @@ function onAppClick(e){
     return;
   }
   if(action==="share-summary"){ shareSummaryImage(); return; }
+  if(action==="live-menu"){
+    var lr = state.live.find(function(r){ return r.id===el.getAttribute("data-id"); });
+    var lmenu = document.getElementById("streamMenu");
+    var lwasOpen = lmenu.style.display==="block" && lmenu.getAttribute("data-for")==="live:"+el.getAttribute("data-id");
+    lmenu.style.display = "none";
+    if(!lr || lwasOpen) return;
+    var items = [];
+    var tu = safeWebUrl(lr.ticketUrl);
+    if(tu) items.push('<a class="photo-menu-item" href="'+escapeHtml(tu)+'" target="_blank" rel="noopener noreferrer">チケットを見る</a>');
+    var su = recStreamUrls(lr);
+    su.forEach(function(u, i){
+      var host = u; try{ host = new URL(u).hostname.replace(/^www\./, ""); }catch(err){}
+      items.push('<a class="photo-menu-item" href="'+escapeHtml(u)+'" target="_blank" rel="noopener noreferrer">配信を見る'+(su.length>1 ? '（'+(i+1)+'）' : '')+'<span class="host">'+escapeHtml(host)+'</span></a>');
+    });
+    items.push('<a class="photo-menu-item" href="'+escapeHtml(googleCalendarUrl(lr))+'" target="_blank" rel="noopener noreferrer">Googleカレンダーに追加</a>');
+    lmenu.innerHTML = items.join("");
+    lmenu.setAttribute("data-for", "live:"+el.getAttribute("data-id"));
+    openPopoverNear(el, lmenu);
+    return;
+  }
   if(action==="stream-menu"){
     var sr = state.live.find(function(r){ return r.id===el.getAttribute("data-id"); });
     var menu = document.getElementById("streamMenu");
@@ -7615,7 +7630,7 @@ document.addEventListener("DOMContentLoaded", function(){
 
   var streamMenu = document.getElementById("streamMenu");
   document.addEventListener("click", function(e){
-    if(!e.target.closest("#streamMenu") && !e.target.closest('[data-action="stream-menu"]')) streamMenu.style.display = "none";
+    if(!e.target.closest("#streamMenu") && !e.target.closest('[data-action="stream-menu"]') && !e.target.closest('[data-action="live-menu"]')) streamMenu.style.display = "none";
     else if(e.target.closest("#streamMenu a")) streamMenu.style.display = "none";
     var wsm = document.getElementById("weekStartMenu");
     if(wsm && !e.target.closest("#weekStartMenu") && !e.target.closest('[data-action="week-start-menu"]')) wsm.style.display = "none";
