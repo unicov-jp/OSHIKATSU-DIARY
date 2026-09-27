@@ -1609,7 +1609,8 @@ var cloud = {
   lastPulledAt:null,  // 取得済みの最新 updated_at
   timer:null,
   busy:false,
-  again:false
+  again:false,
+  cacheStale:false    // 端末の控え（キャッシュ）が保存できなかった（容量不足など）
 };
 
 function userCacheKey(uid){ return LOCAL_KEY+":u:"+uid; }
@@ -1658,11 +1659,22 @@ function loadLocal(){
 }
 /* ログイン中はクラウドが正本なので、端末キャッシュの書き込みに失敗しても
    同期で保存されるためエラー表示しない。 */
+/* 端末の控えが保存できなかったとき（容量不足など）、古い控えを残すと、次に開いたときに
+   その古い内容がクラウドへ送り返され、新しい記録や写真を上書き・削除してしまう。
+   そこで古い控えは消し、同期の記録（どこまで一致しているか）も空にして、次回はクラウドから
+   全部取り直す（クラウドが正本）。 */
 function writeCache(){
   try{
     localStorage.setItem(currentDataKey(), JSON.stringify(snapshotData()));
+    if(cloud.user && cloud.cacheStale){ cloud.cacheStale = false; saveSyncMeta(); }
     return true;
-  }catch(e){ return false; }
+  }catch(e){
+    if(cloud.user){
+      try{ localStorage.removeItem(currentDataKey()); }catch(e2){}
+      if(!cloud.cacheStale){ cloud.cacheStale = true; saveSyncMeta(); }
+    }
+    return false;
+  }
 }
 function saveLocal(){
   var ok = writeCache();
@@ -1729,7 +1741,11 @@ function hasPendingChanges(){
 function saveSyncMeta(){
   if(!cloud.user) return;
   try{
-    localStorage.setItem(userSyncKey(cloud.user.id), JSON.stringify({
+    // 端末の控えが無い（保存できなかった）ときは、同期の記録も残さない（次回はクラウドから全部取り直す）
+    localStorage.setItem(userSyncKey(cloud.user.id), JSON.stringify(cloud.cacheStale ? {
+      hashes:{}, lastPulledAt:null,
+      lastSyncedAt:cloud.lastSyncedAt ? cloud.lastSyncedAt.toISOString() : null
+    } : {
       hashes:cloud.hashes, lastPulledAt:cloud.lastPulledAt,
       lastSyncedAt:cloud.lastSyncedAt ? cloud.lastSyncedAt.toISOString() : null
     }));
@@ -1946,6 +1962,11 @@ async function enterUserMode(user){
   applyAuthInfo(user);
   refreshAuthInfo();
   var meta = readStored(userSyncKey(user.id)) || {};
+  // 端末の控えが無いのに同期の記録だけ残っているときは使わない（空の端末の内容でクラウドを消さないため）
+  var hasCache = false;
+  try{ hasCache = localStorage.getItem(userCacheKey(user.id))!==null; }catch(e){}
+  if(!hasCache) meta = {};
+  cloud.cacheStale = false;
   cloud.hashes = meta.hashes || {};
   cloud.lastPulledAt = meta.lastPulledAt || null;
   cloud.lastSyncedAt = meta.lastSyncedAt ? new Date(meta.lastSyncedAt) : null;
@@ -3599,7 +3620,7 @@ function ticketHtml(type,r,withOshiTag){
     + '<div class="tape"></div>'
     + (r.favorite ? '<div class="fav-badge"><svg viewBox="0 0 24 24"><path d="M12 3l2.6 6 6.4.6-4.9 4.2 1.5 6.2L12 16.9 6.4 20l1.5-6.2-4.9-4.2 6.4-.6z"/></svg></div>' : '')
     // チェキは写真（左のチェキ）を押すと拡大する
-    + (type==="cheki" ? ('<div class="photo'+(r.photo?' zoomable':'')+'"'+(r.photo?' data-action="view-photo" data-type="cheki" data-id="'+r.id+'" role="button" tabindex="0" title="写真を拡大" aria-label="写真を拡大"':'')+'>'+(r.photo? '<img src="'+r.photo+'" alt="">' : '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.4"/><path d="M8 6l1-2h6l1 2"/></svg>')+'</div>') : '')
+    + (type==="cheki" ? (function(cp){ return '<div class="photo'+(cp?' zoomable':'')+'"'+(cp?' data-action="view-photo" data-type="cheki" data-id="'+r.id+'" role="button" tabindex="0" title="写真を拡大" aria-label="写真を拡大"':'')+'>'+(cp? '<img src="'+cp+'" alt="">' : '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.4"/><path d="M8 6l1-2h6l1 2"/></svg>')+'</div>'; })(recPhotos(r)[0]||null) : '')
     + '<div class="main">'
     +   '<div class="kind"><span class="stamp">'+kindIcon(type)+KIND_LABEL[type]+'</span>'
     +     (type==="live" ? (function(v){ return '<span class="view-chip '+v+'">'+VIEWING_ICON[v]+(v==="stream"?"配信":"現地")+'</span>'; })(recViewing(r)) : '')
@@ -5183,8 +5204,9 @@ function bindRecordForm(type,existingRec){
     }
     if(hasPhotoField){ rec.photo = chosenPhoto; }
     if(type==="cheki"){
+      // 写真は photos にだけ持つ（1枚目を photo にも入れると容量が倍になるため）
       rec.photos = ckPhotos.slice();
-      rec.photo = ckPhotos[0] || null;   // 以前の形式（1枚）とも互換
+      delete rec.photo;
       rec.count = Math.max(Number(rec.count)||1, ckPhotos.length, 1);
       // 1枚ごとのお気に入り：「お気に入り」を切り替えたときは全部そろえる。変えていなければ今の状態を枚数に合わせて残す
       if(existingRec && favOn===!!existingRec.favorite && Array.isArray(existingRec.favs)){
