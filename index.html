@@ -3166,13 +3166,13 @@ function renderListPage(type){
     return;
   }
 
-  // チェキは「お気に入り（ON/OFF）・ぜんぶ・人物名」の順に並べる
+  // チェキは「★（お気に入り。ON/OFF）・すべて・人物名」の順に並べる
   if(type==="cheki"){
     html += '<div class="oshi-pills">';
     html += '<button class="oshi-pill fav-pill '+(state.chekiFav?"on":"")+'" data-action="cheki-fav" aria-pressed="'+(state.chekiFav?"true":"false")+'" title="お気に入り" aria-label="お気に入り">'
       + '<svg viewBox="0 0 24 24"><path d="M12 3l2.6 6 6.4.6-4.9 4.2 1.5 6.2L12 16.9 6.4 20l1.5-6.2-4.9-4.2 6.4-.6z"/></svg></button>';
     if(visibleOshis().length>1){
-      html += '<button class="oshi-pill '+(state.filterOshiId==="all"?"on":"")+'" data-action="filter-oshi" data-id="all">ぜんぶ</button>';
+      html += '<button class="oshi-pill '+(state.filterOshiId==="all"?"on":"")+'" data-action="filter-oshi" data-id="all">すべて</button>';
       visibleOshis().forEach(function(o){
         html += '<button class="oshi-pill '+(state.filterOshiId===o.id?"on":"")+'" data-action="filter-oshi" data-id="'+o.id+'">'
           + '<span class="d" style="'+oshiSwatchStyle(o)+'"></span>'+escapeHtml(o.name)+'</button>';
