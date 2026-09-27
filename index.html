@@ -2996,7 +2996,7 @@ function aggregateByOshi(){
     var recs = allRecordsFlat().filter(function(item){ return recHasOshi(item.r, o.id); });
     // 参戦＝現地観戦のみ（配信で観たLIVEは数えない）
     var liveN = recs.filter(function(i){return i.type==="live" && recViewing(i.r)!=="stream";}).length;
-    var chekiN = recs.filter(function(i){return i.type==="cheki";}).reduce(function(s,i){return s+(Number(i.r.count)||1);},0);
+    var chekiN = recs.filter(function(i){return i.type==="cheki";}).length;   // チェキは1件＝1枚
     var goodsN = recs.filter(function(i){return i.type==="goods";}).reduce(function(s,i){return s+(Number(i.r.qty)||1);},0);
     var total = Math.round(recs.reduce(function(s,i){ return s+recAmountForOshi(i.type,i.r,o.id); },0));
     return {oshi:o, liveN:liveN, chekiN:chekiN, goodsN:goodsN, total:total, itemCount:recs.length};
@@ -3008,7 +3008,7 @@ function aggregateByEvent(){
     var name = (item.r.title || "").trim();
     if(!name) return;
     if(!map[name]) map[name] = {name:name, count:0, total:0};
-    map[name].count += (item.type==="cheki") ? (Number(item.r.count)||1) : (item.type==="goods" ? (Number(item.r.qty)||1) : 1);
+    map[name].count += (item.type==="goods") ? (Number(item.r.qty)||1) : 1;   // チェキは1件＝1枚
     map[name].total += recAmount(item.type,item.r);
   });
   return Object.keys(map).map(function(k){ return map[k]; }).sort(function(a,b){ return b.count-a.count; });
@@ -3505,7 +3505,6 @@ function ticketHtml(type,r,withOshiTag){
     // LIVEの詳細行は会場だけ（チケット種別・座席は一覧に出さない）。右端にGoogleカレンダー追加ボタン
     if(r.venue) metaBits.push('<a class="venue-link" href="'+escapeHtml(mapsUrlFor(r.venue, r.venuePlace))+'" target="_blank" rel="noopener noreferrer">'+escapeHtml(r.venue)+'</a>');
   } else if(type==="cheki"){
-    metaBits.push((Number(r.count)||1)+"枚");
     if(r.content) metaBits.push(escapeHtml(r.content));
   } else {
     if(r.item) metaBits.push(escapeHtml(r.item));
@@ -4309,10 +4308,8 @@ function recordFormHtml(type,rec){
   } else if(type==="cheki"){
     fields += recordPhotoFieldHtml("チェキ写真（任意）");
     fields += '<div class="field"><label>イベント名</label><input type="text" name="title" value="'+(rec?escapeHtml(rec.title||""):"")+'" required></div>';
-    fields += '<div class="field row2">'
-      + '<div><label>枚数（任意）</label><input type="number" name="count" min="1" value="'+(rec?rec.count||1:1)+'"></div>'
-      + '<div><label>合計金額（任意）</label><input type="number" name="price" min="0" value="'+(rec?rec.price||"":"")+'" placeholder="0"></div>'
-      + '</div>';
+    // チェキは1枚ずつ登録するので枚数の欄は出さない
+    fields += '<div class="field"><label>金額（任意）</label><input type="number" name="price" min="0" value="'+(rec?rec.price||"":"")+'" placeholder="0"></div>';
     fields += '<div class="field"><label>話した内容・会話メモ（任意）</label><input type="text" name="content" value="'+(rec?escapeHtml(rec.content||""):"")+'"></div>';
   } else {
     fields += recordPhotoFieldHtml("物販写真（任意）");
@@ -5022,6 +5019,7 @@ function bindRecordForm(type,existingRec){
     }
     if(rec.price!==undefined) rec.price = rec.price===""?0:Number(rec.price);
     if(rec.count!==undefined) rec.count = rec.count===""?1:Number(rec.count);
+    if(type==="cheki") rec.count = 1;
     if(rec.qty!==undefined) rec.qty = rec.qty===""?1:Number(rec.qty);
     rec.oshiId = oshiRows[0].oshiId;
     rec.groupId = oshiRows[0].groupId || "";
