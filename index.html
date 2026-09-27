@@ -4603,9 +4603,9 @@ function oshiRowHtml(o, idx, n){
     + '</div>';
 }
 
-function renderOshiPage(){
-  var html = '<div class="page-head"><h1 class="mincho">マイページ</h1></div>';
-  html += '<div class="section-label">推しの管理</div>';
+/* 推しの管理（右上のプルダウンの「すべて管理」から開く独立ページ） */
+function renderOshisPage(){
+  var html = '<div class="page-head"><h1 class="mincho">推しの管理</h1></div>';
   html += '<button class="btn primary block" data-action="add-oshi" style="margin-bottom:18px;">＋ 新しい推しを登録</button>';
 
   if(state.oshis.length===0){
@@ -4632,12 +4632,17 @@ function renderOshiPage(){
       }
     }
   }
+  document.getElementById("main").innerHTML = html;
+  if(state.oshis.length>1) bindOshiPageDragDrop();
+}
+/* マイページ：チェキの表示・アカウント（推しの一覧は「推しの管理」ページへ） */
+function renderOshiPage(){
+  var html = '<div class="page-head"><h1 class="mincho">マイページ</h1></div>';
   html += chekiViewSettingHtml();
   html += accountSectionHtml();
   html += '<p class="legal-links"><a href="privacy.html">プライバシーポリシー</a></p>';
   document.getElementById("main").innerHTML = html;
   bindBackupImport();
-  if(state.oshis.length>1) bindOshiPageDragDrop();
 }
 /* Lets the person drag an oshi-row onto another to swap their order, as an
    alternative to the up/down buttons rendered in each row. */
@@ -4679,7 +4684,7 @@ function reorderOshi(fromId, toId){
   var moved = state.oshis.splice(fromIdx,1)[0];
   state.oshis.splice(toIdx,0,moved);
   saveLocal();
-  renderOshiPage();
+  render();
 }
 /* 推しを非表示／表示に切り替える。お気に入りの推しを隠したときは、
    表示中のほかの推しをお気に入りにする。 */
@@ -4708,7 +4713,7 @@ function moveOshiStep(id, dir){
   var moved = state.oshis.splice(idx,1)[0];
   state.oshis.splice(target,0,moved);
   saveLocal();
-  renderOshiPage();
+  render();
 }
 
 /* Rebuilds the favorite-oshi dropdown under the top chip so it always
@@ -4795,6 +4800,7 @@ function render(){
 
   if(state.view==="home") renderHome();
   else if(state.view==="oshi") renderOshiPage();
+  else if(state.view==="oshis") renderOshisPage();
   else if(state.view==="stats") renderStatsPage();
   else renderListPage(state.view);
   DrivePhotos.afterRender();   // Googleドライブの写真を入れる
@@ -6495,7 +6501,7 @@ function onAppClick(e){
   if(action==="set-active"){ setActiveOshi(el.getAttribute("data-id")).then(render); return; }
   if(action==="move-oshi"){ moveOshiStep(el.getAttribute("data-id"), el.getAttribute("data-dir")); return; }
   if(action==="toggle-oshi-hidden"){ toggleOshiHidden(el.getAttribute("data-id")); return; }
-  if(action==="toggle-hidden-oshis"){ state.showHiddenOshis = !state.showHiddenOshis; renderOshiPage(); return; }
+  if(action==="toggle-hidden-oshis"){ state.showHiddenOshis = !state.showHiddenOshis; render(); return; }
   if(action==="filter-oshi"){ state.filterOshiId = el.getAttribute("data-id"); render(); return; }
   if(action==="toggle-hidden"){ state.showHidden = !state.showHidden; render(); return; }
   if(action==="toggle-cheki-fav"){
@@ -6647,7 +6653,7 @@ document.addEventListener("DOMContentLoaded", function(){
     }
     if(e.target.closest('[data-action="goto-oshi-page"]')){
       topChipMenu.style.display = "none";
-      state.view = "oshi";
+      state.view = "oshis";
       render();
       return;
     }
@@ -6671,6 +6677,7 @@ document.addEventListener("DOMContentLoaded", function(){
 
   document.getElementById("fabBtn").addEventListener("click", function(){
     var v = state.view;
+    if(v==="oshis"){ openOshiSheet(null); return; }   // 推しの管理ページでは推しを登録
     var type = (v==="live"||v==="cheki"||v==="goods") ? v : "live";
     openRecordSheet(type,null);
   });
