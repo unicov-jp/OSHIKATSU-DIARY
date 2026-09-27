@@ -95,7 +95,7 @@
   .oshi-chip .name{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .oshi-chip .chev{font-size:9px;color:var(--ink-soft);}
 
-  main{flex:1;padding:16px 18px calc(96px + var(--safe-b));}
+  main{flex:1;padding:16px 18px calc(150px + var(--safe-b));}
 
   /* ---------- bottom nav ---------- */
   nav.tabs{
@@ -406,6 +406,10 @@
     box-shadow:0 6px 16px rgba(0,0,0,.18);
   }
   .fab svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2;}
+  /* ＋ボタンは押したまま動かすと好きな位置に置ける（位置は端末に保存） */
+  .fab{touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}
+  .fab.moved{right:auto !important;bottom:auto !important;}
+  .fab.dragging{transform:scale(1.08);box-shadow:0 12px 26px rgba(0,0,0,.28);transition:none;cursor:grabbing;}
   /* FAB stays visible even with no active oshi; tapping it guides the user
      to register one first (see openRecordSheet). */
 
@@ -4988,6 +4992,74 @@ function closeSheet(){
    "fixed" ignores document flow entirely, JS has to place them itself, next
    to whichever icon/button opened them, clamped so they never run off the
    right edge of the screen. */
+/* ＋ボタン（FAB）の移動：押したまま8px以上動かすとドラッグになり、離した位置に置く。
+   位置は画面の幅・高さに対する割合で端末に保存し（oshikatsu_fab_pos）、画面の大きさが変わっても画面内に収める。
+   動かさずに離したときは、これまでどおり記録の追加を開く。 */
+var FAB_POS_KEY = "oshikatsu_fab_pos";
+var fabJustDragged = false;
+function fabBounds(fab){
+  var m = 8, w = fab.offsetWidth || 52, h = fab.offsetHeight || 52;
+  var app = document.getElementById("app"), r = app ? app.getBoundingClientRect() : null;
+  var left = m, right = window.innerWidth - w - m;
+  if(r && r.width < window.innerWidth - 1){ left = Math.max(m, r.left + m); right = Math.min(right, r.right - w - m); }
+  // 下のタブの上まで（起動中でタブがまだ出ていないときは、タブの高さを見込む）
+  var nav = document.querySelector("nav.tabs"), navTop = nav ? nav.getBoundingClientRect().top : 0;
+  if(!(navTop > h)) navTop = window.innerHeight - 72;
+  var bottom = navTop - h - m;
+  return {minX:left, maxX:Math.max(left, right), minY:m, maxY:Math.max(m, bottom)};
+}
+function placeFab(fab, x, y){
+  var b = fabBounds(fab);
+  x = clamp(x, b.minX, b.maxX); y = clamp(y, b.minY, b.maxY);
+  fab.classList.add("moved");
+  fab.style.left = x + "px";
+  fab.style.top = y + "px";
+  return {x:x, y:y};
+}
+function applySavedFabPos(fab){
+  var p = readStored(FAB_POS_KEY);
+  if(!p || typeof p.rx!=="number" || typeof p.ry!=="number"){ fab.classList.remove("moved"); fab.style.left = fab.style.top = ""; return; }
+  placeFab(fab, p.rx * window.innerWidth, p.ry * window.innerHeight);
+}
+function bindFabDrag(fab){
+  if(!fab) return;
+  var start = null, dragging = false, offX = 0, offY = 0;
+  fab.addEventListener("pointerdown", function(e){
+    if(e.button!==undefined && e.button!==0) return;
+    var r = fab.getBoundingClientRect();
+    start = {x:e.clientX, y:e.clientY, id:e.pointerId};
+    offX = e.clientX - r.left; offY = e.clientY - r.top;
+    dragging = false;
+    // 指がボタンの外へ出ても動きを受け取れるようにする
+    try{ fab.setPointerCapture(e.pointerId); }catch(err){}
+  });
+  fab.addEventListener("pointermove", function(e){
+    if(!start || e.pointerId!==start.id) return;
+    if(!dragging){
+      if(Math.abs(e.clientX-start.x) + Math.abs(e.clientY-start.y) < 8) return;
+      dragging = true;
+      fab.classList.add("dragging");
+    }
+    e.preventDefault();
+    placeFab(fab, e.clientX - offX, e.clientY - offY);
+  });
+  function end(e){
+    if(!start || (e && e.pointerId!==start.id)) return;
+    start = null;
+    if(!dragging) return;
+    dragging = false;
+    fab.classList.remove("dragging");
+    fabJustDragged = true;
+    setTimeout(function(){ fabJustDragged = false; }, 400);
+    var r = fab.getBoundingClientRect();
+    try{ localStorage.setItem(FAB_POS_KEY, JSON.stringify({rx:r.left/window.innerWidth, ry:r.top/window.innerHeight})); }catch(err){}
+  }
+  fab.addEventListener("pointerup", end);
+  fab.addEventListener("pointercancel", end);
+  fab.addEventListener("contextmenu", function(e){ e.preventDefault(); });
+  window.addEventListener("resize", function(){ applySavedFabPos(fab); });
+  applySavedFabPos(fab);
+}
 function openPopoverNear(anchorEl, popEl){
   popEl.style.display = "block";
   var rect = anchorEl.getBoundingClientRect();
@@ -7063,7 +7135,9 @@ document.addEventListener("DOMContentLoaded", function(){
     });
   });
 
+  bindFabDrag(document.getElementById("fabBtn"));
   document.getElementById("fabBtn").addEventListener("click", function(){
+    if(fabJustDragged){ fabJustDragged = false; return; }
     var v = state.view;
     if(v==="oshis"){ openOshiSheet(null); return; }   // 推しの管理ページでは推しを登録
     var type = (v==="live"||v==="cheki"||v==="goods") ? v : "live";

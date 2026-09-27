@@ -23,6 +23,8 @@ python3 -m http.server 8000
 
 **ログイン必須**です。未ログイン時はログイン画面だけを表示し、タブ・＋ボタン・ヘッダーの操作は隠します（`render()` の先頭で `renderAuthGate()` に切り替え、`#app.auth-gate` のCSSで非表示）。ログインすると記録が Supabase に保存され、複数の端末で同期されます。接続情報を取得できない場合（`index.html` をファイルとして直接開いた場合を含む）は、接続できない旨と再読み込みボタンを表示します。
 
+右下の＋ボタン（記録の追加）は、押したまま動かすと好きな位置に置ける（`bindFabDrag`）。8px以上動かすとドラッグになり、動かさずに離すとこれまでどおり追加の画面を開く。位置は画面に対する割合で端末に保存し（`localStorage` の `oshikatsu_fab_pos`。端末ごと・同期しない）、画面の大きさが変わっても画面内（下のタブより上）に収める。一覧の最後のカードが＋ボタンに隠れないよう、ページの下に余白を取っている。
+
 - **ログイン方法**：メールアドレス＋パスワード（新規登録・パスワード再設定あり）、Googleアカウント
 - **接続情報**：`api/config.js`（Vercel Serverless Function）が、Vercel の環境変数 `NEXT_PUBLIC_SUPABASE_URL` と `NEXT_PUBLIC_SUPABASE_ANON_KEY`（または `..._PUBLISHABLE_KEY`）を `/api/config` で返します。service_role / secret キーは返さないようにしています。
 - **ライブラリ**：`vendor/supabase-js-2.117.2.js`（@supabase/supabase-js の UMD 版を同梱。CDN には依存しません）
