@@ -523,16 +523,16 @@
   .account-list{background:var(--card);border:1px solid var(--line);border-radius:6px;overflow:hidden;}
   .account-row{display:flex;align-items:center;gap:10px;min-height:52px;padding:10px 14px;}
   .account-row + .account-row{border-top:1px solid var(--line);}
-  .account-row-label{flex:none;width:7.5em;font-size:12px;color:var(--ink-soft);font-weight:600;}
+  .account-row-label{flex:none;width:8.9em;font-size:12px;color:var(--ink-soft);font-weight:600;white-space:nowrap;}
   .account-row-value{flex:1;min-width:0;font-size:13.5px;overflow-wrap:anywhere;}
   .account-row-value.muted{color:var(--ink-soft);}
-  .account-row-sub{display:block;font-size:10.5px;color:var(--ink-soft);margin-top:1px;}
+  .account-row-sub{display:block;font-size:10.5px;color:var(--ink-soft);margin-top:1px;white-space:nowrap;}
   .account-row-btns{display:flex;gap:6px;flex:none;}
   .account-row-btn:disabled{opacity:.45;cursor:default;}
   .account-row-btn{
     flex:none;border:1px solid var(--line-strong);background:var(--paper);color:var(--text);
     border-radius:3px;font-size:12px;font-weight:600;padding:6px 4px;cursor:pointer;font-family:inherit;
-    width:68px;text-align:center;white-space:nowrap;   /* 変更・連携する・接続・保存などの横幅をそろえる */
+    width:60px;text-align:center;white-space:nowrap;   /* 変更・連携する・接続・保存などの横幅をそろえる */
   }
   .btn.account-logout{margin-top:12px;border-color:var(--line);color:#B23A3A;background:transparent;}
   .btn.google-btn{background:#FFFFFF;color:#1F1F1F;border-color:var(--line-strong);gap:10px;padding:11px 16px;}
@@ -2583,6 +2583,7 @@ function googleStorageRowsHtml(){
   var on = ready && DrivePhotos.connected();
   var last = DrivePhotos.lastBackupAt();
   var ever = DrivePhotos.everConnected();
+  var calSet = !!(state.calendarTitle || state.calendarDesc);   // カレンダーの登録ルールを自分で決めたか
   var status = !ready ? "未設定" : on ? "接続中" : ever ? "再接続が必要" : "未接続";
   var dis = ready ? '' : ' disabled';
   return '<div class="account-row">'
@@ -2591,8 +2592,13 @@ function googleStorageRowsHtml(){
     +   (on ? '' : '<button type="button" class="account-row-btn" data-action="gdrive-connect"'+dis+'>'+(ever?'再接続':'接続')+'</button>')
     + '</div>'
     + '<div class="account-row">'
+    +   '<span class="account-row-label">Googleカレンダー</span>'
+    +   '<span class="account-row-value'+(calSet?'':' muted')+'">'+(calSet ? '設定済み' : '未設定')+'</span>'
+    +   '<button type="button" class="account-row-btn" data-action="calendar-setting">'+(calSet ? '変更' : '接続')+'</button>'
+    + '</div>'
+    + '<div class="account-row">'
     +   '<span class="account-row-label">バックアップ</span>'
-    +   '<span class="account-row-value'+(last?'':' muted')+'">'+(last ? fmtDateTime(last) : 'なし')+'<small class="account-row-sub">毎日自動</small></span>'
+    +   '<span class="account-row-value'+(last?'':' muted')+'">'+(last ? fmtDateTime(last).slice(5) : 'なし')+'<small class="account-row-sub">毎日自動</small></span>'
     +   '<span class="account-row-btns">'
     +     '<button type="button" class="account-row-btn" data-action="backup-drive-save"'+dis+'>保存</button>'
     +     '<button type="button" class="account-row-btn" data-action="backup-drive-restore"'+dis+'>戻す</button>'
@@ -3016,8 +3022,9 @@ var GOOGLE_ICON = '<svg class="google-icon" viewBox="0 0 48 48" aria-hidden="tru
   + '</svg>';
 
 /* マイページ：Googleカレンダーに追加する予定のタイトルの形 */
+/* アカウントのカードの「Googleカレンダー」→ シートで開く（タイトル・説明の登録ルール） */
 function calendarSettingHtml(){
-  return '<div class="section-label">Googleカレンダー</div>'
+  return '<h2 class="mincho">Googleカレンダー</h2>'
     + '<div class="cal-setting">'
     +   '<label for="calTitleInput">タイトル</label>'
     +   '<input type="text" id="calTitleInput" maxlength="80" autocomplete="off" value="'+escapeHtml(state.calendarTitle||"")+'">'
@@ -3052,6 +3059,8 @@ function bindCalendarSetting(){
     saveLocal();
     saveBtn.disabled = true;
     toast("カレンダーの設定を保存しました");
+    closeSheet();
+    render();
   });
   document.querySelectorAll("[data-cal-token]").forEach(function(b){
     // タップで入力先の欄のカーソル位置に {項目} を差し込む
@@ -4624,11 +4633,9 @@ function renderOshiPage(){
     }
   }
   html += chekiViewSettingHtml();
-  html += calendarSettingHtml();
   html += accountSectionHtml();
   html += '<p class="legal-links"><a href="privacy.html">プライバシーポリシー</a></p>';
   document.getElementById("main").innerHTML = html;
-  bindCalendarSetting();
   bindBackupImport();
   if(state.oshis.length>1) bindOshiPageDragDrop();
 }
@@ -6515,6 +6522,7 @@ function onAppClick(e){
   }
   if(action==="cheki-cal-day"){ state.chekiCalDate = el.getAttribute("data-date"); render(); return; }
   if(action==="add-cheki"){ openRecordSheet("cheki", null); return; }
+  if(action==="calendar-setting"){ openSheet(calendarSettingHtml()); bindCalendarSetting(); return; }
   if(action==="backup-export"){ exportBackup(); return; }
   if(action==="backup-drive-save"){ saveBackupToDrive(); return; }
   if(action==="backup-drive-restore"){ openDriveBackups(); return; }
