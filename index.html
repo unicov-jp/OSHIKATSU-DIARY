@@ -832,6 +832,16 @@
   .ck-day-icon svg{width:46%;stroke:currentColor;fill:none;stroke-width:1.5;}
   .ck-day.on{box-shadow:0 0 0 2px var(--accent);}
   .ck-cal-sel{display:flex;flex-direction:column;gap:10px;}
+  /* LIVE記録のカレンダー（チェキのカレンダーと同じ見た目） */
+  .live-cal .ck-day{aspect-ratio:1/1;}
+  .live-cal-title{display:flex;align-items:baseline;gap:8px;}
+  .live-cal-title span{font-size:11px;color:var(--ink-soft);}
+  .ck-day.today{box-shadow:inset 0 0 0 1.5px var(--line-strong);}
+  .ck-day.today i{color:var(--heading);font-weight:700;}
+  .ck-day.has.on{box-shadow:0 0 0 2px var(--accent);}
+  .ck-day em{position:absolute;right:3px;bottom:3px;z-index:1;min-width:15px;height:15px;border-radius:99px;background:var(--accent);color:#FFFFFF;font-style:normal;font-size:9px;font-weight:700;line-height:15px;text-align:center;padding:0 3px;}
+  .live-cal-day-note{display:inline-flex;align-items:center;gap:6px;margin-right:8px;font-weight:700;color:var(--heading);}
+  .live-cal-day-note button{border:1px solid var(--accent);color:var(--accent);background:var(--paper);border-radius:99px;padding:2px 9px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;}
   /* 詳しいカード（カレンダー・スワイプ） */
   .ck-detail{position:relative;display:flex;gap:12px;background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:10px;min-width:0;}
   .ck-detail > .ck-ph-wrap{flex:none;width:78px;background:#FFFFFF;padding:4px 4px 12px;box-shadow:0 4px 10px -5px rgba(33,28,23,.4);transform:rotate(-2deg);align-self:flex-start;}
@@ -1259,7 +1269,9 @@ var state = {
   chekiFav:false,        // チェキ記録を「お気に入り」だけにするか（ON/OFF）
   chekiBinderPage:0,     // バインダー表示のページ
   chekiCalMonth:null,    // カレンダー表示の月（YYYY-MM）
-  chekiCalDate:null,     // カレンダー表示で選んだ日     // login | signup | reset (ログイン画面の表示モード)
+  chekiCalDate:null,     // カレンダー表示で選んだ日
+  liveCalMonth:null,     // LIVE記録のカレンダーの月（YYYY-MM）
+  liveCalDate:null,      // LIVE記録のカレンダーで選んだ日（その日のLIVEだけを下に並べる）     // login | signup | reset (ログイン画面の表示モード)
   ready:false
 };
 var storageMode = "local";
@@ -4031,9 +4043,22 @@ function renderListPage(type){
     return;
   }
 
+  // LIVEは、チケットの上にカレンダーを出す。日を押すとその日のLIVEだけを下に並べる
+  var dayNote = "";
+  if(type==="live"){
+    html += liveCalendarHtml(list);
+    var ld = state.liveCalDate;
+    if(ld && list.some(function(r){ return r.date===ld; })){
+      list = list.filter(function(r){ return r.date===ld; });
+      var ldp = ld.split("-");
+      dayNote = '<span class="live-cal-day-note">'+Number(ldp[1])+'月'+Number(ldp[2])+'日のLIVE'
+        + '<button type="button" data-action="live-cal-clear">すべて表示</button></span>';
+    }
+  }
+
   var total = list.reduce(function(s,r){ return s+recAmount(type,r); },0);
   if(list.length>0){
-    html += '<div class="filter-note">'+list.length+'件・合計 <b>'+fmtYen(total)+'</b></div>';
+    html += '<div class="filter-note">'+dayNote+list.length+'件・合計 <b>'+fmtYen(total)+'</b></div>';
   }
 
   if(list.length===0){
@@ -4290,6 +4315,51 @@ function chekiCalendarHtml(items){
     html += '<div class="empty-state"><p>この月のチェキはありません。</p></div>';
   }
   return html;
+}
+/* LIVE記録のカレンダー：月ごとにLIVEのある日を示す（マスの背景はLIVEの写真、なければ推しの写真、どちらもなければLIVEのアイコン）。
+   はじめは今月を出す。日を押すと、その日のLIVEだけを下のチケットに並べる（もう一度押すと元に戻る）。 */
+function liveCalendarHtml(items){
+  var byDate = {};
+  items.forEach(function(r){ if(r.date){ (byDate[r.date] = byDate[r.date] || []).push(r); } });
+  var now = new Date();
+  var today = now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0")+"-"+String(now.getDate()).padStart(2,"0");
+  var month = state.liveCalMonth || today.slice(0,7);
+  state.liveCalMonth = month;
+  var y = Number(month.slice(0,4)), m = Number(month.slice(5,7));
+  var startWeekday = new Date(y, m-1, 1).getDay();
+  var daysInMonth = new Date(y, m, 0).getDate();
+  var count = Object.keys(byDate).filter(function(d){ return d.slice(0,7)===month; })
+    .reduce(function(n, d){ return n + byDate[d].length; }, 0);
+  var html = '<div class="ck-cal live-cal">'
+    + '<div class="ck-cal-head">'
+    +   '<button type="button" class="ck-nav" data-action="live-cal-month" data-d="-1" aria-label="前の月">‹</button>'
+    +   '<div class="live-cal-title"><b class="mincho">'+y+'. '+String(m).padStart(2,"0")+'</b><span>'+count+'件</span></div>'
+    +   '<button type="button" class="ck-nav" data-action="live-cal-month" data-d="1" aria-label="次の月">›</button>'
+    + '</div>'
+    + '<div class="ck-cal-week">'+["日","月","火","水","木","金","土"].map(function(w){ return '<span>'+w+'</span>'; }).join("")+'</div>'
+    + '<div class="ck-cal-grid">';
+  for(var i=0;i<startWeekday;i++) html += '<span></span>';
+  for(var d=1; d<=daysInMonth; d++){
+    var ds = month+"-"+String(d).padStart(2,"0");
+    var rs = byDate[ds];
+    var cls = 'ck-day'+(ds===today?' today':'');
+    if(!rs){ html += '<span class="'+cls+'"><i>'+d+'</i></span>'; continue; }
+    // マスの背景：LIVEの写真 → 推しの写真 → LIVEのアイコンの順に使う
+    var withPhoto = rs.filter(function(r){ return r.photo; })[0];
+    var bgRef = withPhoto ? withPhoto.photo : null;
+    if(!bgRef){
+      rs.some(function(r){
+        return recOshiEntries(r).some(function(e){ var o = getOshi(e.oshiId); if(o && o.photo){ bgRef = o.photo; return true; } return false; });
+      });
+    }
+    withPhoto = bgRef ? {photo:bgRef} : null;
+    html += '<button type="button" class="'+cls+' has'+(ds===state.liveCalDate?' on':'')+'" data-action="live-cal-day" data-date="'+ds+'" aria-label="'+m+'月'+d+'日のLIVE（'+rs.length+'件）">'
+      + (withPhoto ? '<img '+DrivePhotos.imgAttrs(withPhoto.photo)+' alt="" loading="lazy">' : '<span class="ck-day-icon">'+kindIcon("live")+'</span>')
+      + '<i>'+d+'</i>'
+      + (rs.length>1 ? '<em>'+rs.length+'</em>' : '')
+      + '</button>';
+  }
+  return html + '</div></div>';
 }
 function chekiSwipeHtml(items){
   return '<div class="ck-swipe" id="ckSwipe">'
@@ -6186,8 +6256,21 @@ function bindHomeReorder(){
 }
 
 /* ============ ホームのギャラリー（推しごとの写真） ============
-   推しの gallery（写真の配列。新しい順）を横にスワイプして見る。写真を押すと拡大。
+   推しの gallery（写真の配列。新しい順）をシャッフルして横にスワイプで見る。写真を押すと拡大。
    Googleドライブに接続していれば、追加した写真はすぐドライブへ保存し、記録には置き場所だけを入れる。 */
+// 写真の並びはアプリを開くたびにシャッフルする。開いている間は並びを保ち、追加した写真は先頭に出す。
+var galShuffleKey = {};
+function galleryOrder(g){
+  return g.map(function(ref, i){
+    if(!(ref in galShuffleKey)) galShuffleKey[ref] = Math.random();
+    return {ref:ref, i:i, k:galShuffleKey[ref]};
+  }).sort(function(a, b){ return a.k - b.k; });
+}
+function galleryPutFirst(refs){
+  var min = 0;
+  Object.keys(galShuffleKey).forEach(function(r){ if(galShuffleKey[r] < min) min = galShuffleKey[r]; });
+  refs.forEach(function(ref, n){ galShuffleKey[ref] = min - refs.length + n; });
+}
 var GAL_CAMERA = '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.4"/><path d="M8 6l1-2h6l1 2"/></svg>';
 function galleryHtml(oshi){
   var g = Array.isArray(oshi.gallery) ? oshi.gallery : [];
@@ -6201,7 +6284,8 @@ function galleryHtml(oshi){
     + '</div>';
   if(g.length){
     html += '<div class="gal-swipe'+(g.length===1?' single':'')+'" id="galSwipe">'
-      + g.map(function(ref, i){
+      + galleryOrder(g).map(function(it){
+          var ref = it.ref, i = it.i;
           return '<div class="gal-slide">'
             + '<div class="gal-ph" data-action="gallery-view" data-i="'+i+'" role="button" tabindex="0" aria-label="写真を拡大"><img class="gal-bg" '+DrivePhotos.imgAttrs(ref)+' alt="" aria-hidden="true" loading="lazy"><img '+DrivePhotos.imgAttrs(ref)+' alt="" loading="lazy"></div>'
             + '<button type="button" class="gal-del" data-action="gallery-del" data-i="'+i+'" title="この写真を外す" aria-label="この写真を外す"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>'
@@ -6267,6 +6351,7 @@ async function addGalleryFiles(oshiId, files){
   var o = getOshi(oshiId);
   if(!o) return;
   var gal = Array.isArray(o.gallery) ? o.gallery.slice() : [];
+  galleryPutFirst(added);
   await persistOshi(Object.assign({}, o, {gallery: added.reverse().concat(gal)}));   // 新しい順
   DrivePhotos.migrateSoon();
   toast(added.length+"枚の写真を追加しました");
@@ -6734,6 +6819,19 @@ function onAppClick(e){
     state.chekiCalDate = null;
     render(); return;
   }
+  if(action==="live-cal-month"){
+    var lm = (state.liveCalMonth || "").split("-");
+    var lmd = new Date(Number(lm[0]), Number(lm[1])-1+Number(el.getAttribute("data-d")), 1);
+    state.liveCalMonth = lmd.getFullYear()+"-"+String(lmd.getMonth()+1).padStart(2,"0");
+    state.liveCalDate = null;
+    render(); return;
+  }
+  if(action==="live-cal-day"){
+    var lday = el.getAttribute("data-date");
+    state.liveCalDate = state.liveCalDate===lday ? null : lday;
+    render(); return;
+  }
+  if(action==="live-cal-clear"){ state.liveCalDate = null; render(); return; }
   if(action==="cheki-cal-day"){ state.chekiCalDate = el.getAttribute("data-date"); render(); return; }
   if(action==="add-cheki"){ openRecordSheet("cheki", null); return; }
   if(action==="gallery-add"){
