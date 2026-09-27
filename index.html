@@ -3310,6 +3310,21 @@ function chekiSource(r){
   });
   return hitGoods ? "goods" : "";
 }
+/* チェキに出す名前。物販から来たチェキは商品名にする（以前の、イベント名・購入先で
+   作られたものは、同じ日付・同じ名前・同じ推しの物販が1つに決まればその商品名を出す） */
+function chekiTitle(r){
+  var t = (r.title||"").trim();
+  if(chekiSource(r)==="goods" && r.date){
+    var items = [];
+    state.goods.forEach(function(x){
+      var it = (x.item||"").trim();
+      if(it && x.date===r.date && (it===t || (x.title||"").trim()===t) && recHasOshi(x, r.oshiId) && items.indexOf(it)<0) items.push(it);
+    });
+    // 同じ日に同じ購入先で複数の商品があるときは、どれか決められないので名前のまま
+    if(items.length===1) return items[0];
+  }
+  return t;
+}
 // 左上：LIVE・物販のアイコンと枚数
 function chekiTopLeft(r){
   var src = chekiSource(r);
@@ -3328,7 +3343,7 @@ function chekiPolaroidHtml(r, withYear){
     + '<span class="ck-tape" style="'+chekiTapeStyle(r)+'"></span>'
     + '<div class="ck-ph-wrap">'+chekiPhotoHtml(r)+'</div>'
     + '<div class="ck-cap">'
-    +   '<div class="t">'+escapeHtml(r.title||"(無題)")+'</div>'
+    +   '<div class="t">'+escapeHtml(chekiTitle(r)||"(無題)")+'</div>'
     +   '<div class="m"><span>'+chekiDate(r, withYear)+'</span></div>'
     + '</div>'
     + chekiTopLeft(r) + chekiFavBtn(r) + chekiEditBtn(r)
@@ -3341,7 +3356,7 @@ function chekiDetailHtml(r, big){
   return '<div class="ck-detail'+(big?' big':'')+(r.hidden?' is-hidden':'')+'">'
     + '<div class="ck-ph-wrap">'+chekiPhotoHtml(r)+'</div>'
     + '<div class="ck-detail-body">'
-    +   '<div class="t'+(big?' mincho':'')+'">'+escapeHtml(r.title||"(無題)")+'</div>'
+    +   '<div class="t'+(big?' mincho':'')+'">'+escapeHtml(chekiTitle(r)||"(無題)")+'</div>'
     +   (label ? '<div class="g">'+escapeHtml(label)+'</div>' : '')
     +   '<div class="m"><span>'+chekiDate(r, true)+'</span><span>'+n+'枚</span></div>'
     +   (r.content ? '<div class="talk">'+escapeHtml(r.content)+'</div>' : '')
@@ -3414,7 +3429,7 @@ function chekiBinderHtml(items){
   slice.forEach(function(r){
     html += '<div class="ck-pocket'+(r.hidden?' is-hidden':'')+'">'
       + '<div class="ck-ph-wrap">'+chekiPhotoHtml(r)+'</div>'
-      + '<div class="cap">'+chekiDate(r, false)+' '+escapeHtml(r.title||"")+'</div>'
+      + '<div class="cap">'+chekiDate(r, false)+' '+escapeHtml(chekiTitle(r))+'</div>'
       + chekiTopLeft(r) + chekiFavBtn(r) + chekiEditBtn(r)
       + '</div>';
   });
@@ -4844,15 +4859,15 @@ function bindRecordForm(type,existingRec){
     oshiRows.splice(Number(btn.getAttribute("data-remove-row")), 1);
     renderOshiRows();
   });
-  /* チェキボタン：この行の推し・グループと、LIVEの日付・公演名（物販は日付・イベント名、
-     なければ商品名）でチェキの記録を追加する */
+  /* チェキボタン：この行の推し・グループと、LIVEの日付・公演名（物販は日付・商品名、
+     なければイベント名・購入先）でチェキの記録を追加する */
   async function addChekiFromRecord(row){
     if(!row) return;
     var title = (form.querySelector('[name="title"]').value||"").trim();
-    if(!title && type==="goods") title = (form.querySelector('[name="item"]').value||"").trim();
+    if(type==="goods") title = (form.querySelector('[name="item"]').value||"").trim() || title;
     var date = form.querySelector('[name="date"]').value;
     if(!title){
-      if(type==="goods"){ toast("先にイベント名・購入先か商品名を入力してください"); form.querySelector('[name="title"]').focus(); }
+      if(type==="goods"){ toast("先に商品名を入力してください"); form.querySelector('[name="item"]').focus(); }
       else { toast("先に公演・ツアー名を入力してください"); form.querySelector('[name="title"]').focus(); }
       return;
     }
