@@ -712,7 +712,7 @@
   .cal-setting-actions{display:flex;justify-content:flex-end;margin-top:10px;}
   .cal-setting-actions .btn{padding:8px 22px;}
   /* ---------- チェキ記録（ギャラリー・アルバム・バインダー・カレンダー・スワイプ） ---------- */
-  .ck-sum{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:8px 0 12px;}
+  .ck-sum{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:8px 0 12px;}
   .ck-sum div{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:8px 10px;min-width:0;}
   .ck-sum b{display:block;font-family:"Shippori Mincho",serif;font-size:20px;font-weight:800;color:var(--heading);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .ck-sum span{font-size:10.5px;color:var(--ink-soft);}
@@ -1161,7 +1161,7 @@ var state = {
   calendarTitle:"",      // Googleカレンダーの予定タイトルの形（空なら {公演名}）
   calendarDesc:"",       // Googleカレンダーの予定の説明の形（空なら標準の説明）
   chekiView:"gallery",   // チェキ記録の表示方法（gallery / album / binder / calendar / swipe）
-  chekiFilter:"all",     // チェキ記録の絞り込み（all / fav / photo）
+  chekiFilter:"all",     // チェキ記録の絞り込み（all / fav）
   chekiBinderPage:0,     // バインダー表示のページ
   chekiCalMonth:null,    // カレンダー表示の月（YYYY-MM）
   chekiCalDate:null,     // カレンダー表示で選んだ日     // login | signup | reset (ログイン画面の表示モード)
@@ -3263,20 +3263,18 @@ function chekiCountBadge(r){
 }
 // 白い縁のチェキ（ギャラリー・アルバムで使う）
 function chekiPolaroidHtml(r, withYear){
-  var amt = recAmount("cheki", r);
   return '<div class="ck-pol'+(r.hidden?' is-hidden':'')+'">'
     + '<span class="ck-tape" style="'+chekiTapeStyle(r)+'"></span>'
     + '<div class="ck-ph-wrap">'+chekiPhotoHtml(r)+chekiCountBadge(r)+'</div>'
     + '<div class="ck-cap">'
     +   '<div class="t">'+(r.favorite?'<span class="ck-fav">'+CHEKI_STAR+'</span>':'')+escapeHtml(r.title||"(無題)")+'</div>'
-    +   '<div class="m"><span>'+chekiDate(r, withYear)+'</span><span>'+(amt?fmtYen(amt):"")+'</span></div>'
+    +   '<div class="m"><span>'+chekiDate(r, withYear)+'</span></div>'
     + '</div>'
     + chekiEditBtn(r)
     + '</div>';
 }
 // 詳しいカード（カレンダーの選んだ日・スワイプで使う）
 function chekiDetailHtml(r, big){
-  var amt = recAmount("cheki", r);
   var n = Number(r.count)||1;
   var label = chekiLabel(r);
   return '<div class="ck-detail'+(big?' big':'')+(r.hidden?' is-hidden':'')+'">'
@@ -3284,7 +3282,7 @@ function chekiDetailHtml(r, big){
     + '<div class="ck-detail-body">'
     +   '<div class="t'+(big?' mincho':'')+'">'+(r.favorite?'<span class="ck-fav">'+CHEKI_STAR+'</span>':'')+escapeHtml(r.title||"(無題)")+'</div>'
     +   (label ? '<div class="g">'+escapeHtml(label)+'</div>' : '')
-    +   '<div class="m"><span>'+chekiDate(r, true)+'</span><span>'+n+'枚'+(amt?' ・ '+fmtYen(amt):'')+'</span></div>'
+    +   '<div class="m"><span>'+chekiDate(r, true)+'</span><span>'+n+'枚</span></div>'
     +   (r.content ? '<div class="talk">'+escapeHtml(r.content)+'</div>' : '')
     +   (r.memo ? '<div class="memo">'+escapeHtml(r.memo)+'</div>' : '')
     + '</div>'
@@ -3296,26 +3294,24 @@ function chekiPageHtml(list){
   var html = "";
   // 集計（絞り込み前の一覧で数える）
   var thisMonth = (function(){ var d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); })();
-  var totalN = 0, monthN = 0, monthYen = 0;
+  var totalN = 0, monthN = 0;
   list.forEach(function(r){
     var n = Number(r.count)||1;
     totalN += n;
-    if((r.date||"").slice(0,7)===thisMonth){ monthN += n; monthYen += recAmount("cheki", r); }
+    if((r.date||"").slice(0,7)===thisMonth) monthN += n;
   });
   html += '<div class="ck-sum">'
     + '<div><b>'+totalN+'</b><span>総枚数</span></div>'
     + '<div><b>'+monthN+'</b><span>今月</span></div>'
-    + '<div><b>'+fmtYen(monthYen)+'</b><span>今月の金額</span></div>'
     + '</div>';
   var f = state.chekiFilter || "all";
   html += '<div class="ck-filters">'
-    + [["all","すべて"],["fav","お気に入り"],["photo","写真あり"]].map(function(x){
+    + [["all","すべて"],["fav","お気に入り"]].map(function(x){
         return '<button type="button" class="ck-filter'+(f===x[0]?' on':'')+'" data-action="cheki-filter" data-f="'+x[0]+'">'+x[1]+'</button>';
       }).join("")
     + '</div>';
   var items = list.filter(function(r){
     if(f==="fav") return !!r.favorite;
-    if(f==="photo") return !!r.photo;
     return true;
   });
   var view = chekiView();
