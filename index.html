@@ -605,7 +605,13 @@
   .oshi-row{
     display:flex;flex-wrap:wrap;align-items:flex-start;column-gap:12px;row-gap:0;padding:13px 4px;border-bottom:1px dashed var(--line);
   }
-  .oshi-row.dragging{opacity:.4;}
+  /* 推しの管理：1人ずつカードで表示（上のつまみで並べ替え） */
+  .oshi-row.oshi-card{
+    position:relative;border:1px solid var(--line);border-radius:14px;background:var(--card);
+    padding:18px 14px 14px;margin-top:18px;box-shadow:0 10px 24px -18px rgba(33,28,23,.45);
+  }
+  .oshi-row.oshi-card.dragging{z-index:30;opacity:.92;box-shadow:0 18px 36px -14px rgba(33,28,23,.55);}
+  .oshi-row.oshi-card .sns-block,.oshi-row.oshi-card > .oshi-affil{padding-left:50px;}
   .oshi-row.is-hidden .sw,.oshi-row.is-hidden .info,.oshi-row.is-hidden .sns-block{opacity:.55;}
   .hidden-oshi-toggle{
     display:flex;align-items:center;gap:6px;width:100%;margin-top:14px;padding:10px 4px;border:none;background:none;
@@ -3948,9 +3954,7 @@ function renderHome(){
   // ギャラリー・遠征マップ・月別費用は、上のつまみで並べ替えた順に出す
   homeOrder().forEach(function(k){
     html += '<div class="home-sec" data-home-sec="'+k+'">'
-      + '<button type="button" class="home-grip" aria-label="並べ替え（上下にドラッグ）" title="上下にドラッグして並べ替え">'
-      +   '<svg viewBox="0 0 24 24"><circle cx="8" cy="9" r="1.6"/><circle cx="12" cy="9" r="1.6"/><circle cx="16" cy="9" r="1.6"/><circle cx="8" cy="15" r="1.6"/><circle cx="12" cy="15" r="1.6"/><circle cx="16" cy="15" r="1.6"/></svg>'
-      + '</button>'
+      + DRAG_GRIP_HTML
       + parts[k]
       + '</div>';
   });
@@ -4655,10 +4659,9 @@ function oshiRowHtml(o, idx, n){
   var bLabel = oshiBirthdayLabel(o);
   var aLabel = oshiAge(o);
   var bdayText = bLabel ? (bLabel+"生まれ"+(aLabel!==null?"（"+aLabel+"歳）":"（非公開）")) : "";
-  return '<div class="oshi-row'+(o.hidden?' is-hidden':'')+'" draggable="true" data-oshi-row="'+o.id+'">'
-    + '<span class="group-drag-handle" title="ドラッグして並べ替え" aria-hidden="true">'
-    +   '<svg viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.4"/><circle cx="15" cy="6" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="9" cy="18" r="1.4"/><circle cx="15" cy="18" r="1.4"/></svg>'
-    + '</span>'
+  // 推しは1人ずつカードで表示し、上のつまみで並べ替える（ホームのカードと同じ操作）
+  return '<div class="oshi-row oshi-card'+(o.hidden?' is-hidden':'')+'" data-oshi-row="'+o.id+'">'
+    + (n>1 ? DRAG_GRIP_HTML : '')
     // お気に入りの印は写真の下に付け、右側は 名前／誕生日／所属・グループ の3行に固定する
     + '<div class="sw-col"><div class="sw" style="'+oshiSwatchStyle(o)+'"></div>'
     +   (isActive? '<span class="stamp oshi-fav-stamp">お気に入り</span>' : '')
@@ -4677,14 +4680,6 @@ function oshiRowHtml(o, idx, n){
     +   '<button class="del" data-action="toggle-oshi-hidden" data-id="'+o.id+'" title="'+(o.hidden?'表示する':'非表示にする')+'" aria-label="'+(o.hidden?'表示する':'非表示にする')+'">'
     +     (o.hidden ? EYE_ICON : EYE_OFF_ICON)
     +   '</button>'
-    +   '<div class="group-order-btns">'
-    +     '<button type="button" class="group-order-btn" data-action="move-oshi" data-id="'+o.id+'" data-dir="up" title="上に移動" aria-label="上に移動" '+(idx===0?"disabled":"")+'>'
-    +       '<svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg>'
-    +     '</button>'
-    +     '<button type="button" class="group-order-btn" data-action="move-oshi" data-id="'+o.id+'" data-dir="down" title="下に移動" aria-label="下に移動" '+(idx===n-1?"disabled":"")+'>'
-    +       '<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>'
-    +     '</button>'
-    +   '</div>'
     + '</div>'
     // 所属／グループは右上のボタン列に幅を取られないよう、SNSと同じく行の全幅を使う
     + (subText? '<div class="oshi-affil">'+escapeHtml(subText)+'</div>' : '')
@@ -4722,7 +4717,23 @@ function renderOshisPage(){
     }
   }
   document.getElementById("main").innerHTML = html;
-  if(state.oshis.length>1) bindOshiPageDragDrop();
+  bindDragReorder(document.getElementById("main"), ".oshi-card", function(items){
+    applyOshiOrder(items.map(function(el){ return el.getAttribute("data-oshi-row"); }));
+  });
+}
+/* 並べ替えた推し（表示中、または非表示の推しの中だけ）の順番を、全体の並びに反映する。
+   並べ替えた推しがいた位置に、新しい順で入れ直す */
+function applyOshiOrder(ids){
+  var inList = {}, byId = {};
+  ids.forEach(function(id){ inList[id] = true; });
+  state.oshis.forEach(function(o){ byId[o.id] = o; });
+  var queue = ids.slice();
+  var next = state.oshis.map(function(o){ return inList[o.id] ? byId[queue.shift()] : o; });
+  var changed = next.some(function(o, i){ return o!==state.oshis[i]; });
+  if(!changed) return;
+  state.oshis = next;
+  saveLocal();
+  renderTopChipMenu();
 }
 /* マイページ：チェキの表示・アカウント（推しの一覧は「推しの管理」ページへ） */
 function renderOshiPage(){
@@ -4732,48 +4743,6 @@ function renderOshiPage(){
   html += '<p class="legal-links"><a href="privacy.html">プライバシーポリシー</a></p>';
   document.getElementById("main").innerHTML = html;
   bindBackupImport();
-}
-/* Lets the person drag an oshi-row onto another to swap their order, as an
-   alternative to the up/down buttons rendered in each row. */
-function bindOshiPageDragDrop(){
-  var main = document.getElementById("main");
-  var dragFromId = null;
-  main.querySelectorAll("[data-oshi-row]").forEach(function(row){
-    row.addEventListener("dragstart", function(e){
-      dragFromId = row.getAttribute("data-oshi-row");
-      row.classList.add("dragging");
-      try{ e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", dragFromId); }catch(err){}
-    });
-    row.addEventListener("dragend", function(){
-      row.classList.remove("dragging");
-      main.querySelectorAll(".oshi-row.drag-over").forEach(function(r){ r.classList.remove("drag-over"); });
-    });
-    row.addEventListener("dragover", function(e){
-      e.preventDefault();
-      if(dragFromId===null) return;
-      var targetId = row.getAttribute("data-oshi-row");
-      if(targetId===dragFromId) return;
-      row.classList.add("drag-over");
-    });
-    row.addEventListener("dragleave", function(){ row.classList.remove("drag-over"); });
-    row.addEventListener("drop", function(e){
-      e.preventDefault();
-      var targetId = row.getAttribute("data-oshi-row");
-      if(dragFromId!==null && targetId!==dragFromId){ reorderOshi(dragFromId, targetId); }
-      dragFromId = null;
-    });
-  });
-}
-/* Moves fromId to the position currently held by toId (or, for the arrow
-   buttons, one step up/down) and persists the new order. */
-function reorderOshi(fromId, toId){
-  var fromIdx = state.oshis.findIndex(function(o){ return o.id===fromId; });
-  var toIdx = state.oshis.findIndex(function(o){ return o.id===toId; });
-  if(fromIdx<0 || toIdx<0 || fromIdx===toIdx) return;
-  var moved = state.oshis.splice(fromIdx,1)[0];
-  state.oshis.splice(toIdx,0,moved);
-  saveLocal();
-  render();
 }
 /* 推しを非表示／表示に切り替える。お気に入りの推しを隠したときは、
    表示中のほかの推しをお気に入りにする。 */
@@ -4789,19 +4758,6 @@ async function toggleOshiHidden(id){
     await setActiveOshi(id);
   }
   toast(updated.hidden ? "「"+o.name+"」を非表示にしました" : "「"+o.name+"」を表示に戻しました");
-  render();
-}
-function moveOshiStep(id, dir){
-  var idx = state.oshis.findIndex(function(o){ return o.id===id; });
-  if(idx<0) return;
-  // 同じ欄（表示中／非表示）の隣の推しと入れ替える
-  var hidden = !!state.oshis[idx].hidden;
-  var target = idx;
-  do { target += dir==="up" ? -1 : 1; } while(target>=0 && target<state.oshis.length && !!state.oshis[target].hidden!==hidden);
-  if(target<0 || target>=state.oshis.length) return;
-  var moved = state.oshis.splice(idx,1)[0];
-  state.oshis.splice(target,0,moved);
-  saveLocal();
   render();
 }
 
@@ -6173,25 +6129,30 @@ function homeOrder(){
   HOME_SECTIONS.forEach(function(k){ if(o.indexOf(k)<0) o.push(k); });
   return o;
 }
-function bindHomeReorder(){
-  var main = document.getElementById("main");
-  main.querySelectorAll(".home-grip").forEach(function(grip){
+/* つまみ（.home-grip）を押したまま上下に動かして、同じ並びのカード（itemSel）の順番を入れ替える。
+   ホームのカードと推しの管理ページで共通。離したら onDrop(並び順のカードの配列) を呼ぶ */
+var DRAG_GRIP_HTML = '<button type="button" class="home-grip" aria-label="並べ替え（上下にドラッグ）" title="上下にドラッグして並べ替え">'
+  + '<svg viewBox="0 0 24 24"><circle cx="8" cy="9" r="1.6"/><circle cx="12" cy="9" r="1.6"/><circle cx="16" cy="9" r="1.6"/><circle cx="8" cy="15" r="1.6"/><circle cx="12" cy="15" r="1.6"/><circle cx="16" cy="15" r="1.6"/></svg>'
+  + '</button>';
+function bindDragReorder(root, itemSel, onDrop){
+  root.querySelectorAll(itemSel+" > .home-grip").forEach(function(grip){
     grip.addEventListener("pointerdown", function(e){
       if(e.button!==undefined && e.button!==0) return;
       e.preventDefault();
-      var sec = grip.closest(".home-sec");
+      var sec = grip.closest(itemSel);
       var startY = e.clientY;
       try{ grip.setPointerCapture(e.pointerId); }catch(err){}
       sec.classList.add("dragging");
+      function isItem(el){ return el && el.matches && el.matches(itemSel); }
       function onMove(ev){
         var dy = ev.clientY - startY;
         // となりのカードの真ん中を越えたら入れ替える（指の下にカードが残るよう基準をずらす）
         var prev = sec.previousElementSibling, next = sec.nextElementSibling;
         var before = sec.offsetTop;
-        if(dy>0 && next && next.classList.contains("home-sec") && ev.clientY > next.getBoundingClientRect().top + next.offsetHeight/2){
+        if(dy>0 && isItem(next) && ev.clientY > next.getBoundingClientRect().top + next.offsetHeight/2){
           sec.parentNode.insertBefore(next, sec);
           startY += sec.offsetTop - before;
-        } else if(dy<0 && prev && prev.classList.contains("home-sec") && ev.clientY < prev.getBoundingClientRect().top + prev.offsetHeight/2){
+        } else if(dy<0 && isItem(prev) && ev.clientY < prev.getBoundingClientRect().top + prev.offsetHeight/2){
           // 動かしているカード自体は付け替えない（指の追跡が切れないよう、となりを後ろへ回す）
           sec.parentNode.insertBefore(prev, sec.nextSibling);
           startY += sec.offsetTop - before;
@@ -6204,16 +6165,21 @@ function bindHomeReorder(){
         document.removeEventListener("pointercancel", onUp);
         sec.classList.remove("dragging");
         sec.style.transform = "";
-        var order = Array.prototype.map.call(main.querySelectorAll(".home-sec"), function(el){ return el.getAttribute("data-home-sec"); });
-        if(order.join(",")!==homeOrder().join(",")){
-          state.homeOrder = order;
-          saveLocal();
-        }
+        onDrop(Array.prototype.filter.call(sec.parentNode.children, isItem));
       }
       document.addEventListener("pointermove", onMove);
       document.addEventListener("pointerup", onUp);
       document.addEventListener("pointercancel", onUp);
     });
+  });
+}
+function bindHomeReorder(){
+  bindDragReorder(document.getElementById("main"), ".home-sec", function(items){
+    var order = items.map(function(el){ return el.getAttribute("data-home-sec"); });
+    if(order.join(",")!==homeOrder().join(",")){
+      state.homeOrder = order;
+      saveLocal();
+    }
   });
 }
 
@@ -6740,7 +6706,6 @@ function onAppClick(e){
   if(action==="logout"){ logout(); return; }
   if(action==="edit-oshi"){ openOshiSheet(getOshi(el.getAttribute("data-id"))); return; }
   if(action==="set-active"){ setActiveOshi(el.getAttribute("data-id")).then(render); return; }
-  if(action==="move-oshi"){ moveOshiStep(el.getAttribute("data-id"), el.getAttribute("data-dir")); return; }
   if(action==="toggle-oshi-hidden"){ toggleOshiHidden(el.getAttribute("data-id")); return; }
   if(action==="toggle-hidden-oshis"){ state.showHiddenOshis = !state.showHiddenOshis; render(); return; }
   if(action==="filter-oshi"){ state.filterOshiId = el.getAttribute("data-id"); render(); return; }
