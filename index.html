@@ -534,7 +534,7 @@
     border-radius:3px;font-size:12px;font-weight:600;padding:6px 4px;cursor:pointer;font-family:inherit;
     width:60px;text-align:center;white-space:nowrap;   /* 変更・連携する・接続・保存などの横幅をそろえる */
   }
-  .btn.account-logout{margin-top:12px;border-color:var(--line);color:#B23A3A;background:transparent;}
+  .btn.account-logout{margin-top:22px;border-color:var(--line);color:#B23A3A;background:transparent;}
   .btn.google-btn{background:#FFFFFF;color:#1F1F1F;border-color:var(--line-strong);gap:10px;padding:11px 16px;}
   .btn.google-btn .google-icon{width:18px;height:18px;flex:none;stroke:none;}
   .btn:disabled{opacity:.55;cursor:default;}
@@ -833,7 +833,11 @@
   .ck-day.on{box-shadow:0 0 0 2px var(--accent);}
   .ck-cal-sel{display:flex;flex-direction:column;gap:10px;}
   /* LIVE記録のカレンダー（チェキのカレンダーと同じ見た目） */
-  .live-cal .ck-day{aspect-ratio:1/1;}
+  /* ホームのカード（遠征マップなど）と同じく、推しの色になじむカードの色にする */
+  .live-cal{background:var(--card);box-shadow:0 10px 24px -18px rgba(33,28,23,.45);padding:14px 12px 12px;}
+  .live-cal .ck-nav{background:var(--card);}
+  .live-cal .ck-day{aspect-ratio:1/1;background:rgba(33,28,23,.05);}
+  .live-cal .ck-day.has{background:var(--accent-soft);}
   .live-cal-title{display:flex;align-items:baseline;gap:8px;}
   .live-cal-title span{font-size:11px;color:var(--ink-soft);}
   .ck-day.today{box-shadow:inset 0 0 0 1.5px var(--line-strong);}
@@ -1265,6 +1269,7 @@ var state = {
   calendarTitle:"",      // Googleカレンダーの予定タイトルの形（空なら {公演名}）
   calendarDesc:"",       // Googleカレンダーの予定の説明の形（空なら標準の説明）
   chekiView:"gallery",   // チェキ記録の表示方法（gallery / album / binder / calendar / swipe）
+  weekStart:0,           // カレンダーの週の始まり（0 = 日曜・1 = 月曜・6 = 土曜）
   homeOrder:null,        // ホームのカードの並び（["gallery","map","chart"] の順番。null なら標準）
   chekiFav:false,        // チェキ記録を「お気に入り」だけにするか（ON/OFF）
   chekiBinderPage:0,     // バインダー表示のページ
@@ -1715,6 +1720,7 @@ function applyStored(data){
   state.calendarTitle = data.calendarTitle||"";
   state.calendarDesc = data.calendarDesc||"";
   state.chekiView = data.chekiView||"gallery";
+  state.weekStart = normWeekStart(data.weekStart);
   state.homeOrder = Array.isArray(data.homeOrder) ? data.homeOrder : null;
 }
 function snapshotData(){
@@ -1722,6 +1728,7 @@ function snapshotData(){
     oshis:state.oshis, live:state.live, cheki:state.cheki, goods:state.goods,
     activeOshiId:state.activeOshiId, headerLogo:state.headerLogo, calendarTitle:state.calendarTitle||"", calendarDesc:state.calendarDesc||"",
     chekiView:state.chekiView||"gallery",
+    weekStart:state.weekStart||0,
     homeOrder:state.homeOrder||null
   };
 }
@@ -1809,6 +1816,7 @@ function localRowMap(){
   if(state.calendarTitle) settingsData.calendarTitle = state.calendarTitle;
   if(state.calendarDesc) settingsData.calendarDesc = state.calendarDesc;
   if(state.chekiView && state.chekiView!=="gallery") settingsData.chekiView = state.chekiView;
+  if(state.weekStart) settingsData.weekStart = state.weekStart;
   if(state.homeOrder && state.homeOrder.join(",")!==HOME_SECTIONS.join(",")) settingsData.homeOrder = state.homeOrder;
   m["settings:main"] = {kind:"settings", id:"main", data:settingsData};
   return m;
@@ -1904,6 +1912,7 @@ function putIntoState(kind, data){
     state.calendarTitle = data.calendarTitle||"";
     state.calendarDesc = data.calendarDesc||"";
     state.chekiView = data.chekiView||"gallery";
+    state.weekStart = normWeekStart(data.weekStart);
     state.homeOrder = Array.isArray(data.homeOrder) ? data.homeOrder : null;
     return;
   }
@@ -2020,6 +2029,7 @@ function mergeGuestData(guest){
   if(!state.calendarDesc && guest.calendarDesc) state.calendarDesc = guest.calendarDesc;
   if((!state.chekiView || state.chekiView==="gallery") && guest.chekiView) state.chekiView = guest.chekiView;
   if(!state.homeOrder && Array.isArray(guest.homeOrder)) state.homeOrder = guest.homeOrder;
+  if(!state.weekStart && guest.weekStart) state.weekStart = normWeekStart(guest.weekStart);
 }
 
 /* アカウント欄の表示用に、ログイン方法（メール/Google）の情報を持っておく */
@@ -2670,6 +2680,31 @@ function fmtDateTime(ms){
   return d.getFullYear()+"."+String(d.getMonth()+1).padStart(2,"0")+"."+String(d.getDate()).padStart(2,"0")
     +" "+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");
 }
+/* カレンダーの週の始まり（マイページで選ぶ。LIVE記録・チェキ・集計のカレンダーに使う） */
+var WEEK_DAYS = ["日","月","火","水","木","金","土"];
+var WEEK_START_OPTIONS = [0, 1, 6];
+function normWeekStart(v){ v = Number(v); return WEEK_START_OPTIONS.indexOf(v)>=0 ? v : 0; }
+// 曜日の見出し（週の始まりから7日分）
+function weekDayLabels(){
+  var w = normWeekStart(state.weekStart), out = [];
+  for(var i=0;i<7;i++) out.push(WEEK_DAYS[(w+i)%7]);
+  return out;
+}
+// 月の1日の前に入れる空きマスの数
+function leadingBlankDays(y, m){
+  return (new Date(y, m-1, 1).getDay() - normWeekStart(state.weekStart) + 7) % 7;
+}
+function weekStartMenuHtml(){
+  var cur = normWeekStart(state.weekStart);
+  return '<div class="photo-menu top-chip-menu week-start-menu" id="weekStartMenu" style="display:none;">'
+    + WEEK_START_OPTIONS.map(function(w){
+        return '<button type="button" class="top-chip-item'+(w===cur?' active':'')+'" data-action="set-week-start" data-w="'+w+'">'
+          + '<span class="tcm-name">'+WEEK_DAYS[w]+'曜日</span>'
+          + (w===cur ? '<svg class="tcm-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>' : '')
+          + '</button>';
+      }).join("")
+    + '</div>';
+}
 /* アカウントのカードに入れる行：Googleドライブ（写真とバックアップの保存先） */
 function googleStorageRowsHtml(){
   var ready = DrivePhotos.available();
@@ -2688,6 +2723,12 @@ function googleStorageRowsHtml(){
     +   '<span class="account-row-label">Googleカレンダー</span>'
     +   '<span class="account-row-value'+(calSet?'':' muted')+'">'+(calSet ? '設定済み' : '未設定')+'</span>'
     +   '<button type="button" class="account-row-btn" data-action="calendar-setting">'+(calSet ? '変更' : '接続')+'</button>'
+    + '</div>'
+    + '<div class="account-row">'
+    +   '<span class="account-row-label">週の始まり</span>'
+    +   '<span class="account-row-value">'+WEEK_DAYS[normWeekStart(state.weekStart)]+'曜日<small class="account-row-sub">カレンダーの並び</small></span>'
+    +   '<button type="button" class="account-row-btn" data-action="week-start-menu">変更</button>'
+    +   weekStartMenuHtml()
     + '</div>'
     + '<div class="account-row">'
     +   '<span class="account-row-label">バックアップ</span>'
@@ -3197,8 +3238,12 @@ function accountSectionHtml(){
     +   '</div>'
     +   googleStorageRowsHtml()
     + '</div>'
-    + backupLinksHtml()
-    + '<button type="button" class="btn block account-logout" data-action="logout">ログアウト</button>';
+    + backupLinksHtml();
+}
+// ログアウトはマイページの一番下に置く
+function logoutButtonHtml(){
+  if(!cloud.user) return '';
+  return '<button type="button" class="btn block account-logout" data-action="logout">ログアウト</button>';
 }
 
 async function linkGoogle(){
@@ -3901,8 +3946,12 @@ function renderHome(){
   }
 
   var recs = allRecordsForOshi(oshi.id);
-  // 参戦＝現地観戦のみ（配信で観たLIVEは数えない）
-  var liveN = state.live.filter(function(r){return recHasOshi(r,oshi.id) && recViewing(r)!=="stream";}).length;
+  // 参戦＝現地観戦のみ（配信で観たLIVEは数えない）。今日までに行ったLIVEだけを数え、これからのLIVEは数えない
+  var nowD = new Date();
+  var todayYmd = nowD.getFullYear()+"-"+String(nowD.getMonth()+1).padStart(2,"0")+"-"+String(nowD.getDate()).padStart(2,"0");
+  var liveN = state.live.filter(function(r){
+    return recHasOshi(r,oshi.id) && recViewing(r)!=="stream" && !(r.date && r.date > todayYmd);
+  }).length;
   var total = Math.round(recs.reduce(function(s,item){ return s+recAmountForOshi(item.type,item.r,oshi.id); },0));
 
   var subLabel = oshiSubLabel(oshi) || "推し活中";
@@ -4282,7 +4331,7 @@ function chekiCalendarHtml(items){
     state.chekiCalMonth = month;
   }
   var y = Number(month.slice(0,4)), m = Number(month.slice(5,7));
-  var startWeekday = new Date(y, m-1, 1).getDay();
+  var startWeekday = leadingBlankDays(y, m);
   var daysInMonth = new Date(y, m, 0).getDate();
   var html = '<div class="ck-cal">'
     + '<div class="ck-cal-head">'
@@ -4290,7 +4339,7 @@ function chekiCalendarHtml(items){
     +   '<b class="mincho">'+y+'. '+String(m).padStart(2,"0")+'</b>'
     +   '<button type="button" class="ck-nav" data-action="cheki-cal-month" data-d="1" aria-label="次の月">›</button>'
     + '</div>'
-    + '<div class="ck-cal-week">'+["日","月","火","水","木","金","土"].map(function(w){ return '<span>'+w+'</span>'; }).join("")+'</div>'
+    + '<div class="ck-cal-week">'+weekDayLabels().map(function(w){ return '<span>'+w+'</span>'; }).join("")+'</div>'
     + '<div class="ck-cal-grid">';
   for(var i=0;i<startWeekday;i++) html += '<span></span>';
   var sel = state.chekiCalDate && state.chekiCalDate.slice(0,7)===month && byDate[state.chekiCalDate] ? state.chekiCalDate : null;
@@ -4326,7 +4375,7 @@ function liveCalendarHtml(items){
   var month = state.liveCalMonth || today.slice(0,7);
   state.liveCalMonth = month;
   var y = Number(month.slice(0,4)), m = Number(month.slice(5,7));
-  var startWeekday = new Date(y, m-1, 1).getDay();
+  var startWeekday = leadingBlankDays(y, m);
   var daysInMonth = new Date(y, m, 0).getDate();
   var count = Object.keys(byDate).filter(function(d){ return d.slice(0,7)===month; })
     .reduce(function(n, d){ return n + byDate[d].length; }, 0);
@@ -4336,7 +4385,7 @@ function liveCalendarHtml(items){
     +   '<div class="live-cal-title"><b class="mincho">'+y+'. '+String(m).padStart(2,"0")+'</b><span>'+count+'件</span></div>'
     +   '<button type="button" class="ck-nav" data-action="live-cal-month" data-d="1" aria-label="次の月">›</button>'
     + '</div>'
-    + '<div class="ck-cal-week">'+["日","月","火","水","木","金","土"].map(function(w){ return '<span>'+w+'</span>'; }).join("")+'</div>'
+    + '<div class="ck-cal-week">'+weekDayLabels().map(function(w){ return '<span>'+w+'</span>'; }).join("")+'</div>'
     + '<div class="ck-cal-grid">';
   for(var i=0;i<startWeekday;i++) html += '<span></span>';
   for(var d=1; d<=daysInMonth; d++){
@@ -4586,7 +4635,7 @@ function renderStatsCalendar(){
   var parts = state.calendarMonth.split("-");
   var y = Number(parts[0]), m = Number(parts[1]);
   var first = new Date(y, m-1, 1);
-  var startWeekday = first.getDay();
+  var startWeekday = leadingBlankDays(y, m);
   var daysInMonth = new Date(y, m, 0).getDate();
   var dateMap = calendarDatesWithRecords(state.calendarMonth);
 
@@ -4596,7 +4645,7 @@ function renderStatsCalendar(){
     + '<button type="button" class="cal-nav" data-action="cal-next" aria-label="翌月"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>'
     + '</div>';
   html += '<div class="cal-grid cal-dow">';
-  ["日","月","火","水","木","金","土"].forEach(function(d){ html += '<div>'+d+'</div>'; });
+  weekDayLabels().forEach(function(d){ html += '<div>'+d+'</div>'; });
   html += '</div>';
   html += '<div class="cal-grid">';
   for(var i=0;i<startWeekday;i++){ html += '<div class="cal-cell empty"></div>'; }
@@ -4807,11 +4856,12 @@ function applyOshiOrder(ids){
   saveLocal();
   renderTopChipMenu();
 }
-/* マイページ：チェキの表示・アカウント（推しの一覧は「推しの管理」ページへ） */
+/* マイページ：アカウント・チェキの表示・ログアウト（推しの一覧は「推しの管理」ページへ） */
 function renderOshiPage(){
   var html = '<div class="page-head"><h1 class="mincho">マイページ</h1></div>';
-  html += chekiViewSettingHtml();
   html += accountSectionHtml();
+  html += chekiViewSettingHtml();
+  html += logoutButtonHtml();
   html += '<p class="legal-links"><a href="privacy.html">プライバシーポリシー</a></p>';
   document.getElementById("main").innerHTML = html;
   bindBackupImport();
@@ -6864,6 +6914,22 @@ function onAppClick(e){
     }).catch(function(){ toast("Googleドライブに接続できませんでした"); });
     return;
   }
+  if(action==="week-start-menu"){
+    var wm = document.getElementById("weekStartMenu");
+    if(wm){ if(wm.style.display==="block") wm.style.display = "none"; else openPopoverNear(el, wm); }
+    return;
+  }
+  if(action==="set-week-start"){
+    var nw = normWeekStart(el.getAttribute("data-w"));
+    var wmn = document.getElementById("weekStartMenu");
+    if(wmn) wmn.style.display = "none";
+    if(nw===normWeekStart(state.weekStart)) return;
+    state.weekStart = nw;
+    saveLocal();
+    render();
+    toast("週の始まりを"+WEEK_DAYS[nw]+"曜日にしました");
+    return;
+  }
   if(action==="set-cheki-view"){
     var nv = el.getAttribute("data-v");
     if(nv===chekiView()) return;
@@ -7010,6 +7076,8 @@ document.addEventListener("DOMContentLoaded", function(){
   document.addEventListener("click", function(e){
     if(!e.target.closest("#streamMenu") && !e.target.closest('[data-action="stream-menu"]')) streamMenu.style.display = "none";
     else if(e.target.closest("#streamMenu a")) streamMenu.style.display = "none";
+    var wsm = document.getElementById("weekStartMenu");
+    if(wsm && !e.target.closest("#weekStartMenu") && !e.target.closest('[data-action="week-start-menu"]')) wsm.style.display = "none";
   });
   window.addEventListener("scroll", function(){ streamMenu.style.display = "none"; }, {passive:true});
 
