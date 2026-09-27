@@ -534,7 +534,7 @@
     border-radius:3px;font-size:12px;font-weight:600;padding:6px 4px;cursor:pointer;font-family:inherit;
     width:60px;text-align:center;white-space:nowrap;   /* 変更・連携する・接続・保存などの横幅をそろえる */
   }
-  .btn.account-logout{margin-top:12px;border-color:var(--line);color:#B23A3A;background:transparent;}
+  .btn.account-logout{margin-top:22px;border-color:var(--line);color:#B23A3A;background:transparent;}
   .btn.google-btn{background:#FFFFFF;color:#1F1F1F;border-color:var(--line-strong);gap:10px;padding:11px 16px;}
   .btn.google-btn .google-icon{width:18px;height:18px;flex:none;stroke:none;}
   .btn:disabled{opacity:.55;cursor:default;}
@@ -3238,8 +3238,12 @@ function accountSectionHtml(){
     +   '</div>'
     +   googleStorageRowsHtml()
     + '</div>'
-    + backupLinksHtml()
-    + '<button type="button" class="btn block account-logout" data-action="logout">ログアウト</button>';
+    + backupLinksHtml();
+}
+// ログアウトはマイページの一番下に置く
+function logoutButtonHtml(){
+  if(!cloud.user) return '';
+  return '<button type="button" class="btn block account-logout" data-action="logout">ログアウト</button>';
 }
 
 async function linkGoogle(){
@@ -4848,11 +4852,12 @@ function applyOshiOrder(ids){
   saveLocal();
   renderTopChipMenu();
 }
-/* マイページ：チェキの表示・アカウント（推しの一覧は「推しの管理」ページへ） */
+/* マイページ：アカウント・チェキの表示・ログアウト（推しの一覧は「推しの管理」ページへ） */
 function renderOshiPage(){
   var html = '<div class="page-head"><h1 class="mincho">マイページ</h1></div>';
-  html += chekiViewSettingHtml();
   html += accountSectionHtml();
+  html += chekiViewSettingHtml();
+  html += logoutButtonHtml();
   html += '<p class="legal-links"><a href="privacy.html">プライバシーポリシー</a></p>';
   document.getElementById("main").innerHTML = html;
   bindBackupImport();
