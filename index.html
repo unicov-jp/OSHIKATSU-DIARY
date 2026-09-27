@@ -4200,6 +4200,8 @@ function calendarDescFor(r, template){
     return line.replace(re, function(_, k){ return values[k]; });
   }).filter(function(line){ return line!==null; }).join("\n").trim();
 }
+// 日付が明日以降の記録（これからの予定）。参戦回数や遠征マップには数えない
+function isFutureRec(r){ return !!(r && r.date && r.date > todayYmdStr()); }
 function recStreamUrls(r){
   var list = Array.isArray(r.streamUrls) ? r.streamUrls : (r.streamUrl ? [r.streamUrl] : []);
   return list.map(safeWebUrl).filter(Boolean);
@@ -4285,8 +4287,8 @@ function allRecordsFlat(){
 function aggregateByOshi(){
   return state.oshis.map(function(o){
     var recs = allRecordsFlat().filter(function(item){ return recHasOshi(item.r, o.id); });
-    // 参戦＝現地観戦のみ（配信で観たLIVEは数えない）
-    var liveN = recs.filter(function(i){return i.type==="live" && recViewing(i.r)!=="stream";}).length;
+    // 参戦＝現地観戦のみ（配信で観たLIVEと、これからのLIVEは数えない）
+    var liveN = recs.filter(function(i){return i.type==="live" && recViewing(i.r)!=="stream" && !isFutureRec(i.r);}).length;
     var chekiN = recs.filter(function(i){return i.type==="cheki";}).reduce(function(s,i){return s+chekiUnits(i.r);},0);
     var goodsN = recs.filter(function(i){return i.type==="goods";}).reduce(function(s,i){return s+(Number(i.r.qty)||1);},0);
     var total = Math.round(recs.reduce(function(s,i){ return s+recAmountForOshi(i.type,i.r,o.id); },0));
@@ -4380,10 +4382,8 @@ function renderHome(){
 
   var recs = allRecordsForOshi(oshi.id);
   // 参戦＝現地観戦のみ（配信で観たLIVEは数えない）。今日までに行ったLIVEだけを数え、これからのLIVEは数えない
-  var nowD = new Date();
-  var todayYmd = nowD.getFullYear()+"-"+String(nowD.getMonth()+1).padStart(2,"0")+"-"+String(nowD.getDate()).padStart(2,"0");
   var liveN = state.live.filter(function(r){
-    return recHasOshi(r,oshi.id) && recViewing(r)!=="stream" && !(r.date && r.date > todayYmd);
+    return recHasOshi(r,oshi.id) && recViewing(r)!=="stream" && !isFutureRec(r);
   }).length;
   var total = Math.round(recs.reduce(function(s,item){ return s+recAmountForOshi(item.type,item.r,oshi.id); },0));
 
@@ -6948,6 +6948,7 @@ var TripMap = (function(){
     state.live.forEach(function(r){
       if(r.hidden || !oshi || !recHasOshi(r, oshi.id)) return;
       if(recViewing(r)==="stream") return;
+      if(isFutureRec(r)) return;   // これからのLIVEは、行ってから地図に出す
       var name = (r.venuePlace && r.venuePlace.name) || (r.venue||"").trim();
       if(!name) return;
       var key = venueKey(name);
