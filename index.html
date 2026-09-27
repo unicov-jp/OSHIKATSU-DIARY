@@ -725,6 +725,22 @@
   .ck-ph.empty{display:flex;align-items:center;justify-content:center;cursor:pointer;}
   .ck-ph.empty svg{width:34%;stroke:var(--accent);fill:none;stroke-width:1.4;opacity:.6;}
   .ck-ph-wrap{position:relative;}
+  /* 写真の保存先（Googleドライブ） */
+  .gd-setting{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:12px 14px;}
+  .gd-row{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+  .gd-row b{display:block;font-size:13.5px;color:var(--heading);}
+  .gd-row span{font-size:11.5px;color:var(--ink-soft);}
+  .gd-row .btn{flex:none;padding:8px 16px;font-size:12.5px;}
+  .gd-row .btn:disabled{opacity:.6;cursor:default;}
+  .gd-bar{
+    position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + var(--safe-b));z-index:40;
+    display:flex;align-items:center;gap:8px;padding:10px 16px;border-radius:99px;border:none;
+    background:var(--heading);color:#FFFFFF;font-size:12.5px;font-weight:700;font-family:inherit;cursor:pointer;
+    box-shadow:0 8px 20px -8px rgba(0,0,0,.5);white-space:nowrap;
+  }
+  .gd-bar[hidden]{display:none;}
+  .gd-bar svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.7;}
+  img.gd-missing{background:var(--paper-alt);}
   /* チェキの写真欄（複数） */
   .ck-photos{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;}
   .ck-thumb{position:relative;aspect-ratio:54/74;border-radius:4px;border:1px solid var(--line-strong);background:var(--paper);padding:0;overflow:hidden;cursor:pointer;}
@@ -2044,7 +2060,10 @@ async function loadCloudConfig(){
   if(cached && cached.supabaseUrl && cached.supabaseAnonKey){
     // 起動はキャッシュで行い、最新の設定（後から追加された Google Maps のキーなど）は裏で取り直す
     fetchCloudConfig().then(function(fresh){
-      if(fresh && appConfig) appConfig.googleMapsApiKey = fresh.googleMapsApiKey || "";
+      if(fresh && appConfig){
+        appConfig.googleMapsApiKey = fresh.googleMapsApiKey || "";
+        appConfig.googleClientId = fresh.googleClientId || "";
+      }
     });
     return cached;
   }
@@ -2112,6 +2131,346 @@ async function initStorage(){
   setInterval(function(){
     if(cloud.user && document.visibilityState==="visible") syncNow();
   }, 60000);
+}
+
+/* ============ 写真の保存先：Googleドライブ ============
+   LIVE・チェキ・物販の写真は、本人の Google ドライブの「推し活手帳」フォルダに保存し、
+   記録には "gdrive:<ファイルID>" だけを入れる（クラウドの行と端末の控えを小さくするため）。
+   権限は drive.file（このアプリが作ったファイルだけを扱える）。ログインとは別に、
+   Google Identity Services でアクセストークン（1時間）をもらう。
+   表示した写真は端末の IndexedDB に覚えておき、2回目からは通信せずに出す。
+   ドライブに接続していない間に登録した写真は、いったん画像データのまま保存し、
+   接続したときに自動でドライブへ移す（以前の写真も同じ）。 */
+var DrivePhotos = (function(){
+  var PREFIX = "gdrive:";
+  var FOLDER_NAME = "推し活手帳";
+  var TOKEN_KEY = "oshikatsu_gdrive_token_v1";
+  var EVER_KEY = "oshikatsu_gdrive_connected_v1";
+  var BLANK = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+  var token = null, tokenExp = 0, tokenClient = null, gisLoading = null, pendingResolve = null, pendingReject = null;
+  var folderId = null, dbp = null, mem = {}, loading = {};
+  var migrating = false, migrateTimer = null, missing = false;
+
+  (function restore(){
+    var t = readStored(TOKEN_KEY);
+    if(t && t.token && t.exp > Date.now()+60000){ token = t.token; tokenExp = t.exp; }
+  })();
+
+  function isRef(s){ return typeof s==="string" && s.indexOf(PREFIX)===0; }
+  function isData(s){ return typeof s==="string" && s.indexOf("data:")===0; }
+  function idOf(s){ return s.slice(PREFIX.length); }
+  function available(){ return !!(appConfig && appConfig.googleClientId); }
+  function connected(){ return !!token && Date.now() < tokenExp-60000; }
+  function everConnected(){ try{ return localStorage.getItem(EVER_KEY)==="1"; }catch(e){ return false; } }
+
+  /* ---- 端末に覚えておく写真（IndexedDB） ---- */
+  function db(){
+    if(dbp) return dbp;
+    dbp = new Promise(function(resolve){
+      try{
+        var req = indexedDB.open("oshikatsu_photos", 1);
+        req.onupgradeneeded = function(){ req.result.createObjectStore("img"); };
+        req.onsuccess = function(){ resolve(req.result); };
+        req.onerror = function(){ resolve(null); };
+      }catch(e){ resolve(null); }
+    });
+    return dbp;
+  }
+  async function idbGet(id){
+    var d = await db(); if(!d) return null;
+    return new Promise(function(resolve){
+      try{
+        var r = d.transaction("img").objectStore("img").get(id);
+        r.onsuccess = function(){ resolve(r.result || null); };
+        r.onerror = function(){ resolve(null); };
+      }catch(e){ resolve(null); }
+    });
+  }
+  async function idbPut(id, blob){
+    var d = await db(); if(!d) return;
+    try{ d.transaction("img","readwrite").objectStore("img").put(blob, id); }catch(e){}
+  }
+
+  /* ---- Googleへの接続（アクセストークン） ---- */
+  function loadGis(){
+    if(window.google && google.accounts && google.accounts.oauth2) return Promise.resolve();
+    if(gisLoading) return gisLoading;
+    gisLoading = new Promise(function(resolve, reject){
+      var s = document.createElement("script");
+      s.src = "https://accounts.google.com/gsi/client";
+      s.async = true;
+      s.onload = function(){ resolve(); };
+      s.onerror = function(){ gisLoading = null; reject(new Error("gis load failed")); };
+      document.head.appendChild(s);
+    });
+    return gisLoading;
+  }
+  // ボタンを押したときに呼ぶ（Googleの小さな画面が開く）
+  async function connect(){
+    if(!available()) throw new Error("not configured");
+    await loadGis();
+    if(!tokenClient){
+      tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: appConfig.googleClientId,
+        scope: "https://www.googleapis.com/auth/drive.file",
+        callback: function(resp){
+          if(resp && resp.access_token){
+            token = resp.access_token;
+            tokenExp = Date.now() + (Number(resp.expires_in)||3600)*1000;
+            try{
+              localStorage.setItem(TOKEN_KEY, JSON.stringify({token:token, exp:tokenExp}));
+              localStorage.setItem(EVER_KEY, "1");
+            }catch(e){}
+            if(pendingResolve) pendingResolve();
+          } else if(pendingReject){ pendingReject(new Error((resp && resp.error) || "no token")); }
+          pendingResolve = pendingReject = null;
+        },
+        error_callback: function(err){
+          if(pendingReject) pendingReject(new Error((err && err.type) || "popup error"));
+          pendingResolve = pendingReject = null;
+        }
+      });
+    }
+    return new Promise(function(resolve, reject){
+      pendingResolve = resolve; pendingReject = reject;
+      tokenClient.requestAccessToken({prompt: everConnected() ? "" : "consent"});
+    });
+  }
+  function disconnect(){
+    if(token && window.google && google.accounts && google.accounts.oauth2){ try{ google.accounts.oauth2.revoke(token, function(){}); }catch(e){} }
+    token = null; tokenExp = 0;
+    try{ localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(EVER_KEY); }catch(e){}
+  }
+  async function api(url, opts){
+    opts = opts || {};
+    opts.headers = Object.assign({}, opts.headers||{}, {Authorization:"Bearer "+token});
+    var res = await fetch(url, opts);
+    if(res.status===401){ token = null; tokenExp = 0; try{ localStorage.removeItem(TOKEN_KEY); }catch(e){} throw new Error("unauthorized"); }
+    if(!res.ok) throw new Error("drive "+res.status);
+    return res;
+  }
+
+  /* ---- フォルダとアップロード ---- */
+  async function ensureFolder(){
+    if(folderId) return folderId;
+    var q = "name='"+FOLDER_NAME+"' and mimeType='application/vnd.google-apps.folder' and trashed=false";
+    var res = await api("https://www.googleapis.com/drive/v3/files?spaces=drive&fields=files(id)&q="+encodeURIComponent(q));
+    var j = await res.json();
+    if(j.files && j.files.length){ folderId = j.files[0].id; return folderId; }
+    res = await api("https://www.googleapis.com/drive/v3/files?fields=id", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({name:FOLDER_NAME, mimeType:"application/vnd.google-apps.folder"})
+    });
+    folderId = (await res.json()).id;
+    return folderId;
+  }
+  async function dataUrlToBlob(u){ return await (await fetch(u)).blob(); }
+  async function upload(dataUrl, name){
+    var blob = await dataUrlToBlob(dataUrl);
+    var parent = await ensureFolder();
+    var meta = {name:name, parents:[parent], mimeType:blob.type || "image/jpeg"};
+    var boundary = "oshikatsu" + Math.random().toString(36).slice(2);
+    var body = new Blob([
+      "--"+boundary+"\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n", JSON.stringify(meta),
+      "\r\n--"+boundary+"\r\nContent-Type: "+meta.mimeType+"\r\n\r\n", blob,
+      "\r\n--"+boundary+"--"
+    ]);
+    var res = await api("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id", {
+      method:"POST", headers:{"Content-Type":"multipart/related; boundary="+boundary}, body:body
+    });
+    var id = (await res.json()).id;
+    await idbPut(id, blob);
+    mem[id] = URL.createObjectURL(blob);
+    return PREFIX + id;
+  }
+
+  /* ---- 表示 ---- */
+  function cachedUrl(ref){ return isRef(ref) ? (mem[idOf(ref)] || null) : ref; }
+  // 写真の Blob（編集画面で使う）。ドライブの写真は端末に無ければ取りに行く
+  async function blobOf(ref){
+    if(!isRef(ref)) return await dataUrlToBlob(ref);
+    var id = idOf(ref);
+    var b = await idbGet(id);
+    if(b) return b;
+    if(!connected()) await connect();
+    b = await (await api("https://www.googleapis.com/drive/v3/files/"+encodeURIComponent(id)+"?alt=media")).blob();
+    await idbPut(id, b);
+    return b;
+  }
+  // 表示用のURL。端末に無く、接続もしていなければ null（あとで接続を促す）
+  async function urlOf(ref){
+    if(!isRef(ref)) return ref;
+    var id = idOf(ref);
+    if(mem[id]) return mem[id];
+    if(loading[id]) return loading[id];
+    loading[id] = (async function(){
+      var b = await idbGet(id);
+      if(!b){
+        if(!connected()) return null;
+        try{
+          b = await (await api("https://www.googleapis.com/drive/v3/files/"+encodeURIComponent(id)+"?alt=media")).blob();
+          await idbPut(id, b);
+        }catch(e){ console.warn("drive photo load failed", e); return null; }
+      }
+      mem[id] = URL.createObjectURL(b);
+      return mem[id];
+    })();
+    var u = await loading[id];
+    delete loading[id];
+    return u;
+  }
+  // <img> の属性：ドライブの写真は、覚えていればそのURL、無ければ空の画像にして後から入れる
+  function imgAttrs(ref){
+    if(!isRef(ref)) return 'src="'+ref+'"';
+    var u = mem[idOf(ref)];
+    return 'src="'+(u || BLANK)+'"'+(u ? '' : ' data-gd="'+escapeHtml(ref)+'"');
+  }
+  // 背景画像（LIVE・物販のチケット右側）
+  function bgStyle(ref, grad){
+    var u = cachedUrl(ref);
+    if(u) return 'background-image:'+grad+', url('+u+');';
+    return 'background-image:'+grad+';" data-gd-bg="'+escapeHtml(ref)+'" data-gd-grad="'+escapeHtml(grad);
+  }
+  async function hydrate(root){
+    root = root || document;
+    var els = Array.prototype.slice.call(root.querySelectorAll("[data-gd],[data-gd-bg]"));
+    if(!els.length){ updateBar(); return; }
+    var need = false;
+    await Promise.all(els.map(async function(el){
+      var ref = el.getAttribute("data-gd") || el.getAttribute("data-gd-bg");
+      var u = await urlOf(ref);
+      if(!u){ need = true; el.classList.add("gd-missing"); return; }
+      el.classList.remove("gd-missing");
+      if(el.hasAttribute("data-gd")){ el.src = u; el.removeAttribute("data-gd"); }
+      else { el.style.backgroundImage = el.getAttribute("data-gd-grad")+", url("+u+")"; el.removeAttribute("data-gd-bg"); }
+    }));
+    missing = need;
+    updateBar();
+  }
+  // 写真を読み込めないときに、下に「Googleドライブに接続」のバーを出す（押すと接続して表示し直す）
+  function updateBar(){
+    var bar = document.getElementById("gdBar");
+    var show = missing && available() && !connected() && !!cloud.user;
+    if(!show){ if(bar) bar.hidden = true; return; }
+    if(!bar){
+      bar = document.createElement("button");
+      bar.type = "button";
+      bar.id = "gdBar";
+      bar.className = "gd-bar";
+      bar.innerHTML = '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.4"/><path d="M8 6l1-2h6l1 2"/></svg>Googleドライブの写真を表示する';
+      bar.addEventListener("click", function(){
+        connect().then(function(){ missing = false; bar.hidden = true; render(); migrateSoon(); })
+          .catch(function(){ toast("Googleドライブに接続できませんでした"); });
+      });
+      document.body.appendChild(bar);
+    }
+    bar.hidden = false;
+  }
+  function afterRender(){
+    hydrate(document.getElementById("main"));
+  }
+  async function openViewer(ref){
+    var u = await urlOf(ref);
+    if(!u && isRef(ref)){
+      try{ await connect(); u = await urlOf(ref); }catch(e){ toast("Googleドライブに接続できませんでした"); return; }
+    }
+    if(u){
+      var v = document.getElementById("photoViewer");
+      document.getElementById("photoViewerImg").src = u;
+      v.hidden = false;
+    }
+  }
+
+  /* ---- 画像データのままの写真を、ドライブへ移す ---- */
+  function pendingCount(){
+    var n = 0;
+    ["live","goods","cheki"].forEach(function(t){
+      state[t].forEach(function(r){
+        if(isData(r.photo)) n++;
+        if(Array.isArray(r.photos)) r.photos.forEach(function(p){ if(isData(p)) n++; });
+      });
+    });
+    return n;
+  }
+  function migrateSoon(){
+    clearTimeout(migrateTimer);
+    migrateTimer = setTimeout(migrate, 1500);
+  }
+  async function migrate(){
+    if(migrating || !available() || !connected() || !cloud.user) return;
+    var total = pendingCount();
+    if(!total) return;
+    migrating = true;
+    var done = 0, failed = 0;
+    try{
+      for(var ti=0; ti<3; ti++){
+        var t = ["live","goods","cheki"][ti];
+        var ids = state[t].map(function(r){ return r.id; });
+        for(var i=0; i<ids.length; i++){
+          var cur = state[t].find(function(r){ return r.id===ids[i]; });
+          if(!cur) continue;
+          var fields = [];
+          if(isData(cur.photo)) fields.push({k:"photo", v:cur.photo});
+          if(Array.isArray(cur.photos)) cur.photos.forEach(function(p, pi){ if(isData(p)) fields.push({k:"photos", i:pi, v:p}); });
+          if(!fields.length) continue;
+          var results = [];
+          for(var f=0; f<fields.length; f++){
+            try{
+              results.push(await upload(fields[f].v, t+"_"+cur.id+"_"+(fields[f].k==="photo"?0:fields[f].i+1)+".jpg"));
+              done++;
+              if(done===1 || done%3===0) toast("写真をGoogleドライブに移しています（"+done+"/"+total+"）");
+            }catch(e){
+              console.warn("drive upload failed", e);
+              results.push(null); failed++;
+              if(!connected()) throw e;   // 期限切れなどは中断（次に接続したときに続きから）
+            }
+          }
+          // アップロード中に編集されていても、同じ写真だけを置き換える
+          var latest = state[t].find(function(r){ return r.id===ids[i]; });
+          if(!latest) continue;
+          var next = Object.assign({}, latest);
+          if(Array.isArray(latest.photos)) next.photos = latest.photos.slice();
+          var changed = false;
+          fields.forEach(function(fd, fi){
+            var ref = results[fi];
+            if(!ref) return;
+            if(fd.k==="photo" && next.photo===fd.v){ next.photo = ref; changed = true; }
+            if(fd.k==="photos" && next.photos && next.photos[fd.i]===fd.v){ next.photos[fd.i] = ref; changed = true; }
+          });
+          if(changed) await persistRecord(t, next);
+        }
+      }
+    }catch(e){
+      console.warn("drive migrate stopped", e);
+    }finally{
+      migrating = false;
+    }
+    if(done && !failed) toast("写真をGoogleドライブに保存しました");
+    else if(failed) toast("一部の写真をGoogleドライブに保存できませんでした");
+    if(state.view==="oshi") render();
+  }
+
+  return {
+    isRef:isRef, available:available, connected:connected, everConnected:everConnected,
+    connect:connect, disconnect:disconnect, imgAttrs:imgAttrs, bgStyle:bgStyle, cachedUrl:cachedUrl,
+    blobOf:blobOf, hydrate:hydrate, afterRender:afterRender, openViewer:openViewer,
+    pendingCount:pendingCount, migrateSoon:migrateSoon, migrate:migrate
+  };
+})();
+
+/* マイページ：写真の保存先（Googleドライブ） */
+function driveSettingHtml(){
+  if(!DrivePhotos.available()) return "";
+  var on = DrivePhotos.connected();
+  var pending = DrivePhotos.pendingCount();
+  return '<div class="section-label">写真の保存先</div>'
+    + '<div class="gd-setting">'
+    +   '<div class="gd-row"><div><b>Googleドライブ</b><span>'
+    +     (on ? '接続中' : (DrivePhotos.everConnected() ? '再接続が必要です' : '未接続'))
+    +     (pending ? ' ・ 未保存の写真 '+pending+'枚' : '')
+    +   '</span></div>'
+    +   '<button type="button" class="btn '+(on?'ghost':'primary')+'" data-action="gdrive-connect"'+(on && !pending ? ' disabled' : '')+'>'+(on ? (pending ? '今すぐ保存' : '接続中') : '接続する')+'</button></div>'
+    + '</div>';
 }
 
 /* ============ 1日あたりの利用上限（費用の歯止め） ============
@@ -2637,6 +2996,7 @@ async function persistRecord(type,rec){
   var idx = arr.findIndex(function(r){return r.id===rec.id;});
   if(idx>=0) arr[idx]=rec; else arr.push(rec);
   saveLocal();
+  DrivePhotos.migrateSoon();   // 画像データのままの写真があればドライブへ移す
 }
 async function removeRecord(type,id){
   state[type] = state[type].filter(function(r){return r.id!==id;});
@@ -3310,7 +3670,7 @@ var CHEKI_STAR = '<svg viewBox="0 0 24 24"><path d="M12 3l2.6 6 6.4.6-4.9 4.2 1.
 function chekiPhotoHtml(r){
   if(r.photo){
     return '<div class="ck-ph" data-action="view-photo" data-type="cheki" data-id="'+r.id+'" data-idx="'+(r.unitIdx||0)+'" role="button" tabindex="0" aria-label="写真を拡大">'
-      + '<img src="'+r.photo+'" alt="" loading="lazy"></div>';
+      + '<img '+DrivePhotos.imgAttrs(r.photo)+' alt="" loading="lazy"></div>';
   }
   return '<div class="ck-ph empty" data-action="edit-record" data-type="cheki" data-id="'+r.id+'" role="button" tabindex="0" aria-label="写真を追加">'+CHEKI_CAMERA+'</div>';
 }
@@ -3505,7 +3865,7 @@ function chekiCalendarHtml(items){
     if(!rs){ html += '<span class="ck-day"><i>'+d+'</i></span>'; continue; }
     var withPhoto = rs.filter(function(r){ return r.photo; })[0];
     html += '<button type="button" class="ck-day has'+(ds===sel?' on':'')+'" data-action="cheki-cal-day" data-date="'+ds+'">'
-      + (withPhoto ? '<img src="'+withPhoto.photo+'" alt="" loading="lazy">' : '<span class="ck-day-icon">'+kindIcon("cheki")+'</span>')
+      + (withPhoto ? '<img '+DrivePhotos.imgAttrs(withPhoto.photo)+' alt="" loading="lazy">' : '<span class="ck-day-icon">'+kindIcon("cheki")+'</span>')
       + '<i>'+d+'</i>'
       + '</button>';
   }
@@ -3620,7 +3980,7 @@ function ticketHtml(type,r,withOshiTag){
     + '<div class="tape"></div>'
     + (r.favorite ? '<div class="fav-badge"><svg viewBox="0 0 24 24"><path d="M12 3l2.6 6 6.4.6-4.9 4.2 1.5 6.2L12 16.9 6.4 20l1.5-6.2-4.9-4.2 6.4-.6z"/></svg></div>' : '')
     // チェキは写真（左のチェキ）を押すと拡大する
-    + (type==="cheki" ? (function(cp){ return '<div class="photo'+(cp?' zoomable':'')+'"'+(cp?' data-action="view-photo" data-type="cheki" data-id="'+r.id+'" role="button" tabindex="0" title="写真を拡大" aria-label="写真を拡大"':'')+'>'+(cp? '<img src="'+cp+'" alt="">' : '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.4"/><path d="M8 6l1-2h6l1 2"/></svg>')+'</div>'; })(recPhotos(r)[0]||null) : '')
+    + (type==="cheki" ? (function(cp){ return '<div class="photo'+(cp?' zoomable':'')+'"'+(cp?' data-action="view-photo" data-type="cheki" data-id="'+r.id+'" role="button" tabindex="0" title="写真を拡大" aria-label="写真を拡大"':'')+'>'+(cp? '<img '+DrivePhotos.imgAttrs(cp)+' alt="">' : '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.4"/><path d="M8 6l1-2h6l1 2"/></svg>')+'</div>'; })(recPhotos(r)[0]||null) : '')
     + '<div class="main">'
     +   '<div class="kind"><span class="stamp">'+kindIcon(type)+KIND_LABEL[type]+'</span>'
     +     (type==="live" ? (function(v){ return '<span class="view-chip '+v+'">'+VIEWING_ICON[v]+(v==="stream"?"配信":"現地")+'</span>'; })(recViewing(r)) : '')
@@ -3635,7 +3995,7 @@ function ticketHtml(type,r,withOshiTag){
           : (metaBits.length? '<div class="meta">'+metaBits.join(" ・ ")+'</div>' : ''))
     +   (r.memo? '<div class="memo">'+escapeHtml(r.memo)+'</div>' : '')
     + '</div>'
-    + '<div class="stub'+(stubHasPhoto?' has-photo':'')+'"'+(stubHasPhoto?' style="background-image:linear-gradient(175deg, rgba(20,17,13,.1), rgba(20,17,13,.62)), url('+r.photo+');"':'')+'>'
+    + '<div class="stub'+(stubHasPhoto?' has-photo':'')+'"'+(stubHasPhoto?' style="'+DrivePhotos.bgStyle(r.photo, 'linear-gradient(175deg, rgba(20,17,13,.1), rgba(20,17,13,.62))')+'"':'')+'>'
     +   '<div class="day">'+day+'</div>'
     +   '<div class="ym">'+fmtYm(r.date)+'</div>'
     +   (amt? '<div class="amt">'+fmtYen(amt)+'</div>' : '')
@@ -3953,6 +4313,7 @@ function renderOshiPage(){
     }
   }
   html += chekiViewSettingHtml();
+  html += driveSettingHtml();
   html += calendarSettingHtml();
   html += accountSectionHtml();
   html += '<p class="legal-links"><a href="privacy.html">プライバシーポリシー</a></p>';
@@ -4118,6 +4479,7 @@ function render(){
   else if(state.view==="oshi") renderOshiPage();
   else if(state.view==="stats") renderStatsPage();
   else renderListPage(state.view);
+  DrivePhotos.afterRender();   // Googleドライブの写真を入れる
 }
 
 /* ============ sheets (forms) ============ */
@@ -4996,12 +5358,13 @@ function bindRecordForm(type,existingRec){
     var elCount = form.querySelector('[name="count"]');
     function renderCkPhotos(){
       elCk.innerHTML = ckPhotos.map(function(src, i){
-        return '<button type="button" class="ck-thumb" data-ck-i="'+i+'" aria-label="'+(i+1)+'枚目の写真"><img src="'+src+'" alt=""><span class="n">'+(i+1)+'</span></button>';
+        return '<button type="button" class="ck-thumb" data-ck-i="'+i+'" aria-label="'+(i+1)+'枚目の写真"><img '+DrivePhotos.imgAttrs(src)+' alt=""><span class="n">'+(i+1)+'</span></button>';
       }).join("")
         + '<button type="button" class="ck-thumb add" id="ckAddTile" aria-label="写真を追加">'
         +   '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.4"/><path d="M8 6l1-2h6l1 2"/></svg><span>追加</span></button>';
       // 写真の数より枚数が少なければ合わせる
       if(Number(elCount.value||0) < ckPhotos.length) elCount.value = ckPhotos.length;
+      DrivePhotos.hydrate(elCk);
     }
     function hideCkMenus(){ elCkAdd.style.display = "none"; elCkMenu.style.display = "none"; }
     renderCkPhotos();
@@ -5051,7 +5414,7 @@ function bindRecordForm(type,existingRec){
       if(!ckPhotos[i]) return;
       var src = ckSources[i];
       if(!src){
-        try{ src = await (await fetch(ckPhotos[i])).blob(); }
+        try{ src = await DrivePhotos.blobOf(ckPhotos[i]); }
         catch(err){ toast("画像の読み込みに失敗しました"); return; }
       }
       PhotoEditor.open(src, function(dataUrl){
@@ -5083,13 +5446,17 @@ function bindRecordForm(type,existingRec){
     function refreshRecPhoto(){
       elEditBtn.style.display = (type==="cheki" && chosenPhoto) ? "block" : "none";
       if(chosenPhoto){
-        elImg.src = chosenPhoto;
+        // Googleドライブの写真は、覚えていればすぐ、無ければ読み込んでから入れる
+        var cu = DrivePhotos.cachedUrl(chosenPhoto);
+        elImg.src = cu || "";
+        if(!cu){ elImg.setAttribute("data-gd", chosenPhoto); DrivePhotos.hydrate(elImg.parentNode); }
         elImg.style.display = "block";
         elPlaceholder.style.display = "none";
         elClearBtn.style.display = "block";
         elViewBtn.style.display = "block";
       } else {
         elImg.style.display = "none";
+        elImg.removeAttribute("data-gd");
         elImg.src = "";
         elPlaceholder.style.display = "block";
         elClearBtn.style.display = "none";
@@ -5132,7 +5499,7 @@ function bindRecordForm(type,existingRec){
       if(!chosenPhoto) return;
       var src = editSource;
       if(!src){
-        try{ src = await (await fetch(chosenPhoto)).blob(); }
+        try{ src = await DrivePhotos.blobOf(chosenPhoto); }
         catch(e){ toast("画像の読み込みに失敗しました"); return; }
       }
       PhotoEditor.open(src, function(dataUrl){
@@ -5267,6 +5634,7 @@ function openRecordSheet(type,rec){
   }
   openSheet(recordFormHtml(type,rec));
   bindRecordForm(type,rec);
+  DrivePhotos.hydrate(sheetEl);
 }
 
 /* ============ avatar cropper ============
@@ -5766,6 +6134,7 @@ var TripMap = (function(){
 /* ============ photo viewer ============ */
 function openPhotoViewer(src){
   if(!src) return;
+  if(DrivePhotos.isRef(src)){ DrivePhotos.openViewer(src); return; }
   var v = document.getElementById("photoViewer");
   document.getElementById("photoViewerImg").src = src;
   v.hidden = false;
@@ -5818,6 +6187,15 @@ function onAppClick(e){
   }
   if(action==="cheki-cal-day"){ state.chekiCalDate = el.getAttribute("data-date"); render(); return; }
   if(action==="add-cheki"){ openRecordSheet("cheki", null); return; }
+  if(action==="gdrive-connect"){
+    if(DrivePhotos.connected()){ DrivePhotos.migrate(); return; }
+    DrivePhotos.connect().then(function(){
+      toast("Googleドライブに接続しました");
+      render();
+      DrivePhotos.migrate();
+    }).catch(function(){ toast("Googleドライブに接続できませんでした"); });
+    return;
+  }
   if(action==="set-cheki-view"){
     var nv = el.getAttribute("data-v");
     if(nv===chekiView()) return;
