@@ -725,6 +725,14 @@
   .ck-ph.empty{display:flex;align-items:center;justify-content:center;cursor:pointer;}
   .ck-ph.empty svg{width:34%;stroke:var(--accent);fill:none;stroke-width:1.4;opacity:.6;}
   .ck-ph-wrap{position:relative;}
+  /* バックアップと復元 */
+  .bk-setting{display:flex;flex-direction:column;gap:8px;}
+  .bk-setting .btn{font-size:13px;border:1px solid var(--line-strong);background:var(--paper);}
+  .bk-file{text-align:center;cursor:pointer;}
+  .rs-note{font-size:12.5px;color:var(--ink-soft);margin:0 0 10px;line-height:1.7;}
+  .rs-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px;}
+  .rs-item span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .rs-item .btn{flex:none;padding:6px 14px;font-size:12px;}
   /* 写真の保存先（Googleドライブ） */
   .gd-setting{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:12px 14px;}
   .gd-row{display:flex;align-items:center;justify-content:space-between;gap:10px;}
@@ -1626,8 +1634,10 @@ var cloud = {
   timer:null,
   busy:false,
   again:false,
-  cacheStale:false    // 端末の控え（キャッシュ）が保存できなかった（容量不足など）
+  cacheStale:false,   // 端末の控え（キャッシュ）が保存できなかった（容量不足など）
+  tomb:{}             // "kind:id" -> 削除した記録の中身（クラウドへ削除を送るまで）
 };
+var CLOUD_MASS_DELETE = 3;   // 1回の同期でこれより多く削除しようとしたら確認する
 
 function userCacheKey(uid){ return LOCAL_KEY+":u:"+uid; }
 function userSyncKey(uid){ return "oshikatsu_sync_v1:"+uid; }
@@ -1763,7 +1773,8 @@ function saveSyncMeta(){
       lastSyncedAt:cloud.lastSyncedAt ? cloud.lastSyncedAt.toISOString() : null
     } : {
       hashes:cloud.hashes, lastPulledAt:cloud.lastPulledAt,
-      lastSyncedAt:cloud.lastSyncedAt ? cloud.lastSyncedAt.toISOString() : null
+      lastSyncedAt:cloud.lastSyncedAt ? cloud.lastSyncedAt.toISOString() : null,
+      tomb:cloud.tomb
     }));
   }catch(e){}
 }
@@ -1793,8 +1804,23 @@ async function pushChanges(uid){
   Object.keys(cloud.hashes).forEach(function(k){
     if(map[k]) return;
     var p = k.indexOf(":");
-    items.push({key:k, hash:null, row:{user_id:uid, kind:k.slice(0,p), id:k.slice(p+1), data:{}, deleted:true}});
+    // 削除も中身ごと送る（クラウドに残り、あとで戻せる）
+    var keep = cloud.tomb[k] ? JSON.parse(JSON.stringify(cloud.tomb[k])) : {};
+    items.push({key:k, hash:null, row:{user_id:uid, kind:k.slice(0,p), id:k.slice(p+1), data:keep, deleted:true}});
   });
+  // 一度にたくさん消そうとしているときは、送る前に確認する（端末の不具合でクラウドの記録を消さないため）
+  var dels = items.filter(function(it){ return it.hash===null; });
+  if(dels.length > CLOUD_MASS_DELETE){
+    var okDel = confirm("クラウドの記録を"+dels.length+"件まとめて削除しようとしています。\n"
+      + "ご自身で削除した場合は「OK」を押してください。\n"
+      + "心当たりがない場合は「キャンセル」を押すと、削除せずにクラウドから記録を取り戻します。");
+    if(!okDel){
+      dels.forEach(function(d){ delete cloud.hashes[d.key]; delete cloud.tomb[d.key]; });
+      items = items.filter(function(it){ return it.hash!==null; });
+      cloud.lastPulledAt = null;   // 次の取得でクラウドの記録を全部取り直す
+      saveSyncMeta();
+    }
+  }
   var i = 0;
   while(i<items.length){
     var chunk = [], bytes = 0;
@@ -1806,7 +1832,7 @@ async function pushChanges(uid){
     if(res.error) throw res.error;
     if(!cloud.user || cloud.user.id!==uid) return;
     chunk.forEach(function(c){
-      if(c.hash===null) delete cloud.hashes[c.key];
+      if(c.hash===null){ delete cloud.hashes[c.key]; delete cloud.tomb[c.key]; }
       else cloud.hashes[c.key] = c.hash;
     });
     saveSyncMeta();
@@ -1985,6 +2011,7 @@ async function enterUserMode(user){
   cloud.cacheStale = false;
   cloud.hashes = meta.hashes || {};
   cloud.lastPulledAt = meta.lastPulledAt || null;
+  cloud.tomb = meta.tomb || {};
   cloud.lastSyncedAt = meta.lastSyncedAt ? new Date(meta.lastSyncedAt) : null;
   cloud.status = "idle";
   loadLocal();
@@ -2009,6 +2036,7 @@ function leaveUserMode(){
   clearTimeout(cloud.timer);
   cloud.user = null;
   cloud.hashes = {};
+  cloud.tomb = {};
   cloud.lastPulledAt = null;
   cloud.lastSyncedAt = null;
   cloud.status = "idle";
@@ -2471,6 +2499,138 @@ function driveSettingHtml(){
     +   '</span></div>'
     +   '<button type="button" class="btn '+(on?'ghost':'primary')+'" data-action="gdrive-connect"'+(on && !pending ? ' disabled' : '')+'>'+(on ? (pending ? '今すぐ保存' : '接続中') : '接続する')+'</button></div>'
     + '</div>';
+}
+
+/* ============ バックアップと復元 ============
+   ・全データをファイル（JSON）に保存する／ファイルから、今ない記録だけを戻す（上書きはしない）
+   ・クラウドに残っている「削除済み」の記録と、変更履歴（oshikatsu_records_history）から、
+     今ない記録を探して戻す */
+var HISTORY_TABLE = "oshikatsu_records_history";
+function backupSettingHtml(){
+  return '<div class="section-label">バックアップと復元</div>'
+    + '<div class="bk-setting">'
+    +   '<button type="button" class="btn ghost block" data-action="backup-export">全データをファイルに保存</button>'
+    +   '<label class="btn ghost block bk-file">ファイルから戻す<input type="file" id="backupImportInput" accept="application/json,.json" style="display:none;"></label>'
+    +   (cloud.user ? '<button type="button" class="btn ghost block" data-action="restore-deleted">削除された記録を探す</button>' : '')
+    + '</div>';
+}
+function backupFileName(){
+  var d = new Date();
+  return "oshikatsu-backup-"+d.getFullYear()+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0")+".json";
+}
+function exportBackup(){
+  var payload = {app:"oshikatsu-diary", version:1, exportedAt:new Date().toISOString(), data:snapshotData()};
+  var blob = new Blob([JSON.stringify(payload)], {type:"application/json"});
+  var a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = backupFileName();
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  toast("バックアップを保存しました");
+}
+// ファイルの記録のうち、今ないもの（同じIDが無いもの）だけを加える
+function importBackupData(data){
+  if(!data || typeof data!=="object") return 0;
+  var added = 0;
+  var haveOshi = {};
+  state.oshis.forEach(function(o){ haveOshi[o.id] = true; });
+  (data.oshis||[]).forEach(function(o){ if(o && o.id && !haveOshi[o.id]){ state.oshis.push(o); added++; } });
+  ["live","cheki","goods"].forEach(function(t){
+    var have = {};
+    state[t].forEach(function(r){ have[r.id] = true; });
+    (data[t]||[]).forEach(function(r){ if(r && r.id && !have[r.id]){ state[t].push(r); added++; } });
+  });
+  return added;
+}
+function bindBackupImport(){
+  var input = document.getElementById("backupImportInput");
+  if(!input) return;
+  input.addEventListener("change", function(){
+    var f = input.files && input.files[0];
+    input.value = "";
+    if(!f) return;
+    var reader = new FileReader();
+    reader.onload = function(){
+      var json = null;
+      try{ json = JSON.parse(reader.result); }catch(e){}
+      var data = json && json.data ? json.data : json;
+      if(!data || !(data.oshis || data.live || data.cheki || data.goods)){ toast("推し活手帳のバックアップファイルではありません"); return; }
+      var n = 0;
+      ["oshis","live","cheki","goods"].forEach(function(k){ n += (data[k]||[]).length; });
+      if(!confirm("バックアップの記録（"+n+"件）のうち、今ない記録だけを戻します。\n今ある記録は変更しません。よろしいですか？")) return;
+      var added = importBackupData(data);
+      if(added){ saveLocal(); render(); }
+      toast(added ? added+"件の記録を戻しました" : "戻す記録はありませんでした");
+    };
+    reader.readAsText(f);
+  });
+}
+
+function restoreLabel(kind, d){
+  if(kind==="oshi") return "推し ・ "+(d.name||"");
+  var title = d.title || (kind==="goods" ? d.item : "") || "(無題)";
+  return KIND_LABEL[kind]+" ・ "+(d.date ? d.date.replace(/-/g,".") : "日付なし")+" ・ "+title;
+}
+async function openRestoreDeleted(){
+  if(!sb || !cloud.user) return;
+  var uid = cloud.user.id;
+  openSheet('<h2 class="mincho">削除された記録を探す</h2><div class="rs-list"><p class="rs-note">探しています…</p></div>');
+  var have = {};
+  state.oshis.forEach(function(o){ have["oshi:"+o.id] = true; });
+  ["live","cheki","goods"].forEach(function(t){ state[t].forEach(function(r){ have[t+":"+r.id] = true; }); });
+  var found = {};   // key -> {kind, data, at}
+  function consider(kind, data, at){
+    if(["oshi","live","cheki","goods"].indexOf(kind)<0) return;
+    if(!data || typeof data!=="object" || !data.id) return;
+    var k = kind+":"+data.id;
+    if(have[k]) return;
+    if(!found[k] || (at||"") > (found[k].at||"")) found[k] = {kind:kind, data:data, at:at};
+  }
+  try{
+    var r1 = await sb.from(CLOUD_TABLE).select("kind,id,data,updated_at").eq("user_id", uid).eq("deleted", true).limit(1000);
+    (r1.data||[]).forEach(function(r){ consider(r.kind, r.data, r.updated_at); });
+  }catch(e){ console.warn(e); }
+  var historyOk = true;
+  try{
+    var r2 = await sb.from(HISTORY_TABLE).select("kind,id,data,archived_at").eq("user_id", uid).order("archived_at", {ascending:false}).limit(1000);
+    if(r2.error) historyOk = false;
+    (r2.data||[]).forEach(function(r){ consider(r.kind, r.data, r.archived_at); });
+  }catch(e){ historyOk = false; }
+  var list = Object.keys(found).map(function(k){ return found[k]; })
+    .sort(function(a,b){ return (b.data.date||"").localeCompare(a.data.date||""); });
+  var box = sheetEl.querySelector(".rs-list");
+  if(!box) return;
+  if(!list.length){
+    box.innerHTML = '<p class="rs-note">戻せる記録は見つかりませんでした。'
+      + (historyOk ? '' : '<br>（変更履歴の保存が、クラウド側でまだ有効になっていません）')+'</p>';
+    return;
+  }
+  box.innerHTML = '<p class="rs-note">'+list.length+'件見つかりました。</p>'
+    + list.map(function(it, i){
+        return '<div class="rs-item"><span>'+escapeHtml(restoreLabel(it.kind, it.data))+'</span>'
+          + '<button type="button" class="btn ghost" data-rs="'+i+'">戻す</button></div>';
+      }).join("")
+    + (list.length>1 ? '<button type="button" class="btn primary block" data-rs="all" style="margin-top:12px;">すべて戻す</button>' : '');
+  box.addEventListener("click", function(e){
+    var b = e.target.closest("[data-rs]");
+    if(!b) return;
+    var v = b.getAttribute("data-rs");
+    var targets = v==="all" ? list : [list[Number(v)]];
+    targets.forEach(function(it){
+      if(it.done) return;
+      putIntoState(it.kind, it.data);
+      delete cloud.tomb[it.kind+":"+it.data.id];
+      it.done = true;
+    });
+    saveLocal();
+    render();
+    box.querySelectorAll("[data-rs]").forEach(function(btn){
+      var bv = btn.getAttribute("data-rs");
+      if(bv==="all" ? list.every(function(x){ return x.done; }) : list[Number(bv)].done){ btn.disabled = true; btn.textContent = "戻しました"; }
+    });
+    toast(targets.length+"件の記録を戻しました");
+  });
 }
 
 /* ============ 1日あたりの利用上限（費用の歯止め） ============
@@ -2983,7 +3143,13 @@ async function persistOshi(oshi){
   if(idx>=0) state.oshis[idx]=oshi; else state.oshis.push(oshi);
   saveLocal();
 }
+/* 削除した記録の中身は、クラウドへ「削除済み」を送るときに一緒に送る（あとで戻せるように） */
+function rememberDeleted(kind, rec){
+  if(!cloud.user || !rec || !rec.id) return;
+  cloud.tomb[kind+":"+rec.id] = rec;
+}
 async function removeOshi(id){
+  rememberDeleted("oshi", state.oshis.find(function(o){ return o.id===id; }));
   state.oshis = state.oshis.filter(function(o){return o.id!==id;});
   saveLocal();
 }
@@ -2999,6 +3165,7 @@ async function persistRecord(type,rec){
   DrivePhotos.migrateSoon();   // 画像データのままの写真があればドライブへ移す
 }
 async function removeRecord(type,id){
+  rememberDeleted(type, state[type].find(function(r){ return r.id===id; }));
   state[type] = state[type].filter(function(r){return r.id!==id;});
   saveLocal();
 }
@@ -4315,10 +4482,12 @@ function renderOshiPage(){
   html += chekiViewSettingHtml();
   html += driveSettingHtml();
   html += calendarSettingHtml();
+  html += backupSettingHtml();
   html += accountSectionHtml();
   html += '<p class="legal-links"><a href="privacy.html">プライバシーポリシー</a></p>';
   document.getElementById("main").innerHTML = html;
   bindCalendarSetting();
+  bindBackupImport();
   if(state.oshis.length>1) bindOshiPageDragDrop();
 }
 /* Lets the person drag an oshi-row onto another to swap their order, as an
@@ -6187,6 +6356,8 @@ function onAppClick(e){
   }
   if(action==="cheki-cal-day"){ state.chekiCalDate = el.getAttribute("data-date"); render(); return; }
   if(action==="add-cheki"){ openRecordSheet("cheki", null); return; }
+  if(action==="backup-export"){ exportBackup(); return; }
+  if(action==="restore-deleted"){ openRestoreDeleted(); return; }
   if(action==="gdrive-connect"){
     if(DrivePhotos.connected()){ DrivePhotos.migrate(); return; }
     DrivePhotos.connect().then(function(){
