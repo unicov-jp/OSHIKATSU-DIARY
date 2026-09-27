@@ -764,6 +764,12 @@
   .ck-thumb{position:relative;aspect-ratio:54/74;border-radius:4px;border:1px solid var(--line-strong);background:var(--paper);padding:0;overflow:hidden;cursor:pointer;}
   .ck-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
   .ck-thumb .n{position:absolute;left:4px;top:4px;background:rgba(33,28,23,.6);color:#FFFFFF;font-size:10px;font-weight:700;border-radius:99px;padding:0 6px;line-height:1.6;}
+  .ck-thumb[data-ck-i]{touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}
+  .ck-thumb.first{border:2px solid var(--accent);}
+  .ck-thumb .top{position:absolute;left:0;right:0;bottom:0;background:var(--accent);color:var(--on-accent);font-size:10px;font-weight:700;text-align:center;line-height:1.7;}
+  .ck-thumb.dragging{z-index:5;opacity:.9;box-shadow:0 10px 22px -8px rgba(33,28,23,.55);transition:none;cursor:grabbing;}
+  .ck-thumb.drop-to{outline:2px dashed var(--accent);outline-offset:2px;}
+  .ck-photos-hint{font-size:11px;color:var(--ink-soft);margin:6px 0 0;}
   .ck-thumb.add{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;border-style:dashed;color:var(--accent);font-size:11px;font-weight:700;font-family:inherit;}
   .ck-thumb.add svg{width:24px;height:24px;stroke:currentColor;fill:none;stroke-width:1.5;}
   /* 左上：LIVE・物販のアイコン */
@@ -2758,10 +2764,12 @@ var DrivePhotos = (function(){
           if(isData(cur.photo)) fields.push({k:"photo", v:cur.photo});
           if(Array.isArray(cur.photos)) cur.photos.forEach(function(p, pi){ if(isData(p)) fields.push({k:"photos", i:pi, v:p}); });
           if(!fields.length) continue;
-          var results = [];
+          var results = [], sameValue = {};
           for(var f=0; f<fields.length; f++){
+            // 1枚目は photo と photos の両方に入っているので、同じ写真は1回だけ送る
+            if(sameValue[fields[f].v]){ results.push(sameValue[fields[f].v]); continue; }
             try{
-              results.push(await upload(fields[f].v, t+"_"+cur.id+"_"+(fields[f].k==="photo"?0:fields[f].i+1)+".jpg"));
+              results.push(sameValue[fields[f].v] = await upload(fields[f].v, t+"_"+cur.id+"_"+(fields[f].k==="photo"?0:fields[f].i+1)+".jpg"));
               done++;
               if(done===1 || done%3===0) toast("写真をGoogleドライブに移しています（"+done+"/"+total+"）");
             }catch(e){
@@ -4192,6 +4200,8 @@ function calendarDescFor(r, template){
     return line.replace(re, function(_, k){ return values[k]; });
   }).filter(function(line){ return line!==null; }).join("\n").trim();
 }
+// 日付が明日以降の記録（これからの予定）。参戦回数や遠征マップには数えない
+function isFutureRec(r){ return !!(r && r.date && r.date > todayYmdStr()); }
 function recStreamUrls(r){
   var list = Array.isArray(r.streamUrls) ? r.streamUrls : (r.streamUrl ? [r.streamUrl] : []);
   return list.map(safeWebUrl).filter(Boolean);
@@ -4277,8 +4287,8 @@ function allRecordsFlat(){
 function aggregateByOshi(){
   return state.oshis.map(function(o){
     var recs = allRecordsFlat().filter(function(item){ return recHasOshi(item.r, o.id); });
-    // 参戦＝現地観戦のみ（配信で観たLIVEは数えない）
-    var liveN = recs.filter(function(i){return i.type==="live" && recViewing(i.r)!=="stream";}).length;
+    // 参戦＝現地観戦のみ（配信で観たLIVEと、これからのLIVEは数えない）
+    var liveN = recs.filter(function(i){return i.type==="live" && recViewing(i.r)!=="stream" && !isFutureRec(i.r);}).length;
     var chekiN = recs.filter(function(i){return i.type==="cheki";}).reduce(function(s,i){return s+chekiUnits(i.r);},0);
     var goodsN = recs.filter(function(i){return i.type==="goods";}).reduce(function(s,i){return s+(Number(i.r.qty)||1);},0);
     var total = Math.round(recs.reduce(function(s,i){ return s+recAmountForOshi(i.type,i.r,o.id); },0));
@@ -4372,10 +4382,8 @@ function renderHome(){
 
   var recs = allRecordsForOshi(oshi.id);
   // 参戦＝現地観戦のみ（配信で観たLIVEは数えない）。今日までに行ったLIVEだけを数え、これからのLIVEは数えない
-  var nowD = new Date();
-  var todayYmd = nowD.getFullYear()+"-"+String(nowD.getMonth()+1).padStart(2,"0")+"-"+String(nowD.getDate()).padStart(2,"0");
   var liveN = state.live.filter(function(r){
-    return recHasOshi(r,oshi.id) && recViewing(r)!=="stream" && !(r.date && r.date > todayYmd);
+    return recHasOshi(r,oshi.id) && recViewing(r)!=="stream" && !isFutureRec(r);
   }).length;
   var total = Math.round(recs.reduce(function(s,item){ return s+recAmountForOshi(item.type,item.r,oshi.id); },0));
 
@@ -5626,36 +5634,21 @@ function oshiFormHtml(oshi){
     + '</form>';
 }
 
-/* チェキの写真欄：複数枚を並べ、＋で追加（撮る・選ぶ）、写真を押すと拡大・編集・削除 */
-function chekiPhotosFieldHtml(){
-  return '<div class="field"><label>チェキ写真（任意）</label>'
+/* 写真欄（LIVE・チェキ・物販 共通）：複数枚を並べ、＋で追加（撮る・選ぶ）、写真を押すと拡大・編集・削除。
+   写真はドラッグで並べ替えられ、1枚目が一覧などに表示される。「写真を編集する」（チェキの枠合わせ）はチェキだけ */
+function recordPhotosFieldHtml(type, labelText){
+  return '<div class="field"><label>'+labelText+'</label>'
     + '<div class="ck-photos" id="ckPhotos"></div>'
+    + '<p class="ck-photos-hint">写真を押したまま動かすと並べ替えられます。1枚目が一覧に表示されます。</p>'
     + '<div class="photo-menu" id="ckAddMenu" style="display:none;">'
     +   '<label class="photo-menu-item" style="cursor:pointer;">写真を撮る<input type="file" id="ckPhotoCamera" accept="image/*" capture="environment" style="display:none;"></label>'
     +   '<label class="photo-menu-item" style="cursor:pointer;">写真を選ぶ<input type="file" id="ckPhotoInput" accept="image/*" multiple style="display:none;"></label>'
     + '</div>'
     + '<div class="photo-menu" id="ckPhotoMenu" style="display:none;">'
     +   '<button type="button" class="photo-menu-item" id="ckViewBtn">拡大して見る</button>'
-    +   '<button type="button" class="photo-menu-item" id="ckEditBtn">写真を編集する</button>'
+    +   '<button type="button" class="photo-menu-item" id="ckFirstBtn">1枚目にする</button>'
+    +   (type==="cheki" ? '<button type="button" class="photo-menu-item" id="ckEditBtn">写真を編集する</button>' : '')
     +   '<button type="button" class="photo-menu-item danger" id="ckDelBtn">写真を削除</button>'
-    + '</div>'
-    + '</div>';
-}
-function recordPhotoFieldHtml(labelText){
-  return '<div class="field"><label>'+labelText+'</label>'
-    + '<div class="photo-picker">'
-    +   '<button type="button" class="cheki-photo-preview" id="recPhotoPreviewBtn">'
-    +     '<img id="recPhotoImg" alt="" style="display:none;">'
-    +     '<svg id="recPhotoPlaceholder" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.4"/><path d="M8 6l1-2h6l1 2"/></svg>'
-    +     '<span class="photo-edit-badge"><svg viewBox="0 0 24 24"><path d="M4 20h4L18.5 9.5a2.1 2.1 0 000-3L18 6a2.1 2.1 0 00-3 0L4.5 16.5z"/></svg></span>'
-    +   '</button>'
-    +   '<div class="photo-menu" id="recPhotoMenu" style="display:none;">'
-    +     '<label class="photo-menu-item" style="cursor:pointer;">写真を撮る<input type="file" id="recPhotoCamera" accept="image/*" capture="environment" style="display:none;"></label>'
-    +     '<label class="photo-menu-item" style="cursor:pointer;">写真を選ぶ<input type="file" id="recPhotoInput" accept="image/*" style="display:none;"></label>'
-    +     '<button type="button" class="photo-menu-item" id="editRecPhotoBtn" style="display:none;">写真を編集する</button>'
-    +     '<button type="button" class="photo-menu-item" id="viewRecPhotoBtn" style="display:none;">拡大して見る</button>'
-    +     '<button type="button" class="photo-menu-item danger" id="clearRecPhotoBtn" style="display:none;">写真を削除</button>'
-    +   '</div>'
     + '</div>'
     + '</div>';
 }
@@ -5685,7 +5678,7 @@ function recordFormHtml(type,rec){
   }
 
   if(type==="live"){
-    fields += recordPhotoFieldHtml("LIVE写真（任意）");
+    fields += recordPhotosFieldHtml("live", "LIVE写真（任意）");
     fields += '<div class="field"><label>公演・ツアー名</label><input type="text" name="title" value="'+(rec?escapeHtml(rec.title||""):"")+'" required></div>';
     fields += '<div class="field venue-field"><label>会場（任意）</label>'
       + '<div class="venue-row"><input type="text" name="venue" value="'+(rec?escapeHtml(rec.venue||""):"")+'">'
@@ -5714,7 +5707,7 @@ function recordFormHtml(type,rec){
     fields += '<div class="field"><label>オンラインチケットURL（任意）</label><input type="text" name="ticketUrl" inputmode="url" autocomplete="off" value="'+(rec?escapeHtml(rec.ticketUrl||""):"")+'"></div>';
     fields += '<div class="field"><label>チケット代（任意）</label><input type="number" name="price" min="0" value="'+(rec?rec.price||"":"")+'" placeholder="0"></div>';
   } else if(type==="cheki"){
-    fields += chekiPhotosFieldHtml();
+    fields += recordPhotosFieldHtml("cheki", "チェキ写真（任意）");
     fields += '<div class="field"><label>イベント名</label><input type="text" name="title" value="'+(rec?escapeHtml(rec.title||""):"")+'" required></div>';
     // 枚数と写真はまとめて登録できる（チェキ記録タブでは1枚ずつ表示する）
     fields += '<div class="field row2">'
@@ -5723,7 +5716,7 @@ function recordFormHtml(type,rec){
       + '</div>';
     fields += '<div class="field"><label>話した内容・会話メモ（任意）</label><input type="text" name="content" value="'+(rec?escapeHtml(rec.content||""):"")+'"></div>';
   } else {
-    fields += recordPhotoFieldHtml("物販写真（任意）");
+    fields += recordPhotosFieldHtml("goods", "物販写真（任意）");
     fields += '<div class="field"><label>イベント名・購入先（任意）</label><input type="text" name="title" value="'+(rec?escapeHtml(rec.title||""):"")+'"></div>';
     fields += '<div class="field"><label>ONLINE物販URL（任意）</label><input type="text" name="shopUrl" inputmode="url" autocomplete="off" value="'+(rec?escapeHtml(rec.shopUrl||""):"")+'"></div>';
     fields += '<div class="field"><label>商品名</label><input type="text" name="item" value="'+(rec?escapeHtml(rec.item||""):"")+'" required></div>';
@@ -6172,7 +6165,6 @@ function bindOshiForm(existingOshi){
 
 function bindRecordForm(type,existingRec){
   var form = document.getElementById("recordForm");
-  var chosenPhoto = existingRec ? (existingRec.photo || null) : null;
   var favOn = existingRec ? !!existingRec.favorite : false;
   var hideOn = existingRec ? !!existingRec.hidden : false;
   var elFavToggle = form.querySelector("#favToggle");
@@ -6334,33 +6326,85 @@ function bindRecordForm(type,existingRec){
     });
   }
 
-  /* チェキの写真（複数）。photos は保存する写真、sources はこの画面で撮った・選んだ元の写真（編集用） */
+  /* 写真（複数。LIVE・チェキ・物販 共通）。photos は保存する写真、sources はこの画面で撮った・選んだ元の写真（編集用） */
   var ckPhotos = [], ckSources = [], ckFavs = [], ckActive = -1;
-  if(type==="cheki"){
+  {
     ckPhotos = existingRec ? recPhotos(existingRec).slice() : [];
     ckSources = ckPhotos.map(function(){ return null; });
-    // 1枚ごとのお気に入り（写真を消したときに、あとの写真のお気に入りがずれないように一緒に動かす）
-    if(existingRec){ for(var fk=0; fk<chekiUnits(existingRec); fk++) ckFavs.push(chekiUnitFav(existingRec, fk)); }
+    // チェキの1枚ごとのお気に入り（写真を消す・並べ替えるときに、写真と一緒に動かす）
+    if(type==="cheki" && existingRec){ for(var fk=0; fk<chekiUnits(existingRec); fk++) ckFavs.push(chekiUnitFav(existingRec, fk)); }
     var elCk = form.querySelector("#ckPhotos");
     var elCkAdd = form.querySelector("#ckAddMenu");
     var elCkMenu = form.querySelector("#ckPhotoMenu");
     var elCkInput = form.querySelector("#ckPhotoInput");
     var elCkCamera = form.querySelector("#ckPhotoCamera");
-    var elCount = form.querySelector('[name="count"]');
+    var elCount = form.querySelector('[name="count"]');   // チェキだけ
+    var elHint = form.querySelector(".ck-photos-hint");
     function renderCkPhotos(){
       elCk.innerHTML = ckPhotos.map(function(src, i){
-        return '<button type="button" class="ck-thumb" data-ck-i="'+i+'" aria-label="'+(i+1)+'枚目の写真"><img '+DrivePhotos.imgAttrs(src)+' alt=""><span class="n">'+(i+1)+'</span></button>';
+        return '<button type="button" class="ck-thumb'+(i===0?' first':'')+'" data-ck-i="'+i+'" aria-label="'+(i+1)+'枚目の写真"><img '+DrivePhotos.imgAttrs(src)+' alt="" draggable="false"><span class="n">'+(i+1)+'</span>'+(i===0 && ckPhotos.length>1 ? '<span class="top">表示</span>' : '')+'</button>';
       }).join("")
         + '<button type="button" class="ck-thumb add" id="ckAddTile" aria-label="写真を追加">'
         +   '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.4"/><path d="M8 6l1-2h6l1 2"/></svg><span>追加</span></button>';
       // 写真の数より枚数が少なければ合わせる
-      if(Number(elCount.value||0) < ckPhotos.length) elCount.value = ckPhotos.length;
+      if(elCount && Number(elCount.value||0) < ckPhotos.length) elCount.value = ckPhotos.length;
+      if(elHint) elHint.style.display = ckPhotos.length>1 ? "block" : "none";
       DrivePhotos.hydrate(elCk);
     }
+    // 写真を from 番目から to 番目へ動かす（元の写真・お気に入りも一緒に）
+    function moveCkPhoto(from, to){
+      if(from===to || from<0 || to<0 || from>=ckPhotos.length || to>=ckPhotos.length) return;
+      [ckPhotos, ckSources, ckFavs].forEach(function(arr){
+        if(arr===ckFavs && type!=="cheki") return;
+        while(arr.length < ckPhotos.length) arr.push(arr===ckFavs ? false : null);
+        var v = arr.splice(from, 1)[0];
+        arr.splice(to, 0, v);
+      });
+      renderCkPhotos();
+    }
+    // ドラッグで並べ替え：押したまま8px以上動かすと、指の下の写真の位置へ動かす
+    var ckDrag = null, ckSuppressClick = false;
+    elCk.addEventListener("pointerdown", function(e){
+      var th = e.target.closest("[data-ck-i]");
+      if(!th || (e.button!==undefined && e.button!==0)) return;
+      ckDrag = {el:th, from:Number(th.getAttribute("data-ck-i")), x:e.clientX, y:e.clientY, id:e.pointerId, started:false, to:-1};
+      try{ th.setPointerCapture(e.pointerId); }catch(err){}
+    });
+    elCk.addEventListener("pointermove", function(e){
+      if(!ckDrag || e.pointerId!==ckDrag.id) return;
+      var dx = e.clientX-ckDrag.x, dy = e.clientY-ckDrag.y;
+      if(!ckDrag.started){
+        if(Math.abs(dx)+Math.abs(dy) < 8) return;
+        ckDrag.started = true;
+        ckDrag.el.classList.add("dragging");
+        hideCkMenus();
+      }
+      e.preventDefault();
+      ckDrag.el.style.transform = "translate("+dx+"px,"+dy+"px) scale(1.06)";
+      var over = document.elementsFromPoint(e.clientX, e.clientY).filter(function(n){ return n!==ckDrag.el && n.closest && n.closest("[data-ck-i]") && !n.closest(".dragging"); })[0];
+      var ot = over ? over.closest("[data-ck-i]") : null;
+      elCk.querySelectorAll(".drop-to").forEach(function(n){ n.classList.remove("drop-to"); });
+      ckDrag.to = ot ? Number(ot.getAttribute("data-ck-i")) : -1;
+      if(ot) ot.classList.add("drop-to");
+    });
+    function endCkDrag(e){
+      if(!ckDrag || (e && e.pointerId!==ckDrag.id)) return;
+      var d = ckDrag; ckDrag = null;
+      if(!d.started) return;
+      ckSuppressClick = true;
+      setTimeout(function(){ ckSuppressClick = false; }, 350);
+      d.el.classList.remove("dragging");
+      d.el.style.transform = "";
+      if(d.to>=0) moveCkPhoto(d.from, d.to);
+      else renderCkPhotos();
+    }
+    elCk.addEventListener("pointerup", endCkDrag);
+    elCk.addEventListener("pointercancel", endCkDrag);
     function hideCkMenus(){ elCkAdd.style.display = "none"; elCkMenu.style.display = "none"; }
     renderCkPhotos();
     elCk.addEventListener("click", function(e){
       e.stopPropagation();
+      if(ckSuppressClick){ ckSuppressClick = false; return; }
       var add = e.target.closest("#ckAddTile");
       var th = e.target.closest("[data-ck-i]");
       var wasAdd = elCkAdd.style.display==="block", wasMenu = elCkMenu.style.display==="block";
@@ -6400,7 +6444,11 @@ function bindRecordForm(type,existingRec){
     form.querySelector("#ckViewBtn").addEventListener("click", function(){
       if(ckPhotos[ckActive]) openPhotoViewer(ckPhotos[ckActive]);
     });
-    form.querySelector("#ckEditBtn").addEventListener("click", async function(){
+    form.querySelector("#ckFirstBtn").addEventListener("click", function(){
+      if(ckActive>0) moveCkPhoto(ckActive, 0);
+      ckActive = -1;
+    });
+    if(form.querySelector("#ckEditBtn")) form.querySelector("#ckEditBtn").addEventListener("click", async function(){
       var i = ckActive;
       if(!ckPhotos[i]) return;
       var src = ckSources[i];
@@ -6416,105 +6464,16 @@ function bindRecordForm(type,existingRec){
       if(ckActive<0 || ckActive>=ckPhotos.length) return;
       ckPhotos.splice(ckActive, 1);
       ckSources.splice(ckActive, 1);
-      ckFavs.splice(ckActive, 1);
+      if(type==="cheki") ckFavs.splice(ckActive, 1);
       ckActive = -1;
       renderCkPhotos();
     });
   }
 
   // 写真を撮る・選ぶ前に、Googleドライブへ接続しておく
-  form.querySelectorAll("#recPhotoMenu label, #ckAddMenu label").forEach(function(l){
+  form.querySelectorAll("#ckAddMenu label").forEach(function(l){
     l.addEventListener("click", function(e){ DrivePhotos.requireConnection(e); }, true);
   });
-
-  var hasPhotoField = (type==="live" || type==="goods");
-  if(hasPhotoField){
-    var elBtn = form.querySelector("#recPhotoPreviewBtn");
-    var elMenu = form.querySelector("#recPhotoMenu");
-    var elImg = form.querySelector("#recPhotoImg");
-    var elPlaceholder = form.querySelector("#recPhotoPlaceholder");
-    var elClearBtn = form.querySelector("#clearRecPhotoBtn");
-    var elInput = form.querySelector("#recPhotoInput");
-
-    var elViewBtn = form.querySelector("#viewRecPhotoBtn");
-    var elEditBtn = form.querySelector("#editRecPhotoBtn");
-    var editSource = null;   // チェキ：この画面で撮った・選んだ元の写真（編集はここからやり直せる）
-    function refreshRecPhoto(){
-      elEditBtn.style.display = (type==="cheki" && chosenPhoto) ? "block" : "none";
-      if(chosenPhoto){
-        // Googleドライブの写真は、覚えていればすぐ、無ければ読み込んでから入れる
-        var cu = DrivePhotos.cachedUrl(chosenPhoto);
-        elImg.src = cu || "";
-        if(!cu){ elImg.setAttribute("data-gd", chosenPhoto); DrivePhotos.hydrate(elImg.parentNode); }
-        elImg.style.display = "block";
-        elPlaceholder.style.display = "none";
-        elClearBtn.style.display = "block";
-        elViewBtn.style.display = "block";
-      } else {
-        elImg.style.display = "none";
-        elImg.removeAttribute("data-gd");
-        elImg.src = "";
-        elPlaceholder.style.display = "block";
-        elClearBtn.style.display = "none";
-        elViewBtn.style.display = "none";
-      }
-    }
-    elViewBtn.addEventListener("click", function(){ openPhotoViewer(chosenPhoto); });
-    refreshRecPhoto();
-
-    elBtn.addEventListener("click", function(e){
-      e.stopPropagation();
-      var wasOpen = elMenu.style.display === "block";
-      elMenu.style.display = "none";
-      if(!wasOpen){ openPopoverNear(elBtn, elMenu); }
-    });
-    form.addEventListener("click", function(e){
-      if(!e.target.closest(".photo-picker")){ elMenu.style.display = "none"; }
-    });
-    elMenu.querySelectorAll(".photo-menu-item").forEach(function(item){
-      item.addEventListener("click", function(){ elMenu.style.display = "none"; });
-    });
-    // 「写真を撮る」（カメラ）と「写真を選ぶ」（端末の写真）のどちらからでも同じように読み込む
-    var elCamera = form.querySelector("#recPhotoCamera");
-    function onPhotoPicked(input){
-      var file = input.files && input.files[0];
-      if(!file) return;
-      if(file.type.indexOf("image/")!==0){ toast("画像ファイルを選択してください"); return; }
-      // 撮った・選んだ写真はそのまま入れる（チェキの枠合わせは「写真を編集する」から）
-      resizeImageFile(file, 640, 0.85).then(function(dataUrl){
-        input.value = "";
-        chosenPhoto = dataUrl;
-        editSource = type==="cheki" ? file : null;
-        refreshRecPhoto();
-      }).catch(function(){
-        input.value = "";
-        toast("画像の読み込みに失敗しました");
-      });
-    }
-    elEditBtn.addEventListener("click", async function(){
-      if(!chosenPhoto) return;
-      var src = editSource;
-      if(!src){
-        try{ src = await DrivePhotos.blobOf(chosenPhoto); }
-        catch(e){ toast("画像の読み込みに失敗しました"); return; }
-      }
-      PhotoEditor.open(src, function(dataUrl){
-        if(dataUrl){
-          chosenPhoto = dataUrl;
-          refreshRecPhoto();
-        }
-      });
-    });
-    elInput.addEventListener("change", function(){ onPhotoPicked(elInput); });
-    elCamera.addEventListener("change", function(){ onPhotoPicked(elCamera); });
-    elClearBtn.addEventListener("click", function(){
-      chosenPhoto = null;
-      editSource = null;
-      elInput.value = "";
-      elCamera.value = "";
-      refreshRecPhoto();
-    });
-  }
 
   form.addEventListener("submit", async function(e){
     e.preventDefault();
@@ -6566,18 +6525,30 @@ function bindRecordForm(type,existingRec){
       rec.venuePlace = venueAc ? venueAc.getPlace() : null;
     }
     // 写真はこの時点でGoogleドライブへ送る（記録には置き場所だけを入れる）
-    var needUpload = (hasPhotoField && DrivePhotos.isData(chosenPhoto)) || (type==="cheki" && ckPhotos.some(DrivePhotos.isData));
+    var needUpload = ckPhotos.some(DrivePhotos.isData);
     if(needUpload && DrivePhotos.available() && DrivePhotos.connected()){
       var submitBtn = form.querySelector('button[type="submit"]');
       if(submitBtn) submitBtn.disabled = true;
       toast("写真をGoogleドライブに保存しています…");
-      if(hasPhotoField) chosenPhoto = await DrivePhotos.uploadNow(chosenPhoto, type+"_"+rec.id+"_0.jpg");
-      if(type==="cheki"){
-        for(var ui=0; ui<ckPhotos.length; ui++) ckPhotos[ui] = await DrivePhotos.uploadNow(ckPhotos[ui], "cheki_"+rec.id+"_"+(ui+1)+".jpg");
+      // 3枚ずつ同時に送る
+      var upIdx = ckPhotos.map(function(v, k){ return DrivePhotos.isData(v) ? k : -1; }).filter(function(k){ return k>=0; });
+      var upNext = 0, upStamp = Date.now();
+      async function upWorker(){
+        while(upNext < upIdx.length){
+          var k = upIdx[upNext++];
+          ckPhotos[k] = await DrivePhotos.uploadNow(ckPhotos[k], type+"_"+rec.id+"_"+upStamp+"_"+(k+1)+".jpg");
+        }
       }
+      var ups = [];
+      for(var uw=0; uw<Math.min(3, upIdx.length); uw++) ups.push(upWorker());
+      await Promise.all(ups);
       if(submitBtn) submitBtn.disabled = false;
     }
-    if(hasPhotoField){ rec.photo = chosenPhoto; }
+    if(type==="live" || type==="goods"){
+      // 写真は photos に並び順で持ち、1枚目を photo にも入れる（一覧・カレンダーなどは photo を表示する）
+      rec.photos = ckPhotos.slice();
+      rec.photo = ckPhotos[0] || null;
+    }
     if(type==="cheki"){
       // 写真は photos にだけ持つ（1枚目を photo にも入れると容量が倍になるため）
       rec.photos = ckPhotos.slice();
@@ -6977,6 +6948,7 @@ var TripMap = (function(){
     state.live.forEach(function(r){
       if(r.hidden || !oshi || !recHasOshi(r, oshi.id)) return;
       if(recViewing(r)==="stream") return;
+      if(isFutureRec(r)) return;   // これからのLIVEは、行ってから地図に出す
       var name = (r.venuePlace && r.venuePlace.name) || (r.venue||"").trim();
       if(!name) return;
       var key = venueKey(name);
