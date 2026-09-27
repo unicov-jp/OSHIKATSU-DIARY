@@ -2255,9 +2255,9 @@ var DrivePhotos = (function(){
   var LINK_KEY = "oshikatsu_gdrive_linked_v1:";
   var linked = null, refreshing = null, linkChecked = false;
   var folderId = null, folderLock = null, subIds = {}, subLocks = {}, dbp = null, mem = {}, loading = {};
-  // 「推し活手帳」フォルダの中の振り分け先（Backup・LIVE・チェキ・物販・その他）
-  var SUB_BACKUP = "Backup", SUB_LIVE = "LIVE", SUB_CHEKI = "チェキ", SUB_GOODS = "物販", SUB_OTHER = "その他";
-  var SUB_NAMES = [SUB_BACKUP, SUB_LIVE, SUB_CHEKI, SUB_GOODS, SUB_OTHER];
+  // 「推し活手帳」フォルダの中の振り分け先（Backup・LIVE・チェキ・物販・Gallery・その他）
+  var SUB_BACKUP = "Backup", SUB_LIVE = "LIVE", SUB_CHEKI = "チェキ", SUB_GOODS = "物販", SUB_GALLERY = "Gallery", SUB_OTHER = "その他";
+  var SUB_NAMES = [SUB_BACKUP, SUB_LIVE, SUB_CHEKI, SUB_GOODS, SUB_GALLERY, SUB_OTHER];
   var FOLDER_MIME = "application/vnd.google-apps.folder";
   var migrating = false, migrateTimer = null, missing = false;
 
@@ -2506,7 +2506,7 @@ var DrivePhotos = (function(){
     var res = await api("https://www.googleapis.com/drive/v3/files?spaces=drive&orderBy=createdTime&fields=files(id,createdTime)&q="+encodeURIComponent(q));
     return ((await res.json()).files || []);
   }
-  // 振り分け先のフォルダ（Backup・LIVE・チェキ・物販・その他）
+  // 振り分け先のフォルダ（Backup・LIVE・チェキ・物販・Gallery・その他）
   function ensureSub(name){
     if(subIds[name]) return Promise.resolve(subIds[name]);
     if(subLocks[name]) return subLocks[name];
@@ -2533,7 +2533,8 @@ var DrivePhotos = (function(){
     if(fileName.indexOf("live_")===0) return SUB_LIVE;
     if(fileName.indexOf("cheki_")===0) return SUB_CHEKI;
     if(fileName.indexOf("goods_")===0) return SUB_GOODS;
-    return SUB_OTHER;   // ギャラリー・推しの写真・ヘッダーロゴなど
+    if(fileName.indexOf("gallery_")===0) return SUB_GALLERY;   // ホームのギャラリー
+    return SUB_OTHER;   // 推しの写真・ヘッダーロゴなど
   }
   async function dataUrlToBlob(u){ return await (await fetch(u)).blob(); }
   async function upload(dataUrl, name){
@@ -2876,7 +2877,7 @@ var DrivePhotos = (function(){
 
   /* ---- ドライブの整理：フォルダ分けと、重複（使われていない写真）の片付け ----
      ・「推し活手帳」が複数あれば、いちばん古いものに中身をまとめ、空になったものはゴミ箱へ
-     ・写真とバックアップを「Backup」「LIVE」「チェキ」「物販」「その他」に振り分ける
+     ・写真とバックアップを「Backup」「LIVE」「チェキ」「物販」「Gallery」「その他」に振り分ける
      ・どの記録からも使われていない写真（2台で同時に移したときなどにできる重複）はゴミ箱へ
        （作ってから1時間以内のものは、別の端末の記録がまだ届いていないことがあるので残す）
      ゴミ箱へ移したファイルは、Google ドライブのゴミ箱から30日以内なら戻せる。 */
@@ -3066,7 +3067,7 @@ async function organizeDrive(){
     var nMove = plan.moves.length, nTrash = plan.trash.length, nFolders = (plan.extraRoots||[]).length + (plan.extraFolders||[]).length;
     if(!nMove && !nTrash && !nFolders){ toast("Googleドライブは整理済みです（"+plan.total+"件）"); return; }
     var msg = "Googleドライブの「推し活手帳」フォルダを整理します。\n\n"
-      + "・「Backup」「LIVE」「チェキ」「物販」「その他」に振り分け："+nMove+"件\n"
+      + "・「Backup」「LIVE」「チェキ」「物販」「Gallery」「その他」に振り分け："+nMove+"件\n"
       + "・どの記録にも使われていない写真（重複など）をゴミ箱へ："+nTrash+"件\n"
       + (nFolders ? "・重複したフォルダをまとめる："+nFolders+"件\n" : "")
       + "\nゴミ箱へ移したファイルは、Googleドライブのゴミ箱から30日以内なら戻せます。実行しますか？";
