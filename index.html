@@ -822,12 +822,12 @@
   .ck-nav{width:32px;height:32px;border-radius:50%;border:1px solid var(--line-strong);background:var(--paper);color:var(--heading);font-size:18px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0 0 2px;}
   .ck-nav:disabled{opacity:.3;cursor:default;}
   /* カレンダー */
-  .ck-cal{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:14px;}
+  .ck-cal{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 12px 12px;margin-bottom:14px;box-shadow:0 10px 24px -18px rgba(33,28,23,.45);}
   .ck-cal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
   .ck-cal-head b{font-size:19px;color:var(--heading);}
   .ck-cal-week,.ck-cal-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;}
   .ck-cal-week{font-size:10px;color:var(--ink-soft);text-align:center;margin-bottom:4px;}
-  .ck-day{position:relative;aspect-ratio:1/1.25;border-radius:6px;background:rgba(33,28,23,.04);border:none;padding:0;overflow:hidden;font-family:inherit;}
+  .ck-day{position:relative;aspect-ratio:1/1;border-radius:6px;background:rgba(33,28,23,.05);border:none;padding:0;overflow:hidden;font-family:inherit;}
   .ck-day i{position:absolute;left:4px;top:2px;font-style:normal;font-size:10px;color:var(--ink-soft);z-index:1;}
   .ck-day.has{cursor:pointer;background:var(--accent-soft);}
   .ck-day.has img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;}
@@ -837,11 +837,8 @@
   .ck-day.on{box-shadow:0 0 0 2px var(--accent);}
   .ck-cal-sel{display:flex;flex-direction:column;gap:10px;}
   /* LIVE記録のカレンダー（チェキのカレンダーと同じ見た目） */
-  /* ホームのカード（遠征マップなど）と同じく、推しの色になじむカードの色にする */
-  .live-cal{background:var(--card);box-shadow:0 10px 24px -18px rgba(33,28,23,.45);padding:14px 12px 12px;}
-  .live-cal .ck-nav{background:var(--card);}
-  .live-cal .ck-day{aspect-ratio:1/1;background:rgba(33,28,23,.05);}
-  .live-cal .ck-day.has{background:var(--accent-soft);}
+  /* LIVE・チェキのカレンダーは共通の見た目。ホームのカード（遠征マップなど）と同じく、推しの色になじむカードの色にする */
+  .ck-cal .ck-nav{background:var(--card);}
   .live-cal-title{display:flex;align-items:baseline;gap:8px;}
   .live-cal-title span{font-size:11px;color:var(--ink-soft);}
   .ck-day.today{box-shadow:inset 0 0 0 1.5px var(--line-strong);}
@@ -4325,6 +4322,35 @@ function chekiBinderHtml(items){
   }
   return html + '</div></div>';
 }
+/* LIVE・チェキのカレンダーで共通に使う部品 */
+function todayYmdStr(){
+  var n = new Date();
+  return n.getFullYear()+"-"+String(n.getMonth()+1).padStart(2,"0")+"-"+String(n.getDate()).padStart(2,"0");
+}
+function calHeadHtml(action, y, m, countLabel){
+  return '<div class="ck-cal-head">'
+    +   '<button type="button" class="ck-nav" data-action="'+action+'" data-d="-1" aria-label="前の月">‹</button>'
+    +   '<div class="live-cal-title"><b class="mincho">'+y+'. '+String(m).padStart(2,"0")+'</b><span>'+countLabel+'</span></div>'
+    +   '<button type="button" class="ck-nav" data-action="'+action+'" data-d="1" aria-label="次の月">›</button>'
+    + '</div>'
+    + '<div class="ck-cal-week">'+weekDayLabels().map(function(w){ return '<span>'+w+'</span>'; }).join("")+'</div>';
+}
+// 記録のある日のマス。背景は記録の写真 → 推しの写真 → 種類のアイコンの順に使う
+function calDayCellHtml(opts){
+  var bgRef = null;
+  opts.recs.some(function(r){ if(r.photo){ bgRef = r.photo; return true; } return false; });
+  if(!bgRef){
+    opts.recs.some(function(r){
+      return recOshiEntries(r).some(function(e){ var o = getOshi(e.oshiId); if(o && o.photo){ bgRef = o.photo; return true; } return false; });
+    });
+  }
+  var n = opts.recs.length;
+  return '<button type="button" class="ck-day has'+(opts.today?' today':'')+(opts.on?' on':'')+'" data-action="'+opts.action+'" data-date="'+opts.date+'" aria-label="'+opts.label+'">'
+    + (bgRef ? '<img '+DrivePhotos.imgAttrs(bgRef)+' alt="" loading="lazy">' : '<span class="ck-day-icon">'+kindIcon(opts.kind)+'</span>')
+    + '<i>'+opts.day+'</i>'
+    + (n>1 ? '<em>'+n+'</em>' : '')
+    + '</button>';
+}
 function chekiCalendarHtml(items){
   var byDate = {};
   items.forEach(function(r){ if(r.date){ (byDate[r.date] = byDate[r.date] || []).push(r); } });
@@ -4337,13 +4363,10 @@ function chekiCalendarHtml(items){
   var y = Number(month.slice(0,4)), m = Number(month.slice(5,7));
   var startWeekday = leadingBlankDays(y, m);
   var daysInMonth = new Date(y, m, 0).getDate();
+  var today = todayYmdStr();
+  var count = items.filter(function(r){ return (r.date||"").slice(0,7)===month; }).length;
   var html = '<div class="ck-cal">'
-    + '<div class="ck-cal-head">'
-    +   '<button type="button" class="ck-nav" data-action="cheki-cal-month" data-d="-1" aria-label="前の月">‹</button>'
-    +   '<b class="mincho">'+y+'. '+String(m).padStart(2,"0")+'</b>'
-    +   '<button type="button" class="ck-nav" data-action="cheki-cal-month" data-d="1" aria-label="次の月">›</button>'
-    + '</div>'
-    + '<div class="ck-cal-week">'+weekDayLabels().map(function(w){ return '<span>'+w+'</span>'; }).join("")+'</div>'
+    + calHeadHtml("cheki-cal-month", y, m, count+'枚')
     + '<div class="ck-cal-grid">';
   for(var i=0;i<startWeekday;i++) html += '<span></span>';
   var sel = state.chekiCalDate && state.chekiCalDate.slice(0,7)===month && byDate[state.chekiCalDate] ? state.chekiCalDate : null;
@@ -4354,12 +4377,8 @@ function chekiCalendarHtml(items){
   for(var d=1; d<=daysInMonth; d++){
     var ds = month+"-"+String(d).padStart(2,"0");
     var rs = byDate[ds];
-    if(!rs){ html += '<span class="ck-day"><i>'+d+'</i></span>'; continue; }
-    var withPhoto = rs.filter(function(r){ return r.photo; })[0];
-    html += '<button type="button" class="ck-day has'+(ds===sel?' on':'')+'" data-action="cheki-cal-day" data-date="'+ds+'">'
-      + (withPhoto ? '<img '+DrivePhotos.imgAttrs(withPhoto.photo)+' alt="" loading="lazy">' : '<span class="ck-day-icon">'+kindIcon("cheki")+'</span>')
-      + '<i>'+d+'</i>'
-      + '</button>';
+    if(!rs){ html += '<span class="ck-day'+(ds===today?' today':'')+'"><i>'+d+'</i></span>'; continue; }
+    html += calDayCellHtml({recs:rs, kind:"cheki", action:"cheki-cal-day", date:ds, day:d, today:ds===today, on:ds===sel, label:m+'月'+d+'日のチェキ（'+rs.length+'枚）'});
   }
   html += '</div></div>';
   if(sel){
@@ -4374,43 +4393,22 @@ function chekiCalendarHtml(items){
 function liveCalendarHtml(items){
   var byDate = {};
   items.forEach(function(r){ if(r.date){ (byDate[r.date] = byDate[r.date] || []).push(r); } });
-  var now = new Date();
-  var today = now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0")+"-"+String(now.getDate()).padStart(2,"0");
+  var today = todayYmdStr();
   var month = state.liveCalMonth || today.slice(0,7);
   state.liveCalMonth = month;
   var y = Number(month.slice(0,4)), m = Number(month.slice(5,7));
   var startWeekday = leadingBlankDays(y, m);
   var daysInMonth = new Date(y, m, 0).getDate();
-  var count = Object.keys(byDate).filter(function(d){ return d.slice(0,7)===month; })
-    .reduce(function(n, d){ return n + byDate[d].length; }, 0);
+  var count = items.filter(function(r){ return (r.date||"").slice(0,7)===month; }).length;
   var html = '<div class="ck-cal live-cal">'
-    + '<div class="ck-cal-head">'
-    +   '<button type="button" class="ck-nav" data-action="live-cal-month" data-d="-1" aria-label="前の月">‹</button>'
-    +   '<div class="live-cal-title"><b class="mincho">'+y+'. '+String(m).padStart(2,"0")+'</b><span>'+count+'件</span></div>'
-    +   '<button type="button" class="ck-nav" data-action="live-cal-month" data-d="1" aria-label="次の月">›</button>'
-    + '</div>'
-    + '<div class="ck-cal-week">'+weekDayLabels().map(function(w){ return '<span>'+w+'</span>'; }).join("")+'</div>'
+    + calHeadHtml("live-cal-month", y, m, count+'件')
     + '<div class="ck-cal-grid">';
   for(var i=0;i<startWeekday;i++) html += '<span></span>';
   for(var d=1; d<=daysInMonth; d++){
     var ds = month+"-"+String(d).padStart(2,"0");
     var rs = byDate[ds];
-    var cls = 'ck-day'+(ds===today?' today':'');
-    if(!rs){ html += '<span class="'+cls+'"><i>'+d+'</i></span>'; continue; }
-    // マスの背景：LIVEの写真 → 推しの写真 → LIVEのアイコンの順に使う
-    var withPhoto = rs.filter(function(r){ return r.photo; })[0];
-    var bgRef = withPhoto ? withPhoto.photo : null;
-    if(!bgRef){
-      rs.some(function(r){
-        return recOshiEntries(r).some(function(e){ var o = getOshi(e.oshiId); if(o && o.photo){ bgRef = o.photo; return true; } return false; });
-      });
-    }
-    withPhoto = bgRef ? {photo:bgRef} : null;
-    html += '<button type="button" class="'+cls+' has'+(ds===state.liveCalDate?' on':'')+'" data-action="live-cal-day" data-date="'+ds+'" aria-label="'+m+'月'+d+'日のLIVE（'+rs.length+'件）">'
-      + (withPhoto ? '<img '+DrivePhotos.imgAttrs(withPhoto.photo)+' alt="" loading="lazy">' : '<span class="ck-day-icon">'+kindIcon("live")+'</span>')
-      + '<i>'+d+'</i>'
-      + (rs.length>1 ? '<em>'+rs.length+'</em>' : '')
-      + '</button>';
+    if(!rs){ html += '<span class="ck-day'+(ds===today?' today':'')+'"><i>'+d+'</i></span>'; continue; }
+    html += calDayCellHtml({recs:rs, kind:"live", action:"live-cal-day", date:ds, day:d, today:ds===today, on:ds===state.liveCalDate, label:m+'月'+d+'日のLIVE（'+rs.length+'件）'});
   }
   return html + '</div></div>';
 }
