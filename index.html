@@ -526,6 +526,9 @@
   .account-row-label{flex:none;width:7.5em;font-size:12px;color:var(--ink-soft);font-weight:600;}
   .account-row-value{flex:1;min-width:0;font-size:13.5px;overflow-wrap:anywhere;}
   .account-row-value.muted{color:var(--ink-soft);}
+  .account-row-sub{display:block;font-size:10.5px;color:var(--ink-soft);margin-top:1px;}
+  .account-row-btns{display:flex;gap:6px;flex:none;}
+  .account-row-btn:disabled{opacity:.45;cursor:default;}
   .account-row-btn{
     flex:none;border:1px solid var(--line-strong);background:var(--paper);color:var(--text);
     border-radius:3px;font-size:12px;font-weight:600;padding:6px 12px;cursor:pointer;font-family:inherit;
@@ -725,21 +728,14 @@
   .ck-ph.empty{display:flex;align-items:center;justify-content:center;cursor:pointer;}
   .ck-ph.empty svg{width:34%;stroke:var(--accent);fill:none;stroke-width:1.4;opacity:.6;}
   .ck-ph-wrap{position:relative;}
+  .gd-more{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 16px;margin-top:10px;}
+  .gd-link{background:none;border:none;padding:4px 0;font-size:12px;color:var(--ink-soft);text-decoration:underline;text-underline-offset:3px;cursor:pointer;font-family:inherit;}
   /* バックアップと復元 */
-  .bk-setting{display:flex;flex-direction:column;gap:8px;}
-  .bk-setting .btn{font-size:13px;border:1px solid var(--line-strong);background:var(--paper);}
-  .bk-file{text-align:center;cursor:pointer;}
   .rs-note{font-size:12.5px;color:var(--ink-soft);margin:0 0 10px;line-height:1.7;}
   .rs-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px;}
   .rs-item span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .rs-item .btn{flex:none;padding:6px 14px;font-size:12px;}
   /* 写真の保存先（Googleドライブ） */
-  .gd-setting{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:12px 14px;}
-  .gd-row{display:flex;align-items:center;justify-content:space-between;gap:10px;}
-  .gd-row b{display:block;font-size:13.5px;color:var(--heading);}
-  .gd-row span{font-size:11.5px;color:var(--ink-soft);}
-  .gd-row .btn{flex:none;padding:8px 16px;font-size:12.5px;}
-  .gd-row .btn:disabled{opacity:.6;cursor:default;}
   .gd-bar{
     position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + var(--safe-b));z-index:40;
     display:flex;align-items:center;gap:8px;padding:10px 16px;border-radius:99px;border:none;
@@ -2541,22 +2537,51 @@ var DrivePhotos = (function(){
     connect:connect, disconnect:disconnect, imgAttrs:imgAttrs, bgStyle:bgStyle, cachedUrl:cachedUrl,
     blobOf:blobOf, hydrate:hydrate, afterRender:afterRender, openViewer:openViewer,
     pendingCount:pendingCount, migrateSoon:migrateSoon, migrate:migrate,
-    saveBackup:saveBackup, listBackups:listBackups, readBackup:readBackup, autoBackup:autoBackup
+    saveBackup:saveBackup, listBackups:listBackups, readBackup:readBackup, autoBackup:autoBackup,
+    lastBackupAt:function(){ try{ return Number(localStorage.getItem(AUTO_KEY+(cloud.user ? cloud.user.id : ""))||0); }catch(e){ return 0; } }
   };
 })();
 
-/* マイページ：写真の保存先（Googleドライブ） */
-function driveSettingHtml(){
-  if(!DrivePhotos.available()) return "";
-  var on = DrivePhotos.connected();
+/* マイページ：Googleドライブ（写真とバックアップの保存先）と、その他の保存・復元 */
+function fmtDateTime(ms){
+  var d = new Date(ms);
+  return d.getFullYear()+"."+String(d.getMonth()+1).padStart(2,"0")+"."+String(d.getDate()).padStart(2,"0")
+    +" "+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");
+}
+/* アカウントのカードに入れる行：Googleドライブ（写真とバックアップの保存先） */
+function googleStorageRowsHtml(){
+  var ready = DrivePhotos.available();
+  var on = ready && DrivePhotos.connected();
   var pending = DrivePhotos.pendingCount();
-  return '<div class="section-label">写真の保存先</div>'
-    + '<div class="gd-setting">'
-    +   '<div class="gd-row"><div><b>Googleドライブ</b><span>'
-    +     (on ? '接続中' : (DrivePhotos.everConnected() ? '再接続が必要です' : '未接続'))
-    +     (pending ? ' ・ 未保存の写真 '+pending+'枚' : '')
-    +   '</span></div>'
-    +   '<button type="button" class="btn '+(on?'ghost':'primary')+'" data-action="gdrive-connect"'+(on && !pending ? ' disabled' : '')+'>'+(on ? (pending ? '今すぐ保存' : '接続中') : '接続する')+'</button></div>'
+  var last = DrivePhotos.lastBackupAt();
+  var ever = DrivePhotos.everConnected();
+  var status = !ready ? "未設定" : on ? "接続中" : ever ? "再接続が必要" : "未接続";
+  var dis = ready ? '' : ' disabled';
+  return '<div class="account-row">'
+    +   '<span class="account-row-label">Googleドライブ</span>'
+    +   '<span class="account-row-value'+(on?'':' muted')+'">'+status+'</span>'
+    +   (on ? '' : '<button type="button" class="account-row-btn" data-action="gdrive-connect"'+dis+'>'+(ever?'再接続':'接続')+'</button>')
+    + '</div>'
+    + '<div class="account-row">'
+    +   '<span class="account-row-label">写真の保存</span>'
+    +   '<span class="account-row-value'+(pending?' muted':'')+'">'+(pending ? '未保存 '+pending+'枚' : 'すべて保存済み')+'</span>'
+    +   (pending ? '<button type="button" class="account-row-btn" data-action="gdrive-connect"'+dis+'>保存</button>' : '')
+    + '</div>'
+    + '<div class="account-row">'
+    +   '<span class="account-row-label">バックアップ</span>'
+    +   '<span class="account-row-value'+(last?'':' muted')+'">'+(last ? fmtDateTime(last) : 'なし')+'<small class="account-row-sub">毎日自動</small></span>'
+    +   '<span class="account-row-btns">'
+    +     '<button type="button" class="account-row-btn" data-action="backup-drive-save"'+dis+'>保存</button>'
+    +     '<button type="button" class="account-row-btn" data-action="backup-drive-restore"'+dis+'>戻す</button>'
+    +   '</span>'
+    + '</div>';
+}
+// カードの下：ファイルでの保存・復元と、削除された記録の復元
+function backupLinksHtml(){
+  return '<div class="gd-more">'
+    +   '<button type="button" class="gd-link" data-action="backup-export">ファイルに保存</button>'
+    +   '<label class="gd-link">ファイルから戻す<input type="file" id="backupImportInput" accept="application/json,.json" style="display:none;"></label>'
+    +   '<button type="button" class="gd-link" data-action="restore-deleted">削除された記録を探す</button>'
     + '</div>';
 }
 
@@ -2565,18 +2590,6 @@ function driveSettingHtml(){
    ・クラウドに残っている「削除済み」の記録と、変更履歴（oshikatsu_records_history）から、
      今ない記録を探して戻す */
 var HISTORY_TABLE = "oshikatsu_records_history";
-function backupSettingHtml(){
-  return '<div class="section-label">バックアップと復元</div>'
-    + '<div class="bk-setting">'
-    +   '<button type="button" class="btn ghost block" data-action="backup-export">全データをファイルに保存</button>'
-    +   '<label class="btn ghost block bk-file">ファイルから戻す<input type="file" id="backupImportInput" accept="application/json,.json" style="display:none;"></label>'
-    +   (DrivePhotos.available() && cloud.user
-          ? '<button type="button" class="btn ghost block" data-action="backup-drive-save">Googleドライブに保存</button>'
-          + '<button type="button" class="btn ghost block" data-action="backup-drive-restore">Googleドライブから戻す</button>'
-          : '')
-    +   (cloud.user ? '<button type="button" class="btn ghost block" data-action="restore-deleted">削除された記録を探す</button>' : '')
-    + '</div>';
-}
 function backupFileName(){
   var d = new Date();
   return "oshikatsu-backup-"+d.getFullYear()+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0")+".json";
@@ -3057,7 +3070,9 @@ function accountSectionHtml(){
     +     '<span class="account-row-value'+(hasGoogle?'':' muted')+'">'+(hasGoogle?'連携済み':'未連携')+'</span>'
     +     googleBtn
     +   '</div>'
+    +   googleStorageRowsHtml()
     + '</div>'
+    + backupLinksHtml()
     + '<button type="button" class="btn block account-logout" data-action="logout">ログアウト</button>';
 }
 
@@ -4586,9 +4601,7 @@ function renderOshiPage(){
     }
   }
   html += chekiViewSettingHtml();
-  html += driveSettingHtml();
   html += calendarSettingHtml();
-  html += backupSettingHtml();
   html += accountSectionHtml();
   html += '<p class="legal-links"><a href="privacy.html">プライバシーポリシー</a></p>';
   document.getElementById("main").innerHTML = html;
