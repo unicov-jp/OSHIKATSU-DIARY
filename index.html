@@ -2667,6 +2667,7 @@ var DrivePhotos = (function(){
     prepare();
     hydrate(document.body);   // 一覧に加えて、上部の推しの丸・ヘッダーロゴ・メニューも
     setTimeout(function(){ autoBackup(); }, 3000);   // 接続中なら1日1回、自動でバックアップ
+    setTimeout(function(){ autoSort(); }, 8000);     // 接続中なら1日1回、ファイルをフォルダに振り分ける
   }
   async function openViewer(ref){
     var u = await urlOf(ref);
@@ -2969,8 +2970,28 @@ var DrivePhotos = (function(){
     return {moved:plan.moves.length, trashed:plan.trash.length, removedFolders:removed};
   }
 
+  // 振り分けだけを自動で行う（ゴミ箱へは移さない）。接続中なら1日1回、写真をドライブへ移し終えたあとに動かす
+  var SORT_KEY = "oshikatsu_gdrive_autosort_v1:";
+  var sorting = false;
+  async function autoSort(){
+    if(sorting || migrating || !available() || !connected() || !cloud.user || !state.ready) return;
+    var last = 0;
+    try{ last = Number(localStorage.getItem(SORT_KEY+cloud.user.id)||0); }catch(e){}
+    if(Date.now()-last < 24*3600*1000) return;
+    sorting = true;
+    try{
+      var plan = await planOrganize();
+      if(plan.moves.length){
+        await runOrganize({moves:plan.moves, trash:[], extraRoots:plan.extraRoots, extraFolders:plan.extraFolders});
+        toast("Googleドライブの写真をフォルダに振り分けました（"+plan.moves.length+"件）");
+      }
+      try{ localStorage.setItem(SORT_KEY+cloud.user.id, String(Date.now())); }catch(e){}
+    }catch(e){ console.warn("drive auto sort failed", e); }
+    finally{ sorting = false; }
+  }
+
   return {
-    planOrganize:planOrganize, runOrganize:runOrganize,
+    planOrganize:planOrganize, runOrganize:runOrganize, autoSort:autoSort,
     isRef:isRef, available:available, connected:connected, everConnected:everConnected,
     connect:connect, disconnect:disconnect, forget:forget, serverMode:serverMode, imgAttrs:imgAttrs, bgStyle:bgStyle, cachedUrl:cachedUrl,
     blobOf:blobOf, localUrl:localUrl, hydrate:hydrate, afterRender:afterRender, openViewer:openViewer,
