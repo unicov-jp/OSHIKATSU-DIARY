@@ -870,6 +870,22 @@
   }
   .trip-map-card + .chart-card{margin-top:16px;}
   .hero + .trip-map-card{margin-top:16px;}
+  .gallery-card + .trip-map-card{margin-top:16px;}
+  /* ホームのギャラリー */
+  .gal-actions{display:flex;align-items:center;gap:10px;}
+  .gal-no{font-size:11px;color:var(--ink-soft);letter-spacing:.04em;}
+  .gal-no b{font-family:"Shippori Mincho",serif;font-size:15px;color:var(--heading);}
+  .gal-add{border:1px solid var(--accent);color:var(--accent);background:var(--paper);border-radius:99px;padding:5px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;}
+  .gal-swipe{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;margin:0 -14px;padding:2px 14px 6px;scrollbar-width:none;}
+  .gal-swipe::-webkit-scrollbar{display:none;}
+  .gal-slide{position:relative;flex:none;width:78%;scroll-snap-align:center;}
+  .gal-swipe.single .gal-slide{width:100%;}
+  .gal-ph{aspect-ratio:4/5;border-radius:12px;overflow:hidden;background:var(--paper-alt);cursor:zoom-in;box-shadow:0 10px 22px -14px rgba(33,28,23,.55);}
+  .gal-ph img{width:100%;height:100%;object-fit:cover;display:block;}
+  .gal-del{position:absolute;top:8px;right:8px;width:28px;height:28px;border-radius:50%;border:none;background:rgba(20,17,13,.5);color:#FFFFFF;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;}
+  .gal-del svg{width:14px;height:14px;stroke:currentColor;stroke-width:2.2;}
+  .gal-empty{width:100%;aspect-ratio:16/9;border:1.5px dashed var(--line-strong);border-radius:12px;background:var(--paper);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:var(--accent);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;}
+  .gal-empty svg{width:30px;height:30px;stroke:currentColor;fill:none;stroke-width:1.5;}
   .trip-map-head{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin:0 2px 12px;}
   .trip-map-eyebrow{display:block;font-size:9.5px;letter-spacing:.22em;color:var(--accent);font-weight:700;}
   .trip-map-title h3{margin:2px 0 0;font-size:19px;color:var(--heading);letter-spacing:.04em;}
@@ -2443,6 +2459,9 @@ var DrivePhotos = (function(){
         if(Array.isArray(r.photos)) r.photos.forEach(function(p){ if(isData(p)) n++; });
       });
     });
+    state.oshis.forEach(function(o){
+      if(Array.isArray(o.gallery)) o.gallery.forEach(function(p){ if(isData(p)) n++; });
+    });
     return n;
   }
   function migrateSoon(){
@@ -2492,6 +2511,33 @@ var DrivePhotos = (function(){
           });
           if(changed) await persistRecord(t, next);
         }
+      }
+      // ホームのギャラリー（推しごとの写真）
+      var oids = state.oshis.map(function(o){ return o.id; });
+      for(var oi=0; oi<oids.length; oi++){
+        var o0 = getOshi(oids[oi]);
+        if(!o0 || !Array.isArray(o0.gallery)) continue;
+        var map = {};
+        for(var gi=0; gi<o0.gallery.length; gi++){
+          var v = o0.gallery[gi];
+          if(!isData(v) || map[gi]) continue;
+          try{
+            map[gi] = {v:v, ref:await upload(v, "gallery_"+o0.id+"_"+Date.now()+"_"+gi+".jpg")};
+            done++;
+            if(done===1 || done%3===0) toast("写真をGoogleドライブに移しています（"+done+"/"+total+"）");
+          }catch(e){
+            console.warn("drive upload failed", e); failed++;
+            if(!connected()) throw e;
+          }
+        }
+        var o1 = getOshi(oids[oi]);
+        if(!o1 || !Array.isArray(o1.gallery)) continue;
+        var gal = o1.gallery.slice(), gch = false;
+        Object.keys(map).forEach(function(k){
+          var idx = gal.indexOf(map[k].v);
+          if(idx>=0){ gal[idx] = map[k].ref; gch = true; }
+        });
+        if(gch) await persistOshi(Object.assign({}, o1, {gallery:gal}));
       }
     }catch(e){
       console.warn("drive migrate stopped", e);
@@ -3855,6 +3901,9 @@ function renderHome(){
   });
   chartHtml += '</div></div>';
 
+  // 推しの写真を横にスワイプして見るギャラリー
+  html += galleryHtml(oshi);
+
   // 現地で観戦したLIVEの会場を地図に出す（遠征マップ）。月別の費用グラフはその下
   html += '<div class="trip-map-card">'
     +   '<div class="trip-map-head">'
@@ -3870,6 +3919,7 @@ function renderHome(){
   html += chartHtml;
 
   document.getElementById("main").innerHTML = html;
+  bindGallery(oshi);
   TripMap.render(oshi);
 }
 
@@ -5478,6 +5528,8 @@ function bindOshiForm(existingOshi){
       hidden: isEditingReal ? !!existingOshi.hidden : false,
       createdAt: isEditingReal ? existingOshi.createdAt : Date.now()
     };
+    // ホームのギャラリーの写真は、この画面では変えずに引き継ぐ
+    if(isEditingReal && Array.isArray(existingOshi.gallery)) oshi.gallery = existingOshi.gallery;
     PERSON_SNS_KEYS.forEach(function(k){ oshi["sns_person_"+k] = chosenSns["person_"+k] || ""; });
     await persistOshi(oshi);
     if(!state.activeOshiId){ await setActiveOshi(oshi.id); }
@@ -6073,6 +6125,103 @@ var AvatarCropper = (function(){
   return { init:init, open:open };
 })();
 
+/* ============ ホームのギャラリー（推しごとの写真） ============
+   推しの gallery（写真の配列。新しい順）を横にスワイプして見る。写真を押すと拡大。
+   Googleドライブに接続していれば、追加した写真はすぐドライブへ保存し、記録には置き場所だけを入れる。 */
+var GAL_CAMERA = '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.4"/><path d="M8 6l1-2h6l1 2"/></svg>';
+function galleryHtml(oshi){
+  var g = Array.isArray(oshi.gallery) ? oshi.gallery : [];
+  var html = '<div class="trip-map-card gallery-card">'
+    + '<div class="trip-map-head">'
+    +   '<div class="trip-map-title"><span class="trip-map-eyebrow">GALLERY</span><h3 class="mincho">ギャラリー</h3></div>'
+    +   '<div class="gal-actions">'
+    +     (g.length ? '<span class="gal-no"><b id="galNo">1</b> / '+g.length+'</span>' : '')
+    +     '<button type="button" class="gal-add" data-action="gallery-add">＋ 追加</button>'
+    +   '</div>'
+    + '</div>';
+  if(g.length){
+    html += '<div class="gal-swipe'+(g.length===1?' single':'')+'" id="galSwipe">'
+      + g.map(function(ref, i){
+          return '<div class="gal-slide">'
+            + '<div class="gal-ph" data-action="gallery-view" data-i="'+i+'" role="button" tabindex="0" aria-label="写真を拡大"><img '+DrivePhotos.imgAttrs(ref)+' alt="" loading="lazy"></div>'
+            + '<button type="button" class="gal-del" data-action="gallery-del" data-i="'+i+'" title="この写真を外す" aria-label="この写真を外す"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>'
+            + '</div>';
+        }).join("")
+      + '</div>';
+  } else {
+    html += '<button type="button" class="gal-empty" data-action="gallery-add">'+GAL_CAMERA+'<span>推しの写真を追加</span></button>';
+  }
+  html += '<div class="photo-menu" id="galAddMenu" style="display:none;">'
+    +   '<label class="photo-menu-item" style="cursor:pointer;">写真を撮る<input type="file" id="galCamera" accept="image/*" capture="environment" style="display:none;"></label>'
+    +   '<label class="photo-menu-item" style="cursor:pointer;">写真を選ぶ<input type="file" id="galInput" accept="image/*" multiple style="display:none;"></label>'
+    + '</div>'
+    + '</div>';
+  return html;
+}
+var galleryDocBound = false;
+function bindGallery(oshi){
+  var menu = document.getElementById("galAddMenu");
+  if(!menu) return;
+  // 写真を撮る・選ぶ前に、Googleドライブへ接続しておく（未保存の写真を作らないため）
+  menu.querySelectorAll("label").forEach(function(l){
+    l.addEventListener("click", function(e){ if(!DrivePhotos.requireConnection(e)) menu.style.display = "none"; }, true);
+  });
+  ["galInput","galCamera"].forEach(function(id){
+    var input = document.getElementById(id);
+    input.addEventListener("change", function(){
+      var files = Array.prototype.slice.call(input.files || []);
+      input.value = "";
+      if(files.length) addGalleryFiles(oshi.id, files);
+    });
+  });
+  var sw = document.getElementById("galSwipe"), no = document.getElementById("galNo");
+  if(sw && no){
+    sw.addEventListener("scroll", function(){
+      var slides = sw.children;
+      if(!slides.length) return;
+      var w = slides[0].getBoundingClientRect().width + 12;
+      no.textContent = String(clamp(Math.round(sw.scrollLeft / w), 0, slides.length-1) + 1);
+    }, {passive:true});
+  }
+  if(!galleryDocBound){
+    galleryDocBound = true;
+    document.addEventListener("click", function(e){
+      var m = document.getElementById("galAddMenu");
+      if(m && !e.target.closest("#galAddMenu") && !e.target.closest('[data-action="gallery-add"]')) m.style.display = "none";
+    });
+  }
+}
+async function addGalleryFiles(oshiId, files){
+  var added = [];
+  var drive = DrivePhotos.available() && DrivePhotos.connected();
+  if(drive) toast("写真をGoogleドライブに保存しています…");
+  for(var i=0;i<files.length;i++){
+    var f = files[i];
+    if(f.type.indexOf("image/")!==0){ toast("画像ファイルを選択してください"); continue; }
+    try{
+      var url = await resizeImageFile(f, 1080, 0.85);
+      added.push(await DrivePhotos.uploadNow(url, "gallery_"+oshiId+"_"+Date.now()+"_"+i+".jpg"));
+    }catch(e){ toast("画像の読み込みに失敗しました"); }
+  }
+  if(!added.length) return;
+  var o = getOshi(oshiId);
+  if(!o) return;
+  var gal = Array.isArray(o.gallery) ? o.gallery.slice() : [];
+  await persistOshi(Object.assign({}, o, {gallery: added.reverse().concat(gal)}));   // 新しい順
+  DrivePhotos.migrateSoon();
+  toast(added.length+"枚の写真を追加しました");
+  render();
+}
+async function removeGalleryPhoto(oshiId, idx){
+  var o = getOshi(oshiId);
+  if(!o || !Array.isArray(o.gallery) || !o.gallery[idx]) return;
+  if(!confirm("この写真をギャラリーから外しますか？")) return;
+  var gal = o.gallery.slice();
+  gal.splice(idx, 1);
+  await persistOshi(Object.assign({}, o, {gallery: gal}));
+  render();
+}
+
 /* ============ trip map (遠征マップ) ============
    ホームに、お気に入りの推しの「現地」LIVEの会場をピンで表示する。地図は Leaflet + 国土地理院の淡色地図。
    位置は会場を候補から選んだときの venuePlace.lat/lng を使い、無いときは会場名から
@@ -6528,6 +6677,22 @@ function onAppClick(e){
   }
   if(action==="cheki-cal-day"){ state.chekiCalDate = el.getAttribute("data-date"); render(); return; }
   if(action==="add-cheki"){ openRecordSheet("cheki", null); return; }
+  if(action==="gallery-add"){
+    var gm = document.getElementById("galAddMenu");
+    if(gm){ if(gm.style.display==="block") gm.style.display = "none"; else openPopoverNear(el, gm); }
+    return;
+  }
+  if(action==="gallery-view"){
+    var go = activeOshi();
+    var gref = go && go.gallery ? go.gallery[Number(el.getAttribute("data-i"))] : null;
+    if(gref) openPhotoViewer(gref);
+    return;
+  }
+  if(action==="gallery-del"){
+    var gd = activeOshi();
+    if(gd) removeGalleryPhoto(gd.id, Number(el.getAttribute("data-i")));
+    return;
+  }
   if(action==="calendar-setting"){ openSheet(calendarSettingHtml()); bindCalendarSetting(); return; }
   if(action==="backup-export"){ exportBackup(); return; }
   if(action==="backup-drive-save"){ saveBackupToDrive(); return; }
