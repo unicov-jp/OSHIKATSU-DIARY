@@ -897,7 +897,9 @@
   /* 写真の枚数に関係なく、1枚の大きさは固定 */
   .gal-slide{position:relative;flex:none;width:240px;height:300px;scroll-snap-align:center;}
   .gal-ph{width:100%;height:100%;border-radius:12px;overflow:hidden;background:var(--paper-alt);cursor:zoom-in;box-shadow:0 10px 22px -14px rgba(33,28,23,.55);}
-  .gal-ph img{width:100%;height:100%;object-fit:cover;display:block;}
+  .gal-ph{position:relative;}
+  .gal-ph img{position:relative;width:100%;height:100%;object-fit:contain;display:block;}
+  .gal-ph img.gal-bg{position:absolute;inset:0;object-fit:cover;filter:blur(18px) saturate(1.1);transform:scale(1.15);opacity:.75;}
   .gal-del{position:absolute;top:8px;right:8px;width:28px;height:28px;border-radius:50%;border:none;background:rgba(20,17,13,.5);color:#FFFFFF;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;}
   .gal-del svg{width:14px;height:14px;stroke:currentColor;stroke-width:2.2;}
   .gal-empty{width:100%;height:300px;border:1.5px dashed var(--line-strong);border-radius:12px;background:var(--paper);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:var(--accent);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;}
@@ -6201,7 +6203,7 @@ function galleryHtml(oshi){
     html += '<div class="gal-swipe'+(g.length===1?' single':'')+'" id="galSwipe">'
       + g.map(function(ref, i){
           return '<div class="gal-slide">'
-            + '<div class="gal-ph" data-action="gallery-view" data-i="'+i+'" role="button" tabindex="0" aria-label="写真を拡大"><img '+DrivePhotos.imgAttrs(ref)+' alt="" loading="lazy"></div>'
+            + '<div class="gal-ph" data-action="gallery-view" data-i="'+i+'" role="button" tabindex="0" aria-label="写真を拡大"><img class="gal-bg" '+DrivePhotos.imgAttrs(ref)+' alt="" aria-hidden="true" loading="lazy"><img '+DrivePhotos.imgAttrs(ref)+' alt="" loading="lazy"></div>'
             + '<button type="button" class="gal-del" data-action="gallery-del" data-i="'+i+'" title="この写真を外す" aria-label="この写真を外す"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>'
             + '</div>';
         }).join("")
