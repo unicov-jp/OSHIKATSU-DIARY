@@ -914,6 +914,9 @@
   .gal-ph{width:100%;height:100%;border-radius:12px;overflow:hidden;background:var(--paper-alt);cursor:zoom-in;box-shadow:0 10px 22px -14px rgba(33,28,23,.55);}
   .gal-ph{position:relative;}
   .gal-ph img{position:relative;width:100%;height:100%;object-fit:contain;display:block;}
+  .gal-pending .gal-ph{cursor:default;}
+  .gal-pending .gal-ph img:not(.gal-bg){opacity:.7;}
+  .gal-saving{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);background:rgba(20,17,13,.6);color:#FFFFFF;font-size:11px;font-weight:700;padding:4px 10px;border-radius:99px;white-space:nowrap;}
   .gal-ph img.gal-bg{position:absolute;inset:0;object-fit:cover;filter:blur(18px) saturate(1.1);transform:scale(1.15);opacity:.75;}
   .gal-del{position:absolute;top:8px;right:8px;width:28px;height:28px;border-radius:50%;border:none;background:rgba(20,17,13,.5);color:#FFFFFF;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;}
   .gal-del svg{width:14px;height:14px;stroke:currentColor;stroke-width:2.2;}
@@ -1433,6 +1436,25 @@ function resizeImageFile(file, maxSize, quality){
       img.src = e.target.result;
     };
     reader.readAsDataURL(file);
+  });
+}
+/* resizeImageFile と同じ縮小を、画像データの文字列ではなく Blob で返す（アップロードが速い） */
+function resizeImageToBlob(file, maxSize, quality){
+  return new Promise(function(resolve, reject){
+    var url = URL.createObjectURL(file);
+    var img = new Image();
+    img.onerror = function(){ URL.revokeObjectURL(url); reject(new Error("decode failed")); };
+    img.onload = function(){
+      URL.revokeObjectURL(url);
+      var scale = Math.min(1, maxSize / Math.max(img.width, img.height));
+      var w = Math.max(1, Math.round(img.width * scale));
+      var h = Math.max(1, Math.round(img.height * scale));
+      var canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+      canvas.toBlob(function(b){ if(b) resolve(b); else reject(new Error("encode failed")); }, "image/jpeg", quality);
+    };
+    img.src = url;
   });
 }
 /* Same idea as resizeImageFile, but keeps the source format's transparency
@@ -2228,9 +2250,10 @@ async function initStorage(){
     if(document.visibilityState==="visible" && cloud.user) syncNow();
   });
   window.addEventListener("online", function(){ if(cloud.user) syncNow(); });
+  // 開いている間は20秒ごとに、ほかの端末の変更を取りに行く
   setInterval(function(){
     if(cloud.user && document.visibilityState==="visible") syncNow();
-  }, 60000);
+  }, 20000);
 }
 
 /* ============ 写真の保存先：Googleドライブ ============
@@ -2538,7 +2561,7 @@ var DrivePhotos = (function(){
   }
   async function dataUrlToBlob(u){ return await (await fetch(u)).blob(); }
   async function upload(dataUrl, name){
-    var blob = await dataUrlToBlob(dataUrl);
+    var blob = (dataUrl instanceof Blob) ? dataUrl : await dataUrlToBlob(dataUrl);
     var parent = await ensureSub(subFor(name));
     var meta = {name:name, parents:[parent], mimeType:blob.type || "image/jpeg"};
     var boundary = "oshikatsu" + Math.random().toString(36).slice(2);
@@ -2561,6 +2584,19 @@ var DrivePhotos = (function(){
     if(!isData(value) || !available() || !connected()) return value;
     try{ return await upload(value, name); }
     catch(e){ console.warn("drive upload failed", e); return value; }
+  }
+  // Blob をそのままドライブへ送る（画像データの文字列に直さないぶん速い）。送れなければ画像データで返す
+  async function uploadBlob(blob, name){
+    if(available() && connected()){
+      try{ return await upload(blob, name); }
+      catch(e){ console.warn("drive upload failed", e); }
+    }
+    return await new Promise(function(resolve, reject){
+      var fr = new FileReader();
+      fr.onload = function(){ resolve(fr.result); };
+      fr.onerror = function(){ reject(new Error("read failed")); };
+      fr.readAsDataURL(blob);
+    });
   }
   // 写真を撮る・選ぶ前に、ドライブへ接続しておく（未保存の写真を作らないため）。接続が必要なら true
   function requireConnection(e){
@@ -3009,7 +3045,7 @@ var DrivePhotos = (function(){
     blobOf:blobOf, localUrl:localUrl, hydrate:hydrate, afterRender:afterRender, openViewer:openViewer,
     pendingCount:pendingCount, migrateSoon:migrateSoon, migrate:migrate,
     saveBackup:saveBackup, listBackups:listBackups, readBackup:readBackup, autoBackup:autoBackup,
-    uploadNow:uploadNow, requireConnection:requireConnection, isData:isData,
+    uploadNow:uploadNow, uploadBlob:uploadBlob, requireConnection:requireConnection, isData:isData,
     lastBackupAt:function(){ try{ return Number(localStorage.getItem(AUTO_KEY+(cloud.user ? cloud.user.id : ""))||0); }catch(e){ return 0; } }
   };
 })();
@@ -4650,17 +4686,21 @@ function chekiPageHtml(list){
     + '<div><b>'+monthN+'</b><span>今月</span></div>'
     + '</div>';
   var items = state.chekiFav ? list.filter(function(r){ return !!r.favorite; }) : list;
-  var view = chekiView();
-  if(!items.length && view!=="calendar"){
+  // 上にカレンダー、下にスワイプ。カレンダーの日を押すと、その日のチェキだけをスワイプに並べる（もう一度押すと元に戻る）
+  html += chekiCalendarHtml(items);
+  var cd = state.chekiCalDate;
+  if(cd && items.some(function(r){ return r.date===cd; })){
+    items = items.filter(function(r){ return r.date===cd; });
+    var cdp = cd.split("-");
+    html += '<div class="filter-note"><span class="live-cal-day-note">'+Number(cdp[1])+'月'+Number(cdp[2])+'日のチェキ'
+      + '<button type="button" data-action="cheki-cal-clear">すべて表示</button></span>'+items.length+'枚</div>';
+  }
+  if(!items.length){
     html += '<div class="empty-state"><svg viewBox="0 0 24 24">'+kindIconRaw("cheki")+'</svg>'
       + '<p>'+(list.length ? '該当するチェキがありません。' : 'まだチェキの記録がありません。右下の＋ボタンから追加できます。')+'</p></div>';
     return html;
   }
-  if(view==="gallery") html += chekiGalleryHtml(items);
-  else if(view==="album") html += chekiAlbumHtml(items);
-  else if(view==="binder") html += chekiBinderHtml(items);
-  else if(view==="calendar") html += chekiCalendarHtml(items);
-  else html += chekiSwipeHtml(items);
+  html += chekiSwipeHtml(items);
   return html;
 }
 function chekiGalleryHtml(items){
@@ -4754,24 +4794,14 @@ function chekiCalendarHtml(items){
     + calHeadHtml("cheki-cal-month", y, m, count+'枚')
     + '<div class="ck-cal-grid">';
   for(var i=0;i<startWeekday;i++) html += '<span></span>';
-  var sel = state.chekiCalDate && state.chekiCalDate.slice(0,7)===month && byDate[state.chekiCalDate] ? state.chekiCalDate : null;
-  if(!sel){
-    var inMonth = Object.keys(byDate).filter(function(d){ return d.slice(0,7)===month; }).sort();
-    sel = inMonth.length ? inMonth[inMonth.length-1] : null;
-  }
+  var sel = state.chekiCalDate && byDate[state.chekiCalDate] ? state.chekiCalDate : null;
   for(var d=1; d<=daysInMonth; d++){
     var ds = month+"-"+String(d).padStart(2,"0");
     var rs = byDate[ds];
     if(!rs){ html += '<span class="ck-day'+(ds===today?' today':'')+'"><i>'+d+'</i></span>'; continue; }
     html += calDayCellHtml({recs:rs, kind:"cheki", action:"cheki-cal-day", date:ds, day:d, today:ds===today, on:ds===sel, label:m+'月'+d+'日のチェキ（'+rs.length+'枚）'});
   }
-  html += '</div></div>';
-  if(sel){
-    html += '<div class="ck-cal-sel">'+byDate[sel].map(function(r){ return chekiDetailHtml(r, false); }).join("")+'</div>';
-  } else {
-    html += '<div class="empty-state"><p>この月のチェキはありません。</p></div>';
-  }
-  return html;
+  return html + '</div></div>';
 }
 /* LIVE記録のカレンダー：月ごとにLIVEのある日を示す（マスの背景はLIVEの写真、なければ推しの写真、どちらもなければLIVEのアイコン）。
    はじめは今月を出す。日を押すと、その日のLIVEだけを下のチケットに並べる（もう一度押すと元に戻る）。 */
@@ -5243,11 +5273,10 @@ function applyOshiOrder(ids){
   saveLocal();
   renderTopChipMenu();
 }
-/* マイページ：アカウント・チェキの表示・ログアウト（推しの一覧は「推しの管理」ページへ） */
+/* マイページ：アカウント・ログアウト（推しの一覧は「推しの管理」ページへ） */
 function renderOshiPage(){
   var html = '<div class="page-head"><h1 class="mincho">マイページ</h1></div>';
   html += accountSectionHtml();
-  html += chekiViewSettingHtml();
   html += logoutButtonHtml();
   html += '<p class="legal-links"><a href="privacy.html">プライバシーポリシー</a></p>';
   document.getElementById("main").innerHTML = html;
@@ -6798,16 +6827,21 @@ function galleryPutFirst(refs){
 var GAL_CAMERA = '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.4"/><path d="M8 6l1-2h6l1 2"/></svg>';
 function galleryHtml(oshi){
   var g = Array.isArray(oshi.gallery) ? oshi.gallery : [];
+  var pend = galleryPending[oshi.id] || [];
   var html = '<div class="trip-map-card gallery-card">'
     + '<div class="trip-map-head">'
     +   '<div class="trip-map-title"><span class="trip-map-eyebrow">GALLERY</span><h3 class="mincho">ギャラリー</h3></div>'
     +   '<div class="gal-actions">'
-    +     (g.length ? '<span class="gal-no"><b id="galNo">1</b> / '+g.length+'</span>' : '')
+    +     ((g.length+pend.length) ? '<span class="gal-no"><b id="galNo">1</b> / '+(g.length+pend.length)+'</span>' : '')
     +     '<button type="button" class="gal-add" data-action="gallery-add">＋ 追加</button>'
     +   '</div>'
     + '</div>';
-  if(g.length){
-    html += '<div class="gal-swipe'+(g.length===1?' single':'')+'" id="galSwipe">'
+  if(g.length || pend.length){
+    html += '<div class="gal-swipe'+((g.length+pend.length)===1?' single':'')+'" id="galSwipe">'
+      // 保存中の写真（端末の画像をそのまま出す）
+      + pend.map(function(p){
+          return '<div class="gal-slide gal-pending"><div class="gal-ph"><img class="gal-bg" src="'+p.url+'" alt="" aria-hidden="true"><img src="'+p.url+'" alt=""></div><span class="gal-saving">保存中…</span></div>';
+        }).join("")
       + galleryOrder(g).map(function(it){
           var ref = it.ref, i = it.i;
           return '<div class="gal-slide">'
@@ -6859,27 +6893,45 @@ function bindGallery(oshi){
     });
   }
 }
+/* 選んだ写真は、すぐにギャラリーの先頭に「保存中」として出し、裏で3枚ずつ同時にドライブへ送る。
+   1枚送れるごとに記録へ入れて同期を始める（全部終わるのを待たない）。 */
+var galleryPending = {};   // 推しID → [{key, url}]（保存中の写真。端末の中だけ）
 async function addGalleryFiles(oshiId, files){
-  var added = [];
-  var drive = DrivePhotos.available() && DrivePhotos.connected();
-  if(drive) toast("写真をGoogleドライブに保存しています…");
-  for(var i=0;i<files.length;i++){
-    var f = files[i];
-    if(f.type.indexOf("image/")!==0){ toast("画像ファイルを選択してください"); continue; }
-    try{
-      var url = await resizeImageFile(f, 1080, 0.85);
-      added.push(await DrivePhotos.uploadNow(url, "gallery_"+oshiId+"_"+Date.now()+"_"+i+".jpg"));
-    }catch(e){ toast("画像の読み込みに失敗しました"); }
-  }
-  if(!added.length) return;
-  var o = getOshi(oshiId);
-  if(!o) return;
-  var gal = Array.isArray(o.gallery) ? o.gallery.slice() : [];
-  galleryPutFirst(added);
-  await persistOshi(Object.assign({}, o, {gallery: added.reverse().concat(gal)}));   // 新しい順
-  DrivePhotos.migrateSoon();
-  toast(added.length+"枚の写真を追加しました");
+  files = files.filter(function(f){ return f.type.indexOf("image/")===0; });
+  if(!files.length){ toast("画像ファイルを選択してください"); return; }
+  var stamp = Date.now();
+  var jobs = files.map(function(f, i){
+    return {file:f, i:i, key:"p"+stamp+"_"+i, url:URL.createObjectURL(f)};
+  });
+  var pend = galleryPending[oshiId] = (galleryPending[oshiId] || []).concat(jobs.map(function(j){ return {key:j.key, url:j.url}; }));
   render();
+  var ok = 0, failed = 0, next = 0;
+  async function one(job){
+    try{
+      var blob = await resizeImageToBlob(job.file, 1080, 0.85);
+      var ref = await DrivePhotos.uploadBlob(blob, "gallery_"+oshiId+"_"+stamp+"_"+job.i+".jpg");
+      var o = getOshi(oshiId);
+      if(o){
+        var gal = Array.isArray(o.gallery) ? o.gallery.slice() : [];
+        galleryPutFirst([ref]);
+        await persistOshi(Object.assign({}, o, {gallery: [ref].concat(gal)}));   // 新しい順
+      }
+      ok++;
+    }catch(e){ failed++; }
+    finally{
+      galleryPending[oshiId] = (galleryPending[oshiId] || []).filter(function(p){ return p.key!==job.key; });
+      setTimeout(function(){ URL.revokeObjectURL(job.url); }, 60000);
+      if(state.view==="home") render();
+    }
+  }
+  async function worker(){ while(next < jobs.length){ await one(jobs[next++]); } }
+  var workers = [];
+  for(var w=0; w<Math.min(3, jobs.length); w++) workers.push(worker());
+  await Promise.all(workers);
+  if(!galleryPending[oshiId].length) delete galleryPending[oshiId];
+  DrivePhotos.migrateSoon();
+  if(ok) toast(ok+"枚の写真を追加しました"+(failed ? "（"+failed+"枚は読み込めませんでした）" : ""));
+  else toast("画像の読み込みに失敗しました");
 }
 async function removeGalleryPhoto(oshiId, idx){
   var o = getOshi(oshiId);
@@ -7356,7 +7408,12 @@ function onAppClick(e){
     render(); return;
   }
   if(action==="live-cal-clear"){ state.liveCalDate = null; render(); return; }
-  if(action==="cheki-cal-day"){ state.chekiCalDate = el.getAttribute("data-date"); render(); return; }
+  if(action==="cheki-cal-day"){
+    var cday = el.getAttribute("data-date");
+    state.chekiCalDate = state.chekiCalDate===cday ? null : cday;
+    render(); return;
+  }
+  if(action==="cheki-cal-clear"){ state.chekiCalDate = null; render(); return; }
   if(action==="add-cheki"){ openRecordSheet("cheki", null); return; }
   if(action==="gallery-add"){
     var gm = document.getElementById("galAddMenu");
