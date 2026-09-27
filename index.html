@@ -724,7 +724,14 @@
   .ck-ph.empty{display:flex;align-items:center;justify-content:center;cursor:pointer;}
   .ck-ph.empty svg{width:34%;stroke:var(--accent);fill:none;stroke-width:1.4;opacity:.6;}
   .ck-ph-wrap{position:relative;}
-  /* 左上：LIVE・物販のアイコンと枚数 */
+  /* チェキの写真欄（複数） */
+  .ck-photos{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;}
+  .ck-thumb{position:relative;aspect-ratio:54/74;border-radius:4px;border:1px solid var(--line-strong);background:var(--paper);padding:0;overflow:hidden;cursor:pointer;}
+  .ck-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+  .ck-thumb .n{position:absolute;left:4px;top:4px;background:rgba(33,28,23,.6);color:#FFFFFF;font-size:10px;font-weight:700;border-radius:99px;padding:0 6px;line-height:1.6;}
+  .ck-thumb.add{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;border-style:dashed;color:var(--accent);font-size:11px;font-weight:700;font-family:inherit;}
+  .ck-thumb.add svg{width:24px;height:24px;stroke:currentColor;fill:none;stroke-width:1.5;}
+  /* 左上：LIVE・物販のアイコン */
   .ck-tl{position:absolute;display:flex;align-items:center;gap:4px;z-index:2;pointer-events:none;}
   .ck-src{width:26px;height:26px;border-radius:50%;background:var(--paper);border:1px solid var(--line-strong);color:var(--accent);display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px -2px rgba(33,28,23,.35);}
   .ck-src svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.7;}
@@ -2952,6 +2959,19 @@ function escapeHtml(s){
     return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c];
   });
 }
+/* チェキの写真（複数可）。以前の1枚だけの記録は photo のみを持つ */
+function recPhotos(r){
+  if(r && Array.isArray(r.photos) && r.photos.length) return r.photos.filter(Boolean);
+  return r && r.photo ? [r.photo] : [];
+}
+/* チェキ1件の枚数（枚数の欄と写真の数の多いほう） */
+function chekiUnits(r){
+  return Math.max(Number(r.count)||1, recPhotos(r).length, 1);
+}
+/* チェキ1枚ごとのお気に入り（favs が無い以前の記録は、記録全体の favorite） */
+function chekiUnitFav(r, i){
+  return Array.isArray(r.favs) ? !!r.favs[i] : !!r.favorite;
+}
 function recAmount(type,r){
   if(type==="live") return Number(r.price)||0;
   if(type==="cheki") return Number(r.price)||0;
@@ -2996,7 +3016,7 @@ function aggregateByOshi(){
     var recs = allRecordsFlat().filter(function(item){ return recHasOshi(item.r, o.id); });
     // 参戦＝現地観戦のみ（配信で観たLIVEは数えない）
     var liveN = recs.filter(function(i){return i.type==="live" && recViewing(i.r)!=="stream";}).length;
-    var chekiN = recs.filter(function(i){return i.type==="cheki";}).reduce(function(s,i){return s+(Number(i.r.count)||1);},0);
+    var chekiN = recs.filter(function(i){return i.type==="cheki";}).reduce(function(s,i){return s+chekiUnits(i.r);},0);
     var goodsN = recs.filter(function(i){return i.type==="goods";}).reduce(function(s,i){return s+(Number(i.r.qty)||1);},0);
     var total = Math.round(recs.reduce(function(s,i){ return s+recAmountForOshi(i.type,i.r,o.id); },0));
     return {oshi:o, liveN:liveN, chekiN:chekiN, goodsN:goodsN, total:total, itemCount:recs.length};
@@ -3008,7 +3028,7 @@ function aggregateByEvent(){
     var name = (item.r.title || "").trim();
     if(!name) return;
     if(!map[name]) map[name] = {name:name, count:0, total:0};
-    map[name].count += (item.type==="cheki") ? (Number(item.r.count)||1) : (item.type==="goods" ? (Number(item.r.qty)||1) : 1);
+    map[name].count += (item.type==="cheki") ? chekiUnits(item.r) : (item.type==="goods" ? (Number(item.r.qty)||1) : 1);
     map[name].total += recAmount(item.type,item.r);
   });
   return Object.keys(map).map(function(k){ return map[k]; }).sort(function(a,b){ return b.count-a.count; });
@@ -3269,7 +3289,7 @@ var CHEKI_STAR = '<svg viewBox="0 0 24 24"><path d="M12 3l2.6 6 6.4.6-4.9 4.2 1.
 // 写真（あれば押すと拡大、なければ押すと編集）
 function chekiPhotoHtml(r){
   if(r.photo){
-    return '<div class="ck-ph" data-action="view-photo" data-type="cheki" data-id="'+r.id+'" role="button" tabindex="0" aria-label="写真を拡大">'
+    return '<div class="ck-ph" data-action="view-photo" data-type="cheki" data-id="'+r.id+'" data-idx="'+(r.unitIdx||0)+'" role="button" tabindex="0" aria-label="写真を拡大">'
       + '<img src="'+r.photo+'" alt="" loading="lazy"></div>';
   }
   return '<div class="ck-ph empty" data-action="edit-record" data-type="cheki" data-id="'+r.id+'" role="button" tabindex="0" aria-label="写真を追加">'+CHEKI_CAMERA+'</div>';
@@ -3313,7 +3333,7 @@ function chekiTopLeft(r){
 }
 // 右上：お気に入り（押すたびに ON/OFF）
 function chekiFavBtn(r){
-  return '<button type="button" class="ck-favbtn'+(r.favorite?' on':'')+'" data-action="toggle-cheki-fav" data-id="'+r.id+'"'
+  return '<button type="button" class="ck-favbtn'+(r.favorite?' on':'')+'" data-action="toggle-cheki-fav" data-id="'+r.id+'" data-idx="'+(r.unitIdx||0)+'"'
     + ' aria-pressed="'+(r.favorite?'true':'false')+'" title="お気に入り" aria-label="お気に入り">'+CHEKI_STAR+'</button>';
 }
 // 白い縁のチェキ（ギャラリー・アルバムで使う）
@@ -3344,12 +3364,28 @@ function chekiDetailHtml(r, big){
     + '</div>';
 }
 
+/* 記録（枚数・写真が複数のこともある）を、1枚ずつのチェキに分ける。
+   1枚ごとの写真・お気に入りを上書きし、ほかの項目は元の記録をそのまま読む */
+function chekiUnitList(list){
+  var units = [];
+  list.forEach(function(r){
+    var ph = recPhotos(r);
+    for(var i=0; i<chekiUnits(r); i++){
+      var u = Object.create(r);
+      u.photo = ph[i] || null;
+      u.favorite = chekiUnitFav(r, i);
+      u.unitIdx = i;
+      units.push(u);
+    }
+  });
+  return units;
+}
 function chekiPageHtml(list){
   var html = "";
+  list = chekiUnitList(list);   // ここから先は1枚ずつ
   // 集計（絞り込み前の一覧で数える）
   var thisMonth = (function(){ var d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); })();
   var totalN = 0, monthN = 0;
-  // 1件＝1枚として数える
   list.forEach(function(r){
     totalN += 1;
     if((r.date||"").slice(0,7)===thisMonth) monthN += 1;
@@ -3505,7 +3541,7 @@ function ticketHtml(type,r,withOshiTag){
     // LIVEの詳細行は会場だけ（チケット種別・座席は一覧に出さない）。右端にGoogleカレンダー追加ボタン
     if(r.venue) metaBits.push('<a class="venue-link" href="'+escapeHtml(mapsUrlFor(r.venue, r.venuePlace))+'" target="_blank" rel="noopener noreferrer">'+escapeHtml(r.venue)+'</a>');
   } else if(type==="cheki"){
-    metaBits.push((Number(r.count)||1)+"枚");
+    if(chekiUnits(r)>1) metaBits.push(chekiUnits(r)+"枚");
     if(r.content) metaBits.push(escapeHtml(r.content));
   } else {
     if(r.item) metaBits.push(escapeHtml(r.item));
@@ -4234,6 +4270,21 @@ function oshiFormHtml(oshi){
     + '</form>';
 }
 
+/* チェキの写真欄：複数枚を並べ、＋で追加（撮る・選ぶ）、写真を押すと拡大・編集・削除 */
+function chekiPhotosFieldHtml(){
+  return '<div class="field"><label>チェキ写真（任意）</label>'
+    + '<div class="ck-photos" id="ckPhotos"></div>'
+    + '<div class="photo-menu" id="ckAddMenu" style="display:none;">'
+    +   '<label class="photo-menu-item" style="cursor:pointer;">写真を撮る<input type="file" id="ckPhotoCamera" accept="image/*" capture="environment" style="display:none;"></label>'
+    +   '<label class="photo-menu-item" style="cursor:pointer;">写真を選ぶ<input type="file" id="ckPhotoInput" accept="image/*" multiple style="display:none;"></label>'
+    + '</div>'
+    + '<div class="photo-menu" id="ckPhotoMenu" style="display:none;">'
+    +   '<button type="button" class="photo-menu-item" id="ckViewBtn">拡大して見る</button>'
+    +   '<button type="button" class="photo-menu-item" id="ckEditBtn">写真を編集する</button>'
+    +   '<button type="button" class="photo-menu-item danger" id="ckDelBtn">写真を削除</button>'
+    + '</div>'
+    + '</div>';
+}
 function recordPhotoFieldHtml(labelText){
   return '<div class="field"><label>'+labelText+'</label>'
     + '<div class="photo-picker">'
@@ -4307,10 +4358,11 @@ function recordFormHtml(type,rec){
     fields += '<div class="field"><label>オンラインチケットURL（任意）</label><input type="text" name="ticketUrl" inputmode="url" autocomplete="off" value="'+(rec?escapeHtml(rec.ticketUrl||""):"")+'"></div>';
     fields += '<div class="field"><label>チケット代（任意）</label><input type="number" name="price" min="0" value="'+(rec?rec.price||"":"")+'" placeholder="0"></div>';
   } else if(type==="cheki"){
-    fields += recordPhotoFieldHtml("チェキ写真（任意）");
+    fields += chekiPhotosFieldHtml();
     fields += '<div class="field"><label>イベント名</label><input type="text" name="title" value="'+(rec?escapeHtml(rec.title||""):"")+'" required></div>';
+    // 枚数と写真はまとめて登録できる（チェキ記録タブでは1枚ずつ表示する）
     fields += '<div class="field row2">'
-      + '<div><label>枚数（任意）</label><input type="number" name="count" min="1" value="'+(rec?rec.count||1:1)+'"></div>'
+      + '<div><label>枚数</label><input type="number" name="count" min="1" value="'+(rec?chekiUnits(rec):1)+'"></div>'
       + '<div><label>合計金額（任意）</label><input type="number" name="price" min="0" value="'+(rec?rec.price||"":"")+'" placeholder="0"></div>'
       + '</div>';
     fields += '<div class="field"><label>話した内容・会話メモ（任意）</label><input type="text" name="content" value="'+(rec?escapeHtml(rec.content||""):"")+'"></div>';
@@ -4908,7 +4960,94 @@ function bindRecordForm(type,existingRec){
     });
   }
 
-  var hasPhotoField = (type==="cheki" || type==="live" || type==="goods");
+  /* チェキの写真（複数）。photos は保存する写真、sources はこの画面で撮った・選んだ元の写真（編集用） */
+  var ckPhotos = [], ckSources = [], ckFavs = [], ckActive = -1;
+  if(type==="cheki"){
+    ckPhotos = existingRec ? recPhotos(existingRec).slice() : [];
+    ckSources = ckPhotos.map(function(){ return null; });
+    // 1枚ごとのお気に入り（写真を消したときに、あとの写真のお気に入りがずれないように一緒に動かす）
+    if(existingRec){ for(var fk=0; fk<chekiUnits(existingRec); fk++) ckFavs.push(chekiUnitFav(existingRec, fk)); }
+    var elCk = form.querySelector("#ckPhotos");
+    var elCkAdd = form.querySelector("#ckAddMenu");
+    var elCkMenu = form.querySelector("#ckPhotoMenu");
+    var elCkInput = form.querySelector("#ckPhotoInput");
+    var elCkCamera = form.querySelector("#ckPhotoCamera");
+    var elCount = form.querySelector('[name="count"]');
+    function renderCkPhotos(){
+      elCk.innerHTML = ckPhotos.map(function(src, i){
+        return '<button type="button" class="ck-thumb" data-ck-i="'+i+'" aria-label="'+(i+1)+'枚目の写真"><img src="'+src+'" alt=""><span class="n">'+(i+1)+'</span></button>';
+      }).join("")
+        + '<button type="button" class="ck-thumb add" id="ckAddTile" aria-label="写真を追加">'
+        +   '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.4"/><path d="M8 6l1-2h6l1 2"/></svg><span>追加</span></button>';
+      // 写真の数より枚数が少なければ合わせる
+      if(Number(elCount.value||0) < ckPhotos.length) elCount.value = ckPhotos.length;
+    }
+    function hideCkMenus(){ elCkAdd.style.display = "none"; elCkMenu.style.display = "none"; }
+    renderCkPhotos();
+    elCk.addEventListener("click", function(e){
+      e.stopPropagation();
+      var add = e.target.closest("#ckAddTile");
+      var th = e.target.closest("[data-ck-i]");
+      var wasAdd = elCkAdd.style.display==="block", wasMenu = elCkMenu.style.display==="block";
+      var prev = ckActive;
+      hideCkMenus();
+      if(add){ if(!wasAdd) openPopoverNear(add, elCkAdd); return; }
+      if(th){
+        ckActive = Number(th.getAttribute("data-ck-i"));
+        if(!(wasMenu && prev===ckActive)) openPopoverNear(th, elCkMenu);
+      }
+    });
+    form.addEventListener("click", function(e){
+      if(!e.target.closest(".ck-photos") && !e.target.closest("#ckAddMenu") && !e.target.closest("#ckPhotoMenu")) hideCkMenus();
+    });
+    [elCkAdd, elCkMenu].forEach(function(m){
+      m.querySelectorAll(".photo-menu-item").forEach(function(item){
+        item.addEventListener("click", function(){ m.style.display = "none"; });
+      });
+    });
+    // 撮った・選んだ写真は、そのまま後ろに追加する（複数選べる）
+    async function addCkFiles(input){
+      var files = Array.prototype.slice.call(input.files || []);
+      input.value = "";
+      for(var i=0;i<files.length;i++){
+        var f = files[i];
+        if(f.type.indexOf("image/")!==0){ toast("画像ファイルを選択してください"); continue; }
+        try{
+          var url = await resizeImageFile(f, 640, 0.85);
+          ckPhotos.push(url);
+          ckSources.push(f);
+        }catch(err){ toast("画像の読み込みに失敗しました"); }
+      }
+      renderCkPhotos();
+    }
+    elCkInput.addEventListener("change", function(){ addCkFiles(elCkInput); });
+    elCkCamera.addEventListener("change", function(){ addCkFiles(elCkCamera); });
+    form.querySelector("#ckViewBtn").addEventListener("click", function(){
+      if(ckPhotos[ckActive]) openPhotoViewer(ckPhotos[ckActive]);
+    });
+    form.querySelector("#ckEditBtn").addEventListener("click", async function(){
+      var i = ckActive;
+      if(!ckPhotos[i]) return;
+      var src = ckSources[i];
+      if(!src){
+        try{ src = await (await fetch(ckPhotos[i])).blob(); }
+        catch(err){ toast("画像の読み込みに失敗しました"); return; }
+      }
+      PhotoEditor.open(src, function(dataUrl){
+        if(dataUrl){ ckPhotos[i] = dataUrl; renderCkPhotos(); }
+      });
+    });
+    form.querySelector("#ckDelBtn").addEventListener("click", function(){
+      if(ckActive<0 || ckActive>=ckPhotos.length) return;
+      ckPhotos.splice(ckActive, 1);
+      ckSources.splice(ckActive, 1);
+      ckFavs.splice(ckActive, 1);
+      ckActive = -1;
+      renderCkPhotos();
+    });
+  }
+
+  var hasPhotoField = (type==="live" || type==="goods");
   if(hasPhotoField){
     var elBtn = form.querySelector("#recPhotoPreviewBtn");
     var elMenu = form.querySelector("#recPhotoMenu");
@@ -5043,6 +5182,17 @@ function bindRecordForm(type,existingRec){
       rec.venuePlace = venueAc ? venueAc.getPlace() : null;
     }
     if(hasPhotoField){ rec.photo = chosenPhoto; }
+    if(type==="cheki"){
+      rec.photos = ckPhotos.slice();
+      rec.photo = ckPhotos[0] || null;   // 以前の形式（1枚）とも互換
+      rec.count = Math.max(Number(rec.count)||1, ckPhotos.length, 1);
+      // 1枚ごとのお気に入り：「お気に入り」を切り替えたときは全部そろえる。変えていなければ今の状態を枚数に合わせて残す
+      if(existingRec && favOn===!!existingRec.favorite && Array.isArray(existingRec.favs)){
+        rec.favs = [];
+        for(var fi=0; fi<rec.count; fi++) rec.favs.push(!!ckFavs[fi]);
+        favOn = rec.favs.some(Boolean);
+      }
+    }
     rec.favorite = favOn;
     rec.hidden = hideOn;
     rec.createdAt = existingRec ? existingRec.createdAt : Date.now();
@@ -5625,7 +5775,12 @@ function onAppClick(e){
   if(action==="toggle-cheki-fav"){
     var fr = state.cheki.find(function(r){ return r.id===el.getAttribute("data-id"); });
     if(fr){
-      persistRecord("cheki", Object.assign({}, fr, {favorite:!fr.favorite}));
+      // 1枚ごとに ON/OFF（記録の favorite は、どれか1枚でもお気に入りなら ON）
+      var fidx = Number(el.getAttribute("data-idx")||0);
+      var favs = [];
+      for(var k=0; k<chekiUnits(fr); k++) favs.push(chekiUnitFav(fr, k));
+      favs[fidx] = !favs[fidx];
+      persistRecord("cheki", Object.assign({}, fr, {favs:favs, favorite:favs.some(Boolean)}));
       render();
     }
     return;
@@ -5675,7 +5830,10 @@ function onAppClick(e){
   }
   if(action==="view-photo"){
     var pr = (state[el.getAttribute("data-type")]||[]).find(function(r){ return r.id===el.getAttribute("data-id"); });
-    if(pr) openPhotoViewer(pr.photo);
+    if(pr){
+      var pidx = Number(el.getAttribute("data-idx")||0);
+      openPhotoViewer(el.getAttribute("data-type")==="cheki" ? (recPhotos(pr)[pidx] || pr.photo) : pr.photo);
+    }
     return;
   }
   if(action==="edit-record"){
