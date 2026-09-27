@@ -713,9 +713,10 @@
   .cal-setting-actions .btn{padding:8px 22px;}
   /* ---------- チェキ記録（ギャラリー・アルバム・バインダー・カレンダー・スワイプ） ---------- */
   .ck-sum{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:8px 0 16px;}
-  .ck-sum div{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:8px 10px;min-width:0;}
-  .ck-sum b{display:block;font-family:"Shippori Mincho",serif;font-size:20px;font-weight:800;color:var(--heading);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .ck-sum span{font-size:10.5px;color:var(--ink-soft);}
+  /* 数字は左、「総枚数」「今月」は同じ行の右寄せ */
+  .ck-sum div{display:flex;align-items:baseline;justify-content:space-between;gap:8px;background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:8px 12px;min-width:0;}
+  .ck-sum b{font-family:"Shippori Mincho",serif;font-size:20px;font-weight:800;color:var(--heading);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
+  .ck-sum span{flex:none;font-size:10.5px;color:var(--ink-soft);white-space:nowrap;}
   .oshi-pill.fav-pill{padding:5px 12px;align-self:stretch;}
   .oshi-pill.fav-pill svg{width:18px;height:18px;fill:none;stroke:var(--ink-soft);stroke-width:1.6;}
   .oshi-pill.fav-pill.on svg{fill:#E8B04A;stroke:#E8B04A;}
