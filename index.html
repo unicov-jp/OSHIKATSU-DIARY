@@ -716,8 +716,8 @@
   .ck-sum div{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:8px 10px;min-width:0;}
   .ck-sum b{display:block;font-family:"Shippori Mincho",serif;font-size:20px;font-weight:800;color:var(--heading);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .ck-sum span{font-size:10.5px;color:var(--ink-soft);}
-  .oshi-pill.fav-pill{gap:5px;}
-  .oshi-pill.fav-pill svg{width:15px;height:15px;fill:none;stroke:var(--ink-soft);stroke-width:1.6;}
+  .oshi-pill.fav-pill{padding:5px 12px;align-self:stretch;}
+  .oshi-pill.fav-pill svg{width:18px;height:18px;fill:none;stroke:var(--ink-soft);stroke-width:1.6;}
   .oshi-pill.fav-pill.on svg{fill:#E8B04A;stroke:#E8B04A;}
   .ck-ph{display:block;width:100%;aspect-ratio:54/74;background:var(--paper-alt);overflow:hidden;cursor:zoom-in;border-radius:1px;}
   .ck-ph img{width:100%;height:100%;object-fit:cover;display:block;}
@@ -3169,8 +3169,8 @@ function renderListPage(type){
   // チェキは「お気に入り（ON/OFF）・ぜんぶ・人物名」の順に並べる
   if(type==="cheki"){
     html += '<div class="oshi-pills">';
-    html += '<button class="oshi-pill fav-pill '+(state.chekiFav?"on":"")+'" data-action="cheki-fav" aria-pressed="'+(state.chekiFav?"true":"false")+'">'
-      + '<svg viewBox="0 0 24 24"><path d="M12 3l2.6 6 6.4.6-4.9 4.2 1.5 6.2L12 16.9 6.4 20l1.5-6.2-4.9-4.2 6.4-.6z"/></svg>お気に入り</button>';
+    html += '<button class="oshi-pill fav-pill '+(state.chekiFav?"on":"")+'" data-action="cheki-fav" aria-pressed="'+(state.chekiFav?"true":"false")+'" title="お気に入り" aria-label="お気に入り">'
+      + '<svg viewBox="0 0 24 24"><path d="M12 3l2.6 6 6.4.6-4.9 4.2 1.5 6.2L12 16.9 6.4 20l1.5-6.2-4.9-4.2 6.4-.6z"/></svg></button>';
     if(visibleOshis().length>1){
       html += '<button class="oshi-pill '+(state.filterOshiId==="all"?"on":"")+'" data-action="filter-oshi" data-id="all">ぜんぶ</button>';
       visibleOshis().forEach(function(o){
