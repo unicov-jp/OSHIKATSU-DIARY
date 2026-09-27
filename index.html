@@ -466,8 +466,8 @@
   .venue-link{color:inherit;text-decoration:underline;text-decoration-color:var(--line-strong);text-underline-offset:2px;}
   /* 推し欄：人物名・グループ名（LIVEはさらにチェキ・✕、物販はチェキ）を列幅をそろえて並べる */
   .rec-oshi-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:center;gap:8px;}
-  .rec-oshi-row.with-actions{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 34px 34px;}
-  .rec-oshi-row.with-cheki{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 34px;}
+  .rec-oshi-row.with-actions{grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto 34px;}
+  .rec-oshi-row.with-cheki{grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;}
   .rec-oshi-row + .rec-oshi-row{margin-top:8px;}
   .field .rec-oshi-row select{min-width:0;width:100%;}
   .rec-cell-empty{display:block;}
@@ -476,7 +476,11 @@
     background:var(--paper);color:var(--ink-soft);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;
   }
   .rec-oshi-icon.rec-cell-empty{border:none;background:none;cursor:default;}
-  .rec-oshi-cheki{color:var(--accent);}
+  /* チェキボタンはアイコンの右に「チェキ」と書いた丸いボタン */
+  .rec-oshi-icon.rec-oshi-cheki{
+    width:auto;border-radius:99px;padding:0 10px 0 8px;gap:4px;color:var(--accent);border-color:var(--accent);
+    font-size:12px;font-weight:700;font-family:inherit;white-space:nowrap;
+  }
   .rec-oshi-cheki svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.6;}
   .rec-oshi-remove{
     flex:none;width:34px;height:34px;border-radius:50%;border:1px solid var(--line-strong);
@@ -3838,7 +3842,8 @@ function recordPhotoFieldHtml(labelText){
     +     '<span class="photo-edit-badge"><svg viewBox="0 0 24 24"><path d="M4 20h4L18.5 9.5a2.1 2.1 0 000-3L18 6a2.1 2.1 0 00-3 0L4.5 16.5z"/></svg></span>'
     +   '</button>'
     +   '<div class="photo-menu" id="recPhotoMenu" style="display:none;">'
-    +     '<label class="photo-menu-item" style="cursor:pointer;">写真を撮る・選ぶ<input type="file" id="recPhotoInput" accept="image/*" capture="environment" style="display:none;"></label>'
+    +     '<label class="photo-menu-item" style="cursor:pointer;">写真を撮る<input type="file" id="recPhotoCamera" accept="image/*" capture="environment" style="display:none;"></label>'
+    +     '<label class="photo-menu-item" style="cursor:pointer;">写真を選ぶ<input type="file" id="recPhotoInput" accept="image/*" style="display:none;"></label>'
     +     '<button type="button" class="photo-menu-item" id="viewRecPhotoBtn" style="display:none;">拡大して見る</button>'
     +     '<button type="button" class="photo-menu-item danger" id="clearRecPhotoBtn" style="display:none;">写真を削除</button>'
     +   '</div>'
@@ -4391,7 +4396,7 @@ function bindRecordForm(type,existingRec){
         : '<span class="rec-cell-empty"></span>';
       // LIVEは「人物名・グループ名・チェキ・✕」の4列。1行目は✕の位置を空けて列をそろえる。物販は「人物名・グループ名・チェキ」の3列
       var chekiBtn = (type==="live" || type==="goods")
-        ? '<button type="button" class="rec-oshi-icon rec-oshi-cheki" data-cheki-row="'+i+'" title="この推しのチェキを追加" aria-label="この推しのチェキを追加">'+kindIcon("cheki")+'</button>'
+        ? '<button type="button" class="rec-oshi-icon rec-oshi-cheki" data-cheki-row="'+i+'" title="この推しのチェキを追加" aria-label="この推しのチェキを追加">'+kindIcon("cheki")+'<span>チェキ</span></button>'
         : '';
       var removeBtn = i>0
         ? '<button type="button" class="rec-oshi-icon rec-oshi-remove" data-remove-row="'+i+'" title="この推しを外す" aria-label="この推しを外す"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>'
@@ -4541,13 +4546,15 @@ function bindRecordForm(type,existingRec){
     elMenu.querySelectorAll(".photo-menu-item").forEach(function(item){
       item.addEventListener("click", function(){ elMenu.style.display = "none"; });
     });
-    elInput.addEventListener("change", function(){
-      var file = elInput.files && elInput.files[0];
+    // 「写真を撮る」（カメラ）と「写真を選ぶ」（端末の写真）のどちらからでも同じように読み込む
+    var elCamera = form.querySelector("#recPhotoCamera");
+    function onPhotoPicked(input){
+      var file = input.files && input.files[0];
       if(!file) return;
       if(file.type.indexOf("image/")!==0){ toast("画像ファイルを選択してください"); return; }
       if(type==="cheki"){
         PhotoEditor.open(file, function(dataUrl){
-          elInput.value = "";
+          input.value = "";
           if(dataUrl){
             chosenPhoto = dataUrl;
             refreshRecPhoto();
@@ -4555,17 +4562,20 @@ function bindRecordForm(type,existingRec){
         });
       } else {
         resizeImageFile(file, 640, 0.85).then(function(dataUrl){
-          elInput.value = "";
+          input.value = "";
           chosenPhoto = dataUrl;
           refreshRecPhoto();
         }).catch(function(){
           toast("画像の読み込みに失敗しました");
         });
       }
-    });
+    }
+    elInput.addEventListener("change", function(){ onPhotoPicked(elInput); });
+    elCamera.addEventListener("change", function(){ onPhotoPicked(elCamera); });
     elClearBtn.addEventListener("click", function(){
       chosenPhoto = null;
       elInput.value = "";
+      elCamera.value = "";
       refreshRecPhoto();
     });
   }
