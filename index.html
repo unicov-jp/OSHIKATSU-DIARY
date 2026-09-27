@@ -980,6 +980,8 @@
   .ticket .meta-venue{display:flex;align-items:center;gap:8px;}
   /* LIVE・物販のカードは同じ高さ（内容の多い少ないで変わらない） */
   .ticket.fixed{height:150px;}
+  /* 右側（写真が入る所）はチラシと同じ縦横比（A判・約1:1.41）。高さ148pxに対して幅105px */
+  .ticket.fixed .stub{width:auto;aspect-ratio:1/1.414;height:100%;}
   .ticket.fixed .main{display:flex;flex-direction:column;padding-bottom:10px;}
   .ticket.fixed .kind{flex-wrap:nowrap;overflow:hidden;flex:none;}
   .ticket.fixed .kind > *{flex:none;}
