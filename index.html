@@ -3844,6 +3844,7 @@ function recordPhotoFieldHtml(labelText){
     +   '<div class="photo-menu" id="recPhotoMenu" style="display:none;">'
     +     '<label class="photo-menu-item" style="cursor:pointer;">写真を撮る<input type="file" id="recPhotoCamera" accept="image/*" capture="environment" style="display:none;"></label>'
     +     '<label class="photo-menu-item" style="cursor:pointer;">写真を選ぶ<input type="file" id="recPhotoInput" accept="image/*" style="display:none;"></label>'
+    +     '<button type="button" class="photo-menu-item" id="editRecPhotoBtn" style="display:none;">写真を編集する</button>'
     +     '<button type="button" class="photo-menu-item" id="viewRecPhotoBtn" style="display:none;">拡大して見る</button>'
     +     '<button type="button" class="photo-menu-item danger" id="clearRecPhotoBtn" style="display:none;">写真を削除</button>'
     +   '</div>'
@@ -4516,7 +4517,10 @@ function bindRecordForm(type,existingRec){
     var elInput = form.querySelector("#recPhotoInput");
 
     var elViewBtn = form.querySelector("#viewRecPhotoBtn");
+    var elEditBtn = form.querySelector("#editRecPhotoBtn");
+    var editSource = null;   // チェキ：この画面で撮った・選んだ元の写真（編集はここからやり直せる）
     function refreshRecPhoto(){
+      elEditBtn.style.display = (type==="cheki" && chosenPhoto) ? "block" : "none";
       if(chosenPhoto){
         elImg.src = chosenPhoto;
         elImg.style.display = "block";
@@ -4552,28 +4556,36 @@ function bindRecordForm(type,existingRec){
       var file = input.files && input.files[0];
       if(!file) return;
       if(file.type.indexOf("image/")!==0){ toast("画像ファイルを選択してください"); return; }
-      if(type==="cheki"){
-        PhotoEditor.open(file, function(dataUrl){
-          input.value = "";
-          if(dataUrl){
-            chosenPhoto = dataUrl;
-            refreshRecPhoto();
-          }
-        });
-      } else {
-        resizeImageFile(file, 640, 0.85).then(function(dataUrl){
-          input.value = "";
+      // 撮った・選んだ写真はそのまま入れる（チェキの枠合わせは「写真を編集する」から）
+      resizeImageFile(file, 640, 0.85).then(function(dataUrl){
+        input.value = "";
+        chosenPhoto = dataUrl;
+        editSource = type==="cheki" ? file : null;
+        refreshRecPhoto();
+      }).catch(function(){
+        input.value = "";
+        toast("画像の読み込みに失敗しました");
+      });
+    }
+    elEditBtn.addEventListener("click", async function(){
+      if(!chosenPhoto) return;
+      var src = editSource;
+      if(!src){
+        try{ src = await (await fetch(chosenPhoto)).blob(); }
+        catch(e){ toast("画像の読み込みに失敗しました"); return; }
+      }
+      PhotoEditor.open(src, function(dataUrl){
+        if(dataUrl){
           chosenPhoto = dataUrl;
           refreshRecPhoto();
-        }).catch(function(){
-          toast("画像の読み込みに失敗しました");
-        });
-      }
-    }
+        }
+      });
+    });
     elInput.addEventListener("change", function(){ onPhotoPicked(elInput); });
     elCamera.addEventListener("change", function(){ onPhotoPicked(elCamera); });
     elClearBtn.addEventListener("click", function(){
       chosenPhoto = null;
+      editSource = null;
       elInput.value = "";
       elCamera.value = "";
       refreshRecPhoto();
