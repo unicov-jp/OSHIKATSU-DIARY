@@ -3946,8 +3946,12 @@ function renderHome(){
   }
 
   var recs = allRecordsForOshi(oshi.id);
-  // 参戦＝現地観戦のみ（配信で観たLIVEは数えない）
-  var liveN = state.live.filter(function(r){return recHasOshi(r,oshi.id) && recViewing(r)!=="stream";}).length;
+  // 参戦＝現地観戦のみ（配信で観たLIVEは数えない）。今日までに行ったLIVEだけを数え、これからのLIVEは数えない
+  var nowD = new Date();
+  var todayYmd = nowD.getFullYear()+"-"+String(nowD.getMonth()+1).padStart(2,"0")+"-"+String(nowD.getDate()).padStart(2,"0");
+  var liveN = state.live.filter(function(r){
+    return recHasOshi(r,oshi.id) && recViewing(r)!=="stream" && !(r.date && r.date > todayYmd);
+  }).length;
   var total = Math.round(recs.reduce(function(s,item){ return s+recAmountForOshi(item.type,item.r,oshi.id); },0));
 
   var subLabel = oshiSubLabel(oshi) || "推し活中";
