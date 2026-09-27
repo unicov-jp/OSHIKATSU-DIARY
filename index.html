@@ -6186,8 +6186,21 @@ function bindHomeReorder(){
 }
 
 /* ============ ホームのギャラリー（推しごとの写真） ============
-   推しの gallery（写真の配列。新しい順）を横にスワイプして見る。写真を押すと拡大。
+   推しの gallery（写真の配列。新しい順）をシャッフルして横にスワイプで見る。写真を押すと拡大。
    Googleドライブに接続していれば、追加した写真はすぐドライブへ保存し、記録には置き場所だけを入れる。 */
+// 写真の並びはアプリを開くたびにシャッフルする。開いている間は並びを保ち、追加した写真は先頭に出す。
+var galShuffleKey = {};
+function galleryOrder(g){
+  return g.map(function(ref, i){
+    if(!(ref in galShuffleKey)) galShuffleKey[ref] = Math.random();
+    return {ref:ref, i:i, k:galShuffleKey[ref]};
+  }).sort(function(a, b){ return a.k - b.k; });
+}
+function galleryPutFirst(refs){
+  var min = 0;
+  Object.keys(galShuffleKey).forEach(function(r){ if(galShuffleKey[r] < min) min = galShuffleKey[r]; });
+  refs.forEach(function(ref, n){ galShuffleKey[ref] = min - refs.length + n; });
+}
 var GAL_CAMERA = '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.4"/><path d="M8 6l1-2h6l1 2"/></svg>';
 function galleryHtml(oshi){
   var g = Array.isArray(oshi.gallery) ? oshi.gallery : [];
@@ -6201,7 +6214,8 @@ function galleryHtml(oshi){
     + '</div>';
   if(g.length){
     html += '<div class="gal-swipe'+(g.length===1?' single':'')+'" id="galSwipe">'
-      + g.map(function(ref, i){
+      + galleryOrder(g).map(function(it){
+          var ref = it.ref, i = it.i;
           return '<div class="gal-slide">'
             + '<div class="gal-ph" data-action="gallery-view" data-i="'+i+'" role="button" tabindex="0" aria-label="写真を拡大"><img class="gal-bg" '+DrivePhotos.imgAttrs(ref)+' alt="" aria-hidden="true" loading="lazy"><img '+DrivePhotos.imgAttrs(ref)+' alt="" loading="lazy"></div>'
             + '<button type="button" class="gal-del" data-action="gallery-del" data-i="'+i+'" title="この写真を外す" aria-label="この写真を外す"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>'
@@ -6267,6 +6281,7 @@ async function addGalleryFiles(oshiId, files){
   var o = getOshi(oshiId);
   if(!o) return;
   var gal = Array.isArray(o.gallery) ? o.gallery.slice() : [];
+  galleryPutFirst(added);
   await persistOshi(Object.assign({}, o, {gallery: added.reverse().concat(gal)}));   // 新しい順
   DrivePhotos.migrateSoon();
   toast(added.length+"枚の写真を追加しました");
