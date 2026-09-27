@@ -4686,17 +4686,21 @@ function chekiPageHtml(list){
     + '<div><b>'+monthN+'</b><span>今月</span></div>'
     + '</div>';
   var items = state.chekiFav ? list.filter(function(r){ return !!r.favorite; }) : list;
-  var view = chekiView();
-  if(!items.length && view!=="calendar"){
+  // 上にカレンダー、下にスワイプ。カレンダーの日を押すと、その日のチェキだけをスワイプに並べる（もう一度押すと元に戻る）
+  html += chekiCalendarHtml(items);
+  var cd = state.chekiCalDate;
+  if(cd && items.some(function(r){ return r.date===cd; })){
+    items = items.filter(function(r){ return r.date===cd; });
+    var cdp = cd.split("-");
+    html += '<div class="filter-note"><span class="live-cal-day-note">'+Number(cdp[1])+'月'+Number(cdp[2])+'日のチェキ'
+      + '<button type="button" data-action="cheki-cal-clear">すべて表示</button></span>'+items.length+'枚</div>';
+  }
+  if(!items.length){
     html += '<div class="empty-state"><svg viewBox="0 0 24 24">'+kindIconRaw("cheki")+'</svg>'
       + '<p>'+(list.length ? '該当するチェキがありません。' : 'まだチェキの記録がありません。右下の＋ボタンから追加できます。')+'</p></div>';
     return html;
   }
-  if(view==="gallery") html += chekiGalleryHtml(items);
-  else if(view==="album") html += chekiAlbumHtml(items);
-  else if(view==="binder") html += chekiBinderHtml(items);
-  else if(view==="calendar") html += chekiCalendarHtml(items);
-  else html += chekiSwipeHtml(items);
+  html += chekiSwipeHtml(items);
   return html;
 }
 function chekiGalleryHtml(items){
@@ -4790,24 +4794,14 @@ function chekiCalendarHtml(items){
     + calHeadHtml("cheki-cal-month", y, m, count+'枚')
     + '<div class="ck-cal-grid">';
   for(var i=0;i<startWeekday;i++) html += '<span></span>';
-  var sel = state.chekiCalDate && state.chekiCalDate.slice(0,7)===month && byDate[state.chekiCalDate] ? state.chekiCalDate : null;
-  if(!sel){
-    var inMonth = Object.keys(byDate).filter(function(d){ return d.slice(0,7)===month; }).sort();
-    sel = inMonth.length ? inMonth[inMonth.length-1] : null;
-  }
+  var sel = state.chekiCalDate && byDate[state.chekiCalDate] ? state.chekiCalDate : null;
   for(var d=1; d<=daysInMonth; d++){
     var ds = month+"-"+String(d).padStart(2,"0");
     var rs = byDate[ds];
     if(!rs){ html += '<span class="ck-day'+(ds===today?' today':'')+'"><i>'+d+'</i></span>'; continue; }
     html += calDayCellHtml({recs:rs, kind:"cheki", action:"cheki-cal-day", date:ds, day:d, today:ds===today, on:ds===sel, label:m+'月'+d+'日のチェキ（'+rs.length+'枚）'});
   }
-  html += '</div></div>';
-  if(sel){
-    html += '<div class="ck-cal-sel">'+byDate[sel].map(function(r){ return chekiDetailHtml(r, false); }).join("")+'</div>';
-  } else {
-    html += '<div class="empty-state"><p>この月のチェキはありません。</p></div>';
-  }
-  return html;
+  return html + '</div></div>';
 }
 /* LIVE記録のカレンダー：月ごとにLIVEのある日を示す（マスの背景はLIVEの写真、なければ推しの写真、どちらもなければLIVEのアイコン）。
    はじめは今月を出す。日を押すと、その日のLIVEだけを下のチケットに並べる（もう一度押すと元に戻る）。 */
@@ -5279,11 +5273,10 @@ function applyOshiOrder(ids){
   saveLocal();
   renderTopChipMenu();
 }
-/* マイページ：アカウント・チェキの表示・ログアウト（推しの一覧は「推しの管理」ページへ） */
+/* マイページ：アカウント・ログアウト（推しの一覧は「推しの管理」ページへ） */
 function renderOshiPage(){
   var html = '<div class="page-head"><h1 class="mincho">マイページ</h1></div>';
   html += accountSectionHtml();
-  html += chekiViewSettingHtml();
   html += logoutButtonHtml();
   html += '<p class="legal-links"><a href="privacy.html">プライバシーポリシー</a></p>';
   document.getElementById("main").innerHTML = html;
@@ -7415,7 +7408,12 @@ function onAppClick(e){
     render(); return;
   }
   if(action==="live-cal-clear"){ state.liveCalDate = null; render(); return; }
-  if(action==="cheki-cal-day"){ state.chekiCalDate = el.getAttribute("data-date"); render(); return; }
+  if(action==="cheki-cal-day"){
+    var cday = el.getAttribute("data-date");
+    state.chekiCalDate = state.chekiCalDate===cday ? null : cday;
+    render(); return;
+  }
+  if(action==="cheki-cal-clear"){ state.chekiCalDate = null; render(); return; }
   if(action==="add-cheki"){ openRecordSheet("cheki", null); return; }
   if(action==="gallery-add"){
     var gm = document.getElementById("galAddMenu");
