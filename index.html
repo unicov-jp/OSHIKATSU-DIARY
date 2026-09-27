@@ -833,7 +833,11 @@
   .ck-day.on{box-shadow:0 0 0 2px var(--accent);}
   .ck-cal-sel{display:flex;flex-direction:column;gap:10px;}
   /* LIVE記録のカレンダー（チェキのカレンダーと同じ見た目） */
-  .live-cal .ck-day{aspect-ratio:1/1;}
+  /* ホームのカード（遠征マップなど）と同じく、推しの色になじむカードの色にする */
+  .live-cal{background:var(--card);box-shadow:0 10px 24px -18px rgba(33,28,23,.45);padding:14px 12px 12px;}
+  .live-cal .ck-nav{background:var(--card);}
+  .live-cal .ck-day{aspect-ratio:1/1;background:rgba(33,28,23,.05);}
+  .live-cal .ck-day.has{background:var(--accent-soft);}
   .live-cal-title{display:flex;align-items:baseline;gap:8px;}
   .live-cal-title span{font-size:11px;color:var(--ink-soft);}
   .ck-day.today{box-shadow:inset 0 0 0 1.5px var(--line-strong);}
