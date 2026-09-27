@@ -2105,6 +2105,7 @@ async function enterUserMode(user){
 }
 function leaveUserMode(){
   clearTimeout(cloud.timer);
+  DrivePhotos.forget();
   cloud.user = null;
   cloud.hashes = {};
   cloud.tomb = {};
@@ -2246,7 +2247,13 @@ var DrivePhotos = (function(){
   var TOKEN_KEY = "oshikatsu_gdrive_token_v1";
   var EVER_KEY = "oshikatsu_gdrive_connected_v1";
   var BLANK = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
-  var token = null, tokenExp = 0, tokenClient = null, gisLoading = null, pendingResolve = null, pendingReject = null;
+  var token = null, tokenExp = 0, tokenClient = null, codeClient = null, gisLoading = null, pendingResolve = null, pendingReject = null;
+  /* サーバーで接続を続ける方式（/api/gdrive-token。クライアントシークレットがサーバーにあるとき）：
+     一度つなぐとサーバーがリフレッシュトークンを本人の行として保存し、1時間ごとのアクセストークンを
+     つなぎ直しなしで発行する。同じアカウントなら PC・スマホのどちらでも使える。
+     linked：サーバーに保存済みか（null = まだ確かめていない） */
+  var LINK_KEY = "oshikatsu_gdrive_linked_v1:";
+  var linked = null, refreshing = null, linkChecked = false;
   var folderId = null, dbp = null, mem = {}, loading = {};
   var migrating = false, migrateTimer = null, missing = false;
 
@@ -2259,8 +2266,82 @@ var DrivePhotos = (function(){
   function isData(s){ return typeof s==="string" && s.indexOf("data:")===0; }
   function idOf(s){ return s.slice(PREFIX.length); }
   function available(){ return !!(appConfig && appConfig.googleClientId); }
-  function connected(){ return !!token && Date.now() < tokenExp-60000; }
+  function serverMode(){ return available() && !!appConfig.googleDriveServer; }
+  function tokenValid(){ return !!token && Date.now() < tokenExp-60000; }
+  function linkKey(){ return LINK_KEY + (cloud.user ? cloud.user.id : ""); }
+  function isLinked(){
+    if(linked!==null) return linked;
+    try{ return localStorage.getItem(linkKey())==="1"; }catch(e){ return false; }
+  }
+  function setLinked(v){
+    linked = !!v;
+    try{ if(v) localStorage.setItem(linkKey(), "1"); else localStorage.removeItem(linkKey()); }catch(e){}
+  }
+  // 接続中か：アクセストークンが有効、またはサーバーで接続を続けている
+  function connected(){ return tokenValid() || (serverMode() && !!cloud.user && isLinked()); }
   function everConnected(){ try{ return localStorage.getItem(EVER_KEY)==="1"; }catch(e){ return false; } }
+  function saveToken(t, expiresIn){
+    token = t;
+    tokenExp = Date.now() + (Number(expiresIn)||3600)*1000;
+    try{
+      localStorage.setItem(TOKEN_KEY, JSON.stringify({token:token, exp:tokenExp}));
+      localStorage.setItem(EVER_KEY, "1");
+    }catch(e){}
+  }
+  async function serverCall(action, extra){
+    var jwt = "";
+    try{ var r = await sb.auth.getSession(); jwt = r && r.data && r.data.session ? r.data.session.access_token : ""; }catch(e){}
+    if(!jwt) throw new Error("login required");
+    var res = await fetch("/api/gdrive-token", {
+      method:"POST",
+      headers:{"Content-Type":"application/json", Authorization:"Bearer "+jwt},
+      body:JSON.stringify(Object.assign({action:action}, extra||{}))
+    });
+    var j = {};
+    try{ j = await res.json(); }catch(e){}
+    if(!res.ok){ var err = new Error(j.error || ("server "+res.status)); err.code = j.error; err.status = res.status; throw err; }
+    return j;
+  }
+  // サーバーから新しいアクセストークンをもらう（同時に何度も呼ばれても1回にまとめる）
+  function refreshAccess(){
+    if(refreshing) return refreshing;
+    refreshing = (async function(){
+      try{
+        var j = await serverCall("refresh");
+        saveToken(j.access_token, j.expires_in);
+        setLinked(true);
+        return true;
+      }catch(e){
+        if(e.code==="not_linked") setLinked(false);
+        throw e;
+      }finally{
+        linkChecked = true;
+        setTimeout(function(){ refreshing = null; }, 0);
+      }
+    })();
+    return refreshing;
+  }
+  // API を呼ぶ前に、使えるアクセストークンを用意する
+  async function ensureToken(){
+    if(tokenValid()) return;
+    if(serverMode() && cloud.user && isLinked()){ await refreshAccess(); return; }
+    throw new Error("not connected");
+  }
+  // 起動後に一度、サーバーで接続が続いているかを確かめる（別の端末でつないだ場合もここで分かる）
+  function checkLink(){
+    if(linkChecked || !serverMode() || !cloud.user || refreshing) return;
+    linkChecked = true;
+    var before = connected();
+    refreshAccess().catch(function(){}).then(function(){
+      if(connected()!==before) render();
+      if(connected()) migrateSoon();
+    });
+  }
+  // ログアウトしたとき：この端末に覚えたアクセストークンを忘れる（サーバーの接続はそのまま）
+  function forget(){
+    token = null; tokenExp = 0; linked = null; linkChecked = false; folderId = null;
+    try{ localStorage.removeItem(TOKEN_KEY); }catch(e){}
+  }
 
   /* ---- 端末に覚えておく写真（IndexedDB） ---- */
   function db(){
@@ -2306,34 +2387,63 @@ var DrivePhotos = (function(){
   }
   // 先に読み込んでおく（ボタンを押したときに、すぐGoogleの画面を開けるように）
   function prepare(){
-    if(!available() || tokenClient) return;
+    if(!available()) return;
+    checkLink();
+    if(serverMode() ? codeClient : tokenClient) return;
     loadGis().then(initClient).catch(function(){});
   }
   // ボタンを押したときに呼ぶ（Googleの小さな画面が開く）
   function connect(){
     if(!available()) return Promise.reject(new Error("not configured"));
-    if(tokenClient) return request();
+    if(serverMode() ? codeClient : tokenClient) return request();
     return loadGis().then(function(){ initClient(); return request(); });
   }
   function request(){
     return new Promise(function(resolve, reject){
       pendingResolve = resolve; pendingReject = reject;
-      tokenClient.requestAccessToken({prompt: everConnected() ? "" : "consent"});
+      if(serverMode()){
+        // リフレッシュトークンを受け取るため、同意の画面を出す
+        codeClient.requestCode();
+      } else {
+        tokenClient.requestAccessToken({prompt: everConnected() ? "" : "consent"});
+      }
     });
   }
   function initClient(){
+    if(serverMode()){
+      if(codeClient) return;
+      codeClient = google.accounts.oauth2.initCodeClient({
+        client_id: appConfig.googleClientId,
+        scope: "https://www.googleapis.com/auth/drive.file",
+        ux_mode: "popup",
+        select_account: false,
+        callback: function(resp){
+          var res = pendingResolve, rej = pendingReject;
+          pendingResolve = pendingReject = null;
+          if(!resp || !resp.code){ if(rej) rej(new Error((resp && resp.error) || "no code")); return; }
+          serverCall("exchange", {code:resp.code}).then(function(j){
+            saveToken(j.access_token, j.expires_in);
+            setLinked(!!j.linked);
+            linkChecked = true;
+            // 以前の許可のままで続けるための鍵が受け取れなかったとき（1時間だけ使える）
+            if(!j.linked) setTimeout(function(){ toast("接続を続ける設定ができませんでした。Googleアカウントの「サードパーティ製のアプリとサービス」で推し活手帳の許可を外してから、もう一度接続してください"); }, 1800);
+            if(res) res();
+          }).catch(function(e){ if(rej) rej(e); });
+        },
+        error_callback: function(err){
+          if(pendingReject) pendingReject(new Error((err && err.type) || "popup error"));
+          pendingResolve = pendingReject = null;
+        }
+      });
+      return;
+    }
     if(!tokenClient){
       tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: appConfig.googleClientId,
         scope: "https://www.googleapis.com/auth/drive.file",
         callback: function(resp){
           if(resp && resp.access_token){
-            token = resp.access_token;
-            tokenExp = Date.now() + (Number(resp.expires_in)||3600)*1000;
-            try{
-              localStorage.setItem(TOKEN_KEY, JSON.stringify({token:token, exp:tokenExp}));
-              localStorage.setItem(EVER_KEY, "1");
-            }catch(e){}
+            saveToken(resp.access_token, resp.expires_in);
             if(pendingResolve) pendingResolve();
           } else if(pendingReject){ pendingReject(new Error((resp && resp.error) || "no token")); }
           pendingResolve = pendingReject = null;
@@ -2346,15 +2456,24 @@ var DrivePhotos = (function(){
     }
   }
   function disconnect(){
-    if(token && window.google && google.accounts && google.accounts.oauth2){ try{ google.accounts.oauth2.revoke(token, function(){}); }catch(e){} }
+    if(serverMode() && cloud.user) serverCall("revoke").catch(function(){});
+    else if(token && window.google && google.accounts && google.accounts.oauth2){ try{ google.accounts.oauth2.revoke(token, function(){}); }catch(e){} }
     token = null; tokenExp = 0;
+    setLinked(false);
     try{ localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(EVER_KEY); }catch(e){}
   }
-  async function api(url, opts){
+  async function api(url, opts, retried){
     opts = opts || {};
-    opts.headers = Object.assign({}, opts.headers||{}, {Authorization:"Bearer "+token});
-    var res = await fetch(url, opts);
-    if(res.status===401){ token = null; tokenExp = 0; try{ localStorage.removeItem(TOKEN_KEY); }catch(e){} throw new Error("unauthorized"); }
+    await ensureToken();
+    var o = Object.assign({}, opts, {headers:Object.assign({}, opts.headers||{}, {Authorization:"Bearer "+token})});
+    var res = await fetch(url, o);
+    if(res.status===401){
+      token = null; tokenExp = 0;
+      try{ localStorage.removeItem(TOKEN_KEY); }catch(e){}
+      // サーバーで接続を続けているときは、新しいトークンをもらって1回だけやり直す
+      if(!retried && serverMode() && cloud.user && isLinked()) return api(url, opts, true);
+      throw new Error("unauthorized");
+    }
     if(!res.ok) throw new Error("drive "+res.status);
     return res;
   }
@@ -2666,7 +2785,7 @@ var DrivePhotos = (function(){
 
   return {
     isRef:isRef, available:available, connected:connected, everConnected:everConnected,
-    connect:connect, disconnect:disconnect, imgAttrs:imgAttrs, bgStyle:bgStyle, cachedUrl:cachedUrl,
+    connect:connect, disconnect:disconnect, forget:forget, serverMode:serverMode, imgAttrs:imgAttrs, bgStyle:bgStyle, cachedUrl:cachedUrl,
     blobOf:blobOf, hydrate:hydrate, afterRender:afterRender, openViewer:openViewer,
     pendingCount:pendingCount, migrateSoon:migrateSoon, migrate:migrate,
     saveBackup:saveBackup, listBackups:listBackups, readBackup:readBackup, autoBackup:autoBackup,
