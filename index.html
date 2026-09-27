@@ -869,8 +869,18 @@
     box-shadow:0 10px 24px -18px rgba(33,28,23,.45);margin-top:12px;
   }
   .trip-map-card + .chart-card{margin-top:16px;}
-  .hero + .trip-map-card{margin-top:16px;}
-  .gallery-card + .trip-map-card{margin-top:16px;}
+  /* ホームの並べ替えできるカード（ギャラリー・遠征マップ・月別費用） */
+  .home-sec{position:relative;margin-top:16px;touch-action:auto;}
+  .home-sec > .trip-map-card,.home-sec > .chart-card{margin-top:0;}
+  .home-sec.dragging{z-index:30;opacity:.92;}
+  .home-sec.dragging > *{box-shadow:0 18px 36px -14px rgba(33,28,23,.55);}
+  .home-grip{
+    position:absolute;top:0;left:50%;transform:translate(-50%,-50%);z-index:3;width:40px;height:20px;padding:0;
+    border-radius:99px;border:1px solid var(--line-strong);background:var(--paper);color:var(--ink-soft);
+    display:flex;align-items:center;justify-content:center;cursor:grab;touch-action:none;
+  }
+  .home-grip:active{cursor:grabbing;}
+  .home-grip svg{width:18px;height:18px;fill:currentColor;stroke:none;}
   /* ホームのギャラリー */
   .gal-actions{display:flex;align-items:center;gap:10px;}
   .gal-no{font-size:11px;color:var(--ink-soft);letter-spacing:.04em;}
@@ -1237,6 +1247,7 @@ var state = {
   calendarTitle:"",      // Googleカレンダーの予定タイトルの形（空なら {公演名}）
   calendarDesc:"",       // Googleカレンダーの予定の説明の形（空なら標準の説明）
   chekiView:"gallery",   // チェキ記録の表示方法（gallery / album / binder / calendar / swipe）
+  homeOrder:null,        // ホームのカードの並び（["gallery","map","chart"] の順番。null なら標準）
   chekiFav:false,        // チェキ記録を「お気に入り」だけにするか（ON/OFF）
   chekiBinderPage:0,     // バインダー表示のページ
   chekiCalMonth:null,    // カレンダー表示の月（YYYY-MM）
@@ -1684,12 +1695,14 @@ function applyStored(data){
   state.calendarTitle = data.calendarTitle||"";
   state.calendarDesc = data.calendarDesc||"";
   state.chekiView = data.chekiView||"gallery";
+  state.homeOrder = Array.isArray(data.homeOrder) ? data.homeOrder : null;
 }
 function snapshotData(){
   return {
     oshis:state.oshis, live:state.live, cheki:state.cheki, goods:state.goods,
     activeOshiId:state.activeOshiId, headerLogo:state.headerLogo, calendarTitle:state.calendarTitle||"", calendarDesc:state.calendarDesc||"",
-    chekiView:state.chekiView||"gallery"
+    chekiView:state.chekiView||"gallery",
+    homeOrder:state.homeOrder||null
   };
 }
 function hasContent(data){
@@ -1776,6 +1789,7 @@ function localRowMap(){
   if(state.calendarTitle) settingsData.calendarTitle = state.calendarTitle;
   if(state.calendarDesc) settingsData.calendarDesc = state.calendarDesc;
   if(state.chekiView && state.chekiView!=="gallery") settingsData.chekiView = state.chekiView;
+  if(state.homeOrder && state.homeOrder.join(",")!==HOME_SECTIONS.join(",")) settingsData.homeOrder = state.homeOrder;
   m["settings:main"] = {kind:"settings", id:"main", data:settingsData};
   return m;
 }
@@ -1870,6 +1884,7 @@ function putIntoState(kind, data){
     state.calendarTitle = data.calendarTitle||"";
     state.calendarDesc = data.calendarDesc||"";
     state.chekiView = data.chekiView||"gallery";
+    state.homeOrder = Array.isArray(data.homeOrder) ? data.homeOrder : null;
     return;
   }
   var arr = kind==="oshi" ? state.oshis : state[kind];
@@ -1984,6 +1999,7 @@ function mergeGuestData(guest){
   if(!state.calendarTitle && guest.calendarTitle) state.calendarTitle = guest.calendarTitle;
   if(!state.calendarDesc && guest.calendarDesc) state.calendarDesc = guest.calendarDesc;
   if((!state.chekiView || state.chekiView==="gallery") && guest.chekiView) state.chekiView = guest.chekiView;
+  if(!state.homeOrder && Array.isArray(guest.homeOrder)) state.homeOrder = guest.homeOrder;
 }
 
 /* アカウント欄の表示用に、ログイン方法（メール/Google）の情報を持っておく */
@@ -3912,11 +3928,12 @@ function renderHome(){
   });
   chartHtml += '</div></div>';
 
+  var parts = {};
   // 推しの写真を横にスワイプして見るギャラリー
-  html += galleryHtml(oshi);
+  parts.gallery = galleryHtml(oshi);
 
-  // 現地で観戦したLIVEの会場を地図に出す（遠征マップ）。月別の費用グラフはその下
-  html += '<div class="trip-map-card">'
+  // 現地で観戦したLIVEの会場を地図に出す（遠征マップ）
+  parts.map = '<div class="trip-map-card">'
     +   '<div class="trip-map-head">'
     +     '<div class="trip-map-title"><span class="trip-map-eyebrow">TRIP MAP</span><h3 class="mincho">遠征マップ</h3></div>'
     +     '<div class="trip-map-stats" id="tripMapStats"></div>'
@@ -3926,11 +3943,21 @@ function renderHome(){
     +   '<div class="trip-venues" id="tripVenues"></div>'
     +   '<div class="trip-map-note" id="tripMapNote"></div>'
     + '</div>';
+  parts.chart = chartHtml;
 
-  html += chartHtml;
+  // ギャラリー・遠征マップ・月別費用は、上のつまみで並べ替えた順に出す
+  homeOrder().forEach(function(k){
+    html += '<div class="home-sec" data-home-sec="'+k+'">'
+      + '<button type="button" class="home-grip" aria-label="並べ替え（上下にドラッグ）" title="上下にドラッグして並べ替え">'
+      +   '<svg viewBox="0 0 24 24"><circle cx="8" cy="9" r="1.6"/><circle cx="12" cy="9" r="1.6"/><circle cx="16" cy="9" r="1.6"/><circle cx="8" cy="15" r="1.6"/><circle cx="12" cy="15" r="1.6"/><circle cx="16" cy="15" r="1.6"/></svg>'
+      + '</button>'
+      + parts[k]
+      + '</div>';
+  });
 
   document.getElementById("main").innerHTML = html;
   bindGallery(oshi);
+  bindHomeReorder();
   TripMap.render(oshi);
 }
 
@@ -6136,6 +6163,59 @@ var AvatarCropper = (function(){
   }
   return { init:init, open:open };
 })();
+
+/* ============ ホームのカードの並べ替え ============
+   ギャラリー・遠征マップ・月別費用を、各カードの上のつまみを押したまま上下に動かして並べ替える
+   （指でもマウスでも動くよう Pointer Events を使う）。並び順は設定 homeOrder として同期する。 */
+var HOME_SECTIONS = ["gallery","map","chart"];
+function homeOrder(){
+  var o = Array.isArray(state.homeOrder) ? state.homeOrder.filter(function(k){ return HOME_SECTIONS.indexOf(k)>=0; }) : [];
+  HOME_SECTIONS.forEach(function(k){ if(o.indexOf(k)<0) o.push(k); });
+  return o;
+}
+function bindHomeReorder(){
+  var main = document.getElementById("main");
+  main.querySelectorAll(".home-grip").forEach(function(grip){
+    grip.addEventListener("pointerdown", function(e){
+      if(e.button!==undefined && e.button!==0) return;
+      e.preventDefault();
+      var sec = grip.closest(".home-sec");
+      var startY = e.clientY;
+      try{ grip.setPointerCapture(e.pointerId); }catch(err){}
+      sec.classList.add("dragging");
+      function onMove(ev){
+        var dy = ev.clientY - startY;
+        // となりのカードの真ん中を越えたら入れ替える（指の下にカードが残るよう基準をずらす）
+        var prev = sec.previousElementSibling, next = sec.nextElementSibling;
+        var before = sec.offsetTop;
+        if(dy>0 && next && next.classList.contains("home-sec") && ev.clientY > next.getBoundingClientRect().top + next.offsetHeight/2){
+          sec.parentNode.insertBefore(next, sec);
+          startY += sec.offsetTop - before;
+        } else if(dy<0 && prev && prev.classList.contains("home-sec") && ev.clientY < prev.getBoundingClientRect().top + prev.offsetHeight/2){
+          // 動かしているカード自体は付け替えない（指の追跡が切れないよう、となりを後ろへ回す）
+          sec.parentNode.insertBefore(prev, sec.nextSibling);
+          startY += sec.offsetTop - before;
+        }
+        sec.style.transform = "translateY("+(ev.clientY - startY)+"px)";
+      }
+      function onUp(){
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+        document.removeEventListener("pointercancel", onUp);
+        sec.classList.remove("dragging");
+        sec.style.transform = "";
+        var order = Array.prototype.map.call(main.querySelectorAll(".home-sec"), function(el){ return el.getAttribute("data-home-sec"); });
+        if(order.join(",")!==homeOrder().join(",")){
+          state.homeOrder = order;
+          saveLocal();
+        }
+      }
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+      document.addEventListener("pointercancel", onUp);
+    });
+  });
+}
 
 /* ============ ホームのギャラリー（推しごとの写真） ============
    推しの gallery（写真の配列。新しい順）を横にスワイプして見る。写真を押すと拡大。
