@@ -2396,6 +2396,7 @@ var DrivePhotos = (function(){
   }
   function afterRender(){
     hydrate(document.getElementById("main"));
+    setTimeout(function(){ autoBackup(); }, 3000);   // 接続中なら1日1回、自動でバックアップ
   }
   async function openViewer(ref){
     var u = await urlOf(ref);
@@ -2478,11 +2479,69 @@ var DrivePhotos = (function(){
     if(state.view==="oshi") render();
   }
 
+  /* ---- 全データのバックアップ（「推し活手帳」フォルダに JSON で保存） ----
+     手動の保存に加え、接続中は1日1回自動で保存し、新しい14件だけを残す */
+  var BACKUP_PREFIX = "oshikatsu-backup-";
+  var BACKUP_KEEP = 14;
+  var AUTO_KEY = "oshikatsu_gdrive_autobackup_v1:";
+  var backingUp = false;
+  function stamp(){
+    var d = new Date();
+    function p(n){ return String(n).padStart(2,"0"); }
+    return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+"-"+p(d.getHours())+p(d.getMinutes());
+  }
+  async function saveBackup(payload){
+    var parent = await ensureFolder();
+    var name = BACKUP_PREFIX+stamp()+".json";
+    var meta = {name:name, parents:[parent], mimeType:"application/json"};
+    var boundary = "oshikatsu" + Math.random().toString(36).slice(2);
+    var body = new Blob([
+      "--"+boundary+"\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n", JSON.stringify(meta),
+      "\r\n--"+boundary+"\r\nContent-Type: application/json\r\n\r\n", JSON.stringify(payload),
+      "\r\n--"+boundary+"--"
+    ]);
+    await api("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id", {
+      method:"POST", headers:{"Content-Type":"multipart/related; boundary="+boundary}, body:body
+    });
+    try{ localStorage.setItem(AUTO_KEY+(cloud.user ? cloud.user.id : ""), String(Date.now())); }catch(e){}
+    await pruneBackups();
+    return name;
+  }
+  async function listBackups(){
+    var parent = await ensureFolder();
+    var q = "'"+parent+"' in parents and name contains '"+BACKUP_PREFIX+"' and trashed=false";
+    var res = await api("https://www.googleapis.com/drive/v3/files?spaces=drive&orderBy=createdTime%20desc&pageSize=100&fields=files(id,name,createdTime,size)&q="+encodeURIComponent(q));
+    return ((await res.json()).files || []);
+  }
+  async function pruneBackups(){
+    try{
+      var files = await listBackups();
+      for(var i=BACKUP_KEEP; i<files.length; i++){
+        await api("https://www.googleapis.com/drive/v3/files/"+encodeURIComponent(files[i].id), {method:"DELETE"});
+      }
+    }catch(e){ console.warn("backup prune failed", e); }
+  }
+  async function readBackup(id){
+    return await (await api("https://www.googleapis.com/drive/v3/files/"+encodeURIComponent(id)+"?alt=media")).json();
+  }
+  async function autoBackup(){
+    if(backingUp || !available() || !connected() || !cloud.user || !state.ready) return;
+    var last = 0;
+    try{ last = Number(localStorage.getItem(AUTO_KEY+cloud.user.id)||0); }catch(e){}
+    if(Date.now()-last < 24*3600*1000) return;
+    if(!state.oshis.length && !state.live.length && !state.cheki.length && !state.goods.length) return;
+    backingUp = true;
+    try{ await saveBackup(backupPayload()); }
+    catch(e){ console.warn("auto backup failed", e); }
+    finally{ backingUp = false; }
+  }
+
   return {
     isRef:isRef, available:available, connected:connected, everConnected:everConnected,
     connect:connect, disconnect:disconnect, imgAttrs:imgAttrs, bgStyle:bgStyle, cachedUrl:cachedUrl,
     blobOf:blobOf, hydrate:hydrate, afterRender:afterRender, openViewer:openViewer,
-    pendingCount:pendingCount, migrateSoon:migrateSoon, migrate:migrate
+    pendingCount:pendingCount, migrateSoon:migrateSoon, migrate:migrate,
+    saveBackup:saveBackup, listBackups:listBackups, readBackup:readBackup, autoBackup:autoBackup
   };
 })();
 
@@ -2511,6 +2570,10 @@ function backupSettingHtml(){
     + '<div class="bk-setting">'
     +   '<button type="button" class="btn ghost block" data-action="backup-export">全データをファイルに保存</button>'
     +   '<label class="btn ghost block bk-file">ファイルから戻す<input type="file" id="backupImportInput" accept="application/json,.json" style="display:none;"></label>'
+    +   (DrivePhotos.available() && cloud.user
+          ? '<button type="button" class="btn ghost block" data-action="backup-drive-save">Googleドライブに保存</button>'
+          + '<button type="button" class="btn ghost block" data-action="backup-drive-restore">Googleドライブから戻す</button>'
+          : '')
     +   (cloud.user ? '<button type="button" class="btn ghost block" data-action="restore-deleted">削除された記録を探す</button>' : '')
     + '</div>';
 }
@@ -2518,8 +2581,11 @@ function backupFileName(){
   var d = new Date();
   return "oshikatsu-backup-"+d.getFullYear()+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0")+".json";
 }
+function backupPayload(){
+  return {app:"oshikatsu-diary", version:1, exportedAt:new Date().toISOString(), data:snapshotData()};
+}
 function exportBackup(){
-  var payload = {app:"oshikatsu-diary", version:1, exportedAt:new Date().toISOString(), data:snapshotData()};
+  var payload = backupPayload();
   var blob = new Blob([JSON.stringify(payload)], {type:"application/json"});
   var a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
@@ -2543,6 +2609,53 @@ function importBackupData(data){
   });
   return added;
 }
+// バックアップの中身を確認してから、今ない記録だけを戻す
+function restoreFromBackupJson(json){
+  var data = json && json.data ? json.data : json;
+  if(!data || !(data.oshis || data.live || data.cheki || data.goods)){ toast("推し活手帳のバックアップではありません"); return; }
+  var n = 0;
+  ["oshis","live","cheki","goods"].forEach(function(k){ n += (data[k]||[]).length; });
+  if(!confirm("バックアップの記録（"+n+"件）のうち、今ない記録だけを戻します。\n今ある記録は変更しません。よろしいですか？")) return;
+  var added = importBackupData(data);
+  if(added){ saveLocal(); render(); }
+  toast(added ? added+"件の記録を戻しました" : "戻す記録はありませんでした");
+}
+async function ensureDriveConnected(){
+  if(DrivePhotos.connected()) return true;
+  try{ await DrivePhotos.connect(); return true; }
+  catch(e){ toast("Googleドライブに接続できませんでした"); return false; }
+}
+async function saveBackupToDrive(){
+  if(!(await ensureDriveConnected())) return;
+  toast("Googleドライブに保存しています…");
+  try{
+    var name = await DrivePhotos.saveBackup(backupPayload());
+    toast("Googleドライブに保存しました（"+name+"）");
+  }catch(e){ console.warn(e); toast("Googleドライブに保存できませんでした"); }
+}
+async function openDriveBackups(){
+  if(!(await ensureDriveConnected())) return;
+  openSheet('<h2 class="mincho">Googleドライブから戻す</h2><div class="rs-list"><p class="rs-note">バックアップを探しています…</p></div>');
+  var files = [];
+  try{ files = await DrivePhotos.listBackups(); }
+  catch(e){ console.warn(e); }
+  var box = sheetEl.querySelector(".rs-list");
+  if(!box) return;
+  if(!files.length){ box.innerHTML = '<p class="rs-note">Googleドライブにバックアップがありません。</p>'; return; }
+  box.innerHTML = files.map(function(f, i){
+    var d = f.createdTime ? new Date(f.createdTime) : null;
+    var label = d ? d.getFullYear()+"."+String(d.getMonth()+1).padStart(2,"0")+"."+String(d.getDate()).padStart(2,"0")+" "+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0") : f.name;
+    return '<div class="rs-item"><span>'+escapeHtml(label)+'</span><button type="button" class="btn ghost" data-bk="'+i+'">戻す</button></div>';
+  }).join("");
+  box.addEventListener("click", async function(e){
+    var b = e.target.closest("[data-bk]");
+    if(!b) return;
+    try{
+      var json = await DrivePhotos.readBackup(files[Number(b.getAttribute("data-bk"))].id);
+      restoreFromBackupJson(json);
+    }catch(err){ console.warn(err); toast("バックアップを読み込めませんでした"); }
+  });
+}
 function bindBackupImport(){
   var input = document.getElementById("backupImportInput");
   if(!input) return;
@@ -2554,14 +2667,7 @@ function bindBackupImport(){
     reader.onload = function(){
       var json = null;
       try{ json = JSON.parse(reader.result); }catch(e){}
-      var data = json && json.data ? json.data : json;
-      if(!data || !(data.oshis || data.live || data.cheki || data.goods)){ toast("推し活手帳のバックアップファイルではありません"); return; }
-      var n = 0;
-      ["oshis","live","cheki","goods"].forEach(function(k){ n += (data[k]||[]).length; });
-      if(!confirm("バックアップの記録（"+n+"件）のうち、今ない記録だけを戻します。\n今ある記録は変更しません。よろしいですか？")) return;
-      var added = importBackupData(data);
-      if(added){ saveLocal(); render(); }
-      toast(added ? added+"件の記録を戻しました" : "戻す記録はありませんでした");
+      restoreFromBackupJson(json);
     };
     reader.readAsText(f);
   });
@@ -6357,6 +6463,8 @@ function onAppClick(e){
   if(action==="cheki-cal-day"){ state.chekiCalDate = el.getAttribute("data-date"); render(); return; }
   if(action==="add-cheki"){ openRecordSheet("cheki", null); return; }
   if(action==="backup-export"){ exportBackup(); return; }
+  if(action==="backup-drive-save"){ saveBackupToDrive(); return; }
+  if(action==="backup-drive-restore"){ openDriveBackups(); return; }
   if(action==="restore-deleted"){ openRestoreDeleted(); return; }
   if(action==="gdrive-connect"){
     if(DrivePhotos.connected()){ DrivePhotos.migrate(); return; }

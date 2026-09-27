@@ -179,6 +179,7 @@ LIVE の「会場」欄の右の「探す」ボタン（または Enter）で、
 - **変更履歴**：`supabase/migrations/20260927000000_oshikatsu_records_history.sql`。記録が上書き・削除される直前の内容を `oshikatsu_records_history` に自動で残す（30日で消える）。アプリからは本人の履歴を読むことだけができる。**Supabase の SQL Editor でこのファイルを1回実行する。**
 - **復元**：マイページ「バックアップと復元」→「削除された記録を探す」で、クラウドの削除済みの記録と変更履歴から、今ない記録を探して戻す。
 - **ファイルに保存**：「全データをファイルに保存」で JSON を保存（写真は Google ドライブのファイルIDか画像データ）。「ファイルから戻す」は、今ない記録（同じIDが無いもの）だけを加え、今ある記録は変更しない。
+- **Google ドライブに保存**：Google ドライブの設定（`GOOGLE_OAUTH_CLIENT_ID`）があれば、「Googleドライブに保存」で同じ JSON を「推し活手帳」フォルダに `oshikatsu-backup-YYYYMMDD-HHMM.json` として保存し、「Googleドライブから戻す」で一覧から選んで戻す（今ない記録だけを加える）。接続中は1日1回自動で保存し、新しい14件だけを残す（`DrivePhotos.autoBackup`）。
 
 ## 写真の保存先（Google ドライブ）
 
