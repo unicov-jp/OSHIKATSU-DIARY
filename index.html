@@ -4316,7 +4316,7 @@ function chekiCalendarHtml(items){
   }
   return html;
 }
-/* LIVE記録のカレンダー：月ごとにLIVEのある日を示す（写真があれば写真、なければLIVEのアイコン）。
+/* LIVE記録のカレンダー：月ごとにLIVEのある日を示す（マスの背景はLIVEの写真、なければ推しの写真、どちらもなければLIVEのアイコン）。
    はじめは今月を出す。日を押すと、その日のLIVEだけを下のチケットに並べる（もう一度押すと元に戻る）。 */
 function liveCalendarHtml(items){
   var byDate = {};
@@ -4344,7 +4344,15 @@ function liveCalendarHtml(items){
     var rs = byDate[ds];
     var cls = 'ck-day'+(ds===today?' today':'');
     if(!rs){ html += '<span class="'+cls+'"><i>'+d+'</i></span>'; continue; }
+    // マスの背景：LIVEの写真 → 推しの写真 → LIVEのアイコンの順に使う
     var withPhoto = rs.filter(function(r){ return r.photo; })[0];
+    var bgRef = withPhoto ? withPhoto.photo : null;
+    if(!bgRef){
+      rs.some(function(r){
+        return recOshiEntries(r).some(function(e){ var o = getOshi(e.oshiId); if(o && o.photo){ bgRef = o.photo; return true; } return false; });
+      });
+    }
+    withPhoto = bgRef ? {photo:bgRef} : null;
     html += '<button type="button" class="'+cls+' has'+(ds===state.liveCalDate?' on':'')+'" data-action="live-cal-day" data-date="'+ds+'" aria-label="'+m+'月'+d+'日のLIVE（'+rs.length+'件）">'
       + (withPhoto ? '<img '+DrivePhotos.imgAttrs(withPhoto.photo)+' alt="" loading="lazy">' : '<span class="ck-day-icon">'+kindIcon("live")+'</span>')
       + '<i>'+d+'</i>'
