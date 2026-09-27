@@ -712,13 +712,13 @@
   .cal-setting-actions{display:flex;justify-content:flex-end;margin-top:10px;}
   .cal-setting-actions .btn{padding:8px 22px;}
   /* ---------- チェキ記録（ギャラリー・アルバム・バインダー・カレンダー・スワイプ） ---------- */
-  .ck-sum{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:8px 0 12px;}
+  .ck-sum{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:8px 0 16px;}
   .ck-sum div{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:8px 10px;min-width:0;}
   .ck-sum b{display:block;font-family:"Shippori Mincho",serif;font-size:20px;font-weight:800;color:var(--heading);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .ck-sum span{font-size:10.5px;color:var(--ink-soft);}
-  .ck-filters{display:flex;gap:6px;margin-bottom:16px;}
-  .ck-filter{padding:6px 13px;border-radius:99px;border:1px solid var(--line);background:var(--paper);color:var(--text);font-size:12px;cursor:pointer;}
-  .ck-filter.on{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:700;}
+  .oshi-pill.fav-pill{padding:5px 12px;align-self:stretch;}
+  .oshi-pill.fav-pill svg{width:18px;height:18px;fill:none;stroke:var(--ink-soft);stroke-width:1.6;}
+  .oshi-pill.fav-pill.on svg{fill:#E8B04A;stroke:#E8B04A;}
   .ck-ph{display:block;width:100%;aspect-ratio:54/74;background:var(--paper-alt);overflow:hidden;cursor:zoom-in;border-radius:1px;}
   .ck-ph img{width:100%;height:100%;object-fit:cover;display:block;}
   .ck-ph.empty{display:flex;align-items:center;justify-content:center;cursor:pointer;}
@@ -1161,7 +1161,7 @@ var state = {
   calendarTitle:"",      // Googleカレンダーの予定タイトルの形（空なら {公演名}）
   calendarDesc:"",       // Googleカレンダーの予定の説明の形（空なら標準の説明）
   chekiView:"gallery",   // チェキ記録の表示方法（gallery / album / binder / calendar / swipe）
-  chekiFilter:"all",     // チェキ記録の絞り込み（all / fav）
+  chekiFav:false,        // チェキ記録を「お気に入り」だけにするか（ON/OFF）
   chekiBinderPage:0,     // バインダー表示のページ
   chekiCalMonth:null,    // カレンダー表示の月（YYYY-MM）
   chekiCalDate:null,     // カレンダー表示で選んだ日     // login | signup | reset (ログイン画面の表示モード)
@@ -3166,7 +3166,20 @@ function renderListPage(type){
     return;
   }
 
-  if(visibleOshis().length>1){
+  // チェキは「お気に入り（ON/OFF）・ぜんぶ・人物名」の順に並べる
+  if(type==="cheki"){
+    html += '<div class="oshi-pills">';
+    html += '<button class="oshi-pill fav-pill '+(state.chekiFav?"on":"")+'" data-action="cheki-fav" aria-pressed="'+(state.chekiFav?"true":"false")+'" title="お気に入り" aria-label="お気に入り">'
+      + '<svg viewBox="0 0 24 24"><path d="M12 3l2.6 6 6.4.6-4.9 4.2 1.5 6.2L12 16.9 6.4 20l1.5-6.2-4.9-4.2 6.4-.6z"/></svg></button>';
+    if(visibleOshis().length>1){
+      html += '<button class="oshi-pill '+(state.filterOshiId==="all"?"on":"")+'" data-action="filter-oshi" data-id="all">ぜんぶ</button>';
+      visibleOshis().forEach(function(o){
+        html += '<button class="oshi-pill '+(state.filterOshiId===o.id?"on":"")+'" data-action="filter-oshi" data-id="'+o.id+'">'
+          + '<span class="d" style="'+oshiSwatchStyle(o)+'"></span>'+escapeHtml(o.name)+'</button>';
+      });
+    }
+    html += '</div>';
+  } else if(visibleOshis().length>1){
     html += '<div class="oshi-pills">';
     html += '<button class="oshi-pill '+(state.filterOshiId==="all"?"on":"")+'" data-action="filter-oshi" data-id="all">すべて</button>';
     visibleOshis().forEach(function(o){
@@ -3304,16 +3317,7 @@ function chekiPageHtml(list){
     + '<div><b>'+totalN+'</b><span>総枚数</span></div>'
     + '<div><b>'+monthN+'</b><span>今月</span></div>'
     + '</div>';
-  var f = state.chekiFilter || "all";
-  html += '<div class="ck-filters">'
-    + [["all","すべて"],["fav","お気に入り"]].map(function(x){
-        return '<button type="button" class="ck-filter'+(f===x[0]?' on':'')+'" data-action="cheki-filter" data-f="'+x[0]+'">'+x[1]+'</button>';
-      }).join("")
-    + '</div>';
-  var items = list.filter(function(r){
-    if(f==="fav") return !!r.favorite;
-    return true;
-  });
+  var items = state.chekiFav ? list.filter(function(r){ return !!r.favorite; }) : list;
   var view = chekiView();
   if(!items.length && view!=="calendar"){
     html += '<div class="empty-state"><svg viewBox="0 0 24 24">'+kindIconRaw("cheki")+'</svg>'
@@ -5578,7 +5582,7 @@ function onAppClick(e){
   if(action==="toggle-hidden-oshis"){ state.showHiddenOshis = !state.showHiddenOshis; renderOshiPage(); return; }
   if(action==="filter-oshi"){ state.filterOshiId = el.getAttribute("data-id"); render(); return; }
   if(action==="toggle-hidden"){ state.showHidden = !state.showHidden; render(); return; }
-  if(action==="cheki-filter"){ state.chekiFilter = el.getAttribute("data-f"); state.chekiBinderPage = 0; render(); return; }
+  if(action==="cheki-fav"){ state.chekiFav = !state.chekiFav; state.chekiBinderPage = 0; render(); return; }
   if(action==="cheki-page"){ state.chekiBinderPage = (state.chekiBinderPage||0) + Number(el.getAttribute("data-d")); render(); return; }
   if(action==="cheki-cal-month"){
     var cm = (state.chekiCalMonth || "").split("-");
