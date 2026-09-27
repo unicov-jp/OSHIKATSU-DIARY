@@ -2931,43 +2931,52 @@ var DrivePhotos = (function(){
       }
     }
     var used = referencedIds(), cutoff = Date.now() - 3600*1000;
-    var moves = [], trash = [];
+    var moves = [], trash = [], sortAll = [];
     files.forEach(function(f){
-      var isBackup = f.name.indexOf(BACKUP_PREFIX)===0;
+      var target = subs[subFor(f.name)];
+      var misplaced = f._from!==target;
+      if(misplaced) sortAll.push({file:f, to:target});   // 自動の振り分け用：使われていない写真も含めて振り分ける
       var isImage = /^image\//.test(f.mimeType||"");
       if(isImage && !used[f.id] && Date.parse(f.createdTime) < cutoff){ trash.push(f); return; }
-      var target = subs[subFor(f.name)];
-      if(isBackup) target = subs[SUB_BACKUP];
-      if(f._from!==target) moves.push({file:f, to:target});
+      if(misplaced) moves.push({file:f, to:target});
     });
-    return {moves:moves, trash:trash, extraRoots:roots.slice(1), extraFolders:extraFolders, total:files.length};
+    return {moves:moves, trash:trash, sortAll:sortAll, extraRoots:roots.slice(1), extraFolders:extraFolders, total:files.length};
   }
+  // 1件ずつ行い、失敗したファイルがあっても残りを続ける（失敗した件数を返す）
   async function runOrganize(plan, onStep){
-    var done = 0, all = plan.moves.length + plan.trash.length;
+    var done = 0, all = plan.moves.length + plan.trash.length, moved = 0, trashed = 0, failed = 0, lastError = "";
     for(var i=0; i<plan.moves.length; i++){
       var m = plan.moves[i];
-      await api("https://www.googleapis.com/drive/v3/files/"+encodeURIComponent(m.file.id)+"?addParents="+encodeURIComponent(m.to)+"&removeParents="+encodeURIComponent(m.file._from)+"&fields=id", {
-        method:"PATCH", headers:{"Content-Type":"application/json"}, body:"{}"
-      });
+      try{
+        await api("https://www.googleapis.com/drive/v3/files/"+encodeURIComponent(m.file.id)+"?addParents="+encodeURIComponent(m.to)+"&removeParents="+encodeURIComponent(m.file._from)+"&fields=id", {
+          method:"PATCH", headers:{"Content-Type":"application/json"}, body:"{}"
+        });
+        moved++;
+      }catch(e){ failed++; lastError = String(e && e.message || e); console.warn("drive move failed", m.file.name, e); if(!connected()) throw e; }
       done++; if(onStep) onStep(done, all);
     }
     for(var t=0; t<plan.trash.length; t++){
-      await api("https://www.googleapis.com/drive/v3/files/"+encodeURIComponent(plan.trash[t].id)+"?fields=id", {
-        method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({trashed:true})
-      });
+      try{
+        await api("https://www.googleapis.com/drive/v3/files/"+encodeURIComponent(plan.trash[t].id)+"?fields=id", {
+          method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({trashed:true})
+        });
+        trashed++;
+      }catch(e){ failed++; lastError = String(e && e.message || e); console.warn("drive trash failed", plan.trash[t].name, e); if(!connected()) throw e; }
       done++; if(onStep) onStep(done, all);
     }
     // 空になった余分なフォルダ（重複した「推し活手帳」や、振り分け先以外のフォルダ）はゴミ箱へ
     var extra = (plan.extraFolders||[]).concat(plan.extraRoots||[]), removed = 0;
     for(var e=0; e<extra.length; e++){
-      var left = await listChildren(extra[e].id);
-      if(left.some(function(x){ return x.mimeType!==FOLDER_MIME; })) continue;
-      await api("https://www.googleapis.com/drive/v3/files/"+encodeURIComponent(extra[e].id)+"?fields=id", {
-        method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({trashed:true})
-      });
-      removed++;
+      try{
+        var left = await listChildren(extra[e].id);
+        if(left.some(function(x){ return x.mimeType!==FOLDER_MIME; })) continue;
+        await api("https://www.googleapis.com/drive/v3/files/"+encodeURIComponent(extra[e].id)+"?fields=id", {
+          method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({trashed:true})
+        });
+        removed++;
+      }catch(err){ console.warn("drive folder cleanup failed", err); }
     }
-    return {moved:plan.moves.length, trashed:plan.trash.length, removedFolders:removed};
+    return {moved:moved, trashed:trashed, failed:failed, lastError:lastError, removedFolders:removed};
   }
 
   // 振り分けだけを自動で行う（ゴミ箱へは移さない）。接続中なら1日1回、写真をドライブへ移し終えたあとに動かす
@@ -2981,11 +2990,14 @@ var DrivePhotos = (function(){
     sorting = true;
     try{
       var plan = await planOrganize();
-      if(plan.moves.length){
-        await runOrganize({moves:plan.moves, trash:[], extraRoots:plan.extraRoots, extraFolders:plan.extraFolders});
-        toast("Googleドライブの写真をフォルダに振り分けました（"+plan.moves.length+"件）");
+      var r = {failed:0};
+      if(plan.sortAll.length){
+        r = await runOrganize({moves:plan.sortAll, trash:[], extraRoots:plan.extraRoots, extraFolders:plan.extraFolders});
+        if(r.moved) toast("Googleドライブのファイルをフォルダに振り分けました（"+r.moved+"件"+(r.failed ? "・できなかったもの "+r.failed+"件" : "")+"）");
       }
-      try{ localStorage.setItem(SORT_KEY+cloud.user.id, String(Date.now())); }catch(e){}
+      // 失敗があったときは、1時間後にもう一度行う（それ以外は次の日）
+      var next = r.failed ? Date.now() - 23*3600*1000 : Date.now();
+      try{ localStorage.setItem(SORT_KEY+cloud.user.id, String(next)); }catch(e){}
     }catch(e){ console.warn("drive auto sort failed", e); }
     finally{ sorting = false; }
   }
@@ -3094,10 +3106,10 @@ async function organizeDrive(){
       + "\nゴミ箱へ移したファイルは、Googleドライブのゴミ箱から30日以内なら戻せます。実行しますか？";
     if(!confirm(msg)) return;
     var r = await DrivePhotos.runOrganize(plan, function(d, all){ if(d===1 || d%10===0) toast("整理しています（"+d+"/"+all+"）"); });
-    toast("整理しました（振り分け "+r.moved+"件・ゴミ箱へ "+r.trashed+"件"+(r.removedFolders?"・フォルダ "+r.removedFolders+"件":"")+"）");
+    toast("整理しました（振り分け "+r.moved+"件・ゴミ箱へ "+r.trashed+"件"+(r.removedFolders?"・フォルダ "+r.removedFolders+"件":"")+(r.failed?"・できなかったもの "+r.failed+"件（"+r.lastError+"）":"")+"）");
   }catch(e){
     console.warn("drive organize failed", e);
-    toast("Googleドライブを整理できませんでした");
+    toast("Googleドライブを整理できませんでした（"+String(e && e.message || e)+"）");
   }finally{
     organizingDrive = false;
   }
