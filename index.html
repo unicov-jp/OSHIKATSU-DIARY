@@ -967,8 +967,6 @@
   .cat-tile.empty{background:var(--paper);color:var(--heading);box-shadow:0 1px 0 var(--line);border:1px solid var(--line);}
   .cat-tile-mark{position:absolute;right:-6px;top:-18px;font-family:"Shippori Mincho",serif;font-size:86px;font-weight:800;line-height:1;color:rgba(255,255,255,.2);pointer-events:none;}
   .cat-tile.empty .cat-tile-mark{color:var(--tile, var(--accent));opacity:.16;}
-  .cat-tile-tag{position:absolute;left:12px;top:12px;font-size:10px;font-weight:700;letter-spacing:.08em;padding:3px 8px;border-radius:99px;background:rgba(255,255,255,.25);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);}
-  .cat-tile.empty .cat-tile-tag{background:var(--accent-soft);color:var(--accent);}
   .cat-tile-name{position:relative;max-width:100%;font-size:16px;font-weight:900;line-height:1.25;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
   .cat-tile:not(.empty) .cat-tile-name,.cat-tile:not(.empty) .cat-tile-sub{text-shadow:0 1px 6px rgba(0,0,0,.35);}
   .cat-tile-sub{position:relative;font-size:11px;margin-top:3px;opacity:.9;}
@@ -5771,7 +5769,6 @@ function renderCatalogPage(){
           var initial = Array.from(x.name.trim())[0] || "";
           return '<button type="button" class="cat-tile'+(img ? ' has-img' : (x.songs ? '' : ' empty'))+'" data-action="catalog-artist" data-name="'+escapeHtml(x.name)+'" data-q="'+escapeHtml(x.name.toLowerCase())+'" style="'+style+'">'
             + (img ? '' : '<span class="cat-tile-mark" aria-hidden="true">'+escapeHtml(initial)+'</span>')
-            + (oshiArtistKind(x.name) ? '<span class="cat-tile-tag">推し</span>' : '')
             + '<span class="cat-tile-name">'+escapeHtml(x.name)+'</span>'
             + '<span class="cat-tile-sub">'+(x.songs ? x.songs+'曲'+(x.sung ? ' ・ '+x.sung+'回' : '') : 'まだ曲がありません')+'</span>'
             + '</button>';
