@@ -710,6 +710,9 @@
   .toggle-chip.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);}
   .toggle-chip.on svg{fill:currentColor;}
   .viewing-toggle .toggle-chip.on svg{fill:none;}
+  /* 未定はアイコンをグレーにする（選んでいるときも） */
+  .viewing-toggle .toggle-chip[data-viewing="tbd"] svg{color:#9A958F;stroke:#9A958F;}
+  .viewing-toggle .toggle-chip[data-viewing="tbd"].on{color:#6B6560;border-color:#9A958F;background:rgba(33,28,23,.06);}
   .cal-setting{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:12px 14px;}
   .cal-setting label{display:block;font-size:11.5px;color:var(--ink-soft);font-weight:600;margin-bottom:5px;}
   .cal-setting .cal-label-2{margin-top:16px;}
@@ -1111,6 +1114,7 @@
   .view-chip svg{width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:2;}
   .view-chip.venue{color:#FFFFFF;background:var(--accent);border-color:var(--accent);}
   .view-chip.stream{color:var(--accent);background:var(--paper);}
+  .view-chip.tbd{color:#8A8580;background:var(--paper);border-color:#BDB8B2;}
 
   /* ---------- photo editor overlay ---------- */
   .editor-bg{
@@ -4174,14 +4178,17 @@ function activeOshi(){ return getOshi(state.activeOshiId); }
    記録や集計には残る。 */
 function visibleOshis(){ return state.oshis.filter(function(o){ return !o.hidden; }); }
 /* LIVEの配信URL。複数は streamUrls 配列、以前の記録は streamUrl 1件 */
-/* LIVEの観戦方法：viewing が "venue"（現地）/ "stream"（配信）。
+/* LIVEの観戦方法：viewing が "venue"（現地）/ "stream"（配信）/ "tbd"（未定。アイコンはグレー）。
+   参戦回数・遠征マップに数えるのは「現地」だけ。
    未設定の以前の記録は、配信URLがあって会場が空なら配信、それ以外は現地とみなす */
 var VIEWING_ICON = {
   venue:'<svg viewBox="0 0 24 24"><path d="M12 21s-6.5-6.2-6.5-11a6.5 6.5 0 0113 0c0 4.8-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></svg>',
-  stream:'<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/><path d="M10.5 8.8v5.4l4.3-2.7z"/></svg>'
+  stream:'<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/><path d="M10.5 8.8v5.4l4.3-2.7z"/></svg>',
+  tbd:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.6a2.5 2.5 0 014.8.9c0 1.7-2.4 2.1-2.4 3.6"/><circle cx="12" cy="17" r=".6" fill="currentColor"/></svg>'
 };
+var VIEWING_LABEL = {venue:"現地", stream:"配信", tbd:"未定"};
 function recViewing(r){
-  if(r.viewing==="venue" || r.viewing==="stream") return r.viewing;
+  if(r.viewing==="venue" || r.viewing==="stream" || r.viewing==="tbd") return r.viewing;
   return (recStreamUrls(r).length && !(r.venue||"").trim()) ? "stream" : "venue";
 }
 /* LIVE記録から Google カレンダーの予定作成URLを作る（APIキー不要）。
@@ -4246,7 +4253,7 @@ function calendarTokenValues(r){
     "公演名": r.title||"",
     "グループ": recGroupLabels(r).join(" / "),
     "会場": r.venue||"",
-    "観戦方法": recViewing(r)==="stream" ? "配信" : "現地",
+    "観戦方法": VIEWING_LABEL[recViewing(r)],
     "開場": r.openTime||"",
     "開始": r.startTime||"",
     "終了": r.endTime||"",
@@ -4359,7 +4366,7 @@ function aggregateByOshi(){
   return state.oshis.map(function(o){
     var recs = allRecordsFlat().filter(function(item){ return recHasOshi(item.r, o.id); });
     // 参戦＝現地観戦のみ（配信で観たLIVEと、これからのLIVEは数えない）
-    var liveN = recs.filter(function(i){return i.type==="live" && recViewing(i.r)!=="stream" && !isFutureRec(i.r);}).length;
+    var liveN = recs.filter(function(i){return i.type==="live" && recViewing(i.r)==="venue" && !isFutureRec(i.r);}).length;
     var chekiN = recs.filter(function(i){return i.type==="cheki";}).reduce(function(s,i){return s+chekiUnits(i.r);},0);
     var goodsN = recs.filter(function(i){return i.type==="goods";}).reduce(function(s,i){return s+(Number(i.r.qty)||1);},0);
     var total = Math.round(recs.reduce(function(s,i){ return s+recAmountForOshi(i.type,i.r,o.id); },0));
@@ -4454,7 +4461,7 @@ function renderHome(){
   var recs = allRecordsForOshi(oshi.id);
   // 参戦＝現地観戦のみ（配信で観たLIVEは数えない）。今日までに行ったLIVEだけを数え、これからのLIVEは数えない
   var liveN = state.live.filter(function(r){
-    return recHasOshi(r,oshi.id) && recViewing(r)!=="stream" && !isFutureRec(r);
+    return recHasOshi(r,oshi.id) && recViewing(r)==="venue" && !isFutureRec(r);
   }).length;
   var total = Math.round(recs.reduce(function(s,item){ return s+recAmountForOshi(item.type,item.r,oshi.id); },0));
 
@@ -5013,7 +5020,7 @@ function ticketHtml(type,r,withOshiTag){
     + (type==="cheki" ? (function(cp){ return '<div class="photo'+(cp?' zoomable':'')+'"'+(cp?' data-action="view-photo" data-type="cheki" data-id="'+r.id+'" role="button" tabindex="0" title="写真を拡大" aria-label="写真を拡大"':'')+'>'+(cp? '<img '+DrivePhotos.imgAttrs(cp)+' alt="">' : '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.4"/><path d="M8 6l1-2h6l1 2"/></svg>')+'</div>'; })(recPhotos(r)[0]||null) : '')
     + '<div class="main">'
     +   '<div class="kind"><span class="stamp">'+kindIcon(type)+KIND_LABEL[type]+'</span>'
-    +     (type==="live" ? (function(v){ return '<span class="view-chip '+v+'">'+VIEWING_ICON[v]+(v==="stream"?"配信":"現地")+'</span>'; })(recViewing(r)) : '')
+    +     (type==="live" ? (function(v){ return '<span class="view-chip '+v+'">'+VIEWING_ICON[v]+VIEWING_LABEL[v]+'</span>'; })(recViewing(r)) : '')
     +     (r.tag?'<span class="tag-chip">'+escapeHtml(r.tag)+'</span>':'')+(streamLinkHtml? '<span class="stream-link-wrap">'+streamLinkHtml+'</span>' : '')+moreBtnHtml+'</div>'
     +   '<div class="title">'+escapeHtml(titleText)+'</div>'
     +   oshiLineHtml
@@ -6186,6 +6193,7 @@ function recordFormHtml(type,rec){
       + '<div class="field toggle-row viewing-toggle" style="margin-bottom:0;">'
       +   '<button type="button" class="toggle-chip'+(viewing==="venue"?" on":"")+'" data-viewing="venue">'+VIEWING_ICON.venue+'現地</button>'
       +   '<button type="button" class="toggle-chip'+(viewing==="stream"?" on":"")+'" data-viewing="stream">'+VIEWING_ICON.stream+'配信</button>'
+      +   '<button type="button" class="toggle-chip'+(viewing==="tbd"?" on":"")+'" data-viewing="tbd">'+VIEWING_ICON.tbd+'未定</button>'
       + '</div></div>';
     fields += '<div class="field"><label>時間（任意）</label><div class="time-row">'
       + '<div><span class="time-cap">開場</span><input type="time" name="openTime" value="'+(rec?escapeHtml(rec.openTime||""):"")+'"></div>'
@@ -7474,7 +7482,7 @@ var TripMap = (function(){
     });
     state.live.forEach(function(r){
       if(r.hidden || !oshi || !recHasOshi(r, oshi.id)) return;
-      if(recViewing(r)==="stream") return;
+      if(recViewing(r)!=="venue") return;   // 配信・未定は地図に出さない
       if(isFutureRec(r)) return;   // これからのLIVEは、行ってから地図に出す
       var name = (r.venuePlace && r.venuePlace.name) || (r.venue||"").trim();
       if(!name) return;
