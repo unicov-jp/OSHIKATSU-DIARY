@@ -956,7 +956,6 @@
   .cat-list-head h1{font-size:26px;margin:4px 0 8px;color:var(--heading);}
   .cat-list-stats{display:flex;gap:16px;font-size:11.5px;color:var(--ink-soft);}
   .cat-list-stats b{font-size:18px;font-weight:900;color:var(--heading);margin-right:2px;}
-  .cat-list-head p{font-size:11.5px;color:var(--ink-soft);margin-top:8px;line-height:1.6;}
   .cat-tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px;}
   .cat-tiles .catalog-empty{grid-column:1/-1;background:var(--paper);border-radius:14px;}
   .cat-tile{position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;align-items:flex-start;aspect-ratio:3/2;padding:10px 12px;border:none;border-radius:18px;text-align:left;cursor:pointer;font-family:inherit;color:#fff;
@@ -1025,7 +1024,6 @@
   .cat-artist-pick svg{flex:none;width:18px;height:18px;stroke:var(--ink-soft);fill:none;stroke-width:2;}
   .song-picker-item.cur .t{color:var(--accent);}
   .song-picker-item.cur .a{color:var(--accent);font-weight:700;}
-  .catalog-note{font-size:11.5px;color:var(--ink-soft);line-height:1.7;margin:10px 2px 0;}
   .catalog-sheet-note{font-size:12px;color:var(--ink-soft);line-height:1.7;margin:-4px 0 0;}
   .catalog-row + .catalog-row{border-top:1px solid var(--line);}
   .catalog-row[hidden]{display:none;}
@@ -5759,7 +5757,7 @@ function renderCatalogPage(){
     var totalSongs = list.reduce(function(t, x){ return t + x.songs; }, 0), totalSung = list.reduce(function(t, x){ return t + x.sung; }, 0);
     html += '<div class="cat-list-head"><small>ARTISTS &amp; SONGS</small><h1 class="mincho">アーティスト・曲</h1>'
       +   '<div class="cat-list-stats"><span><b>'+list.length+'</b>組</span><span><b>'+totalSongs+'</b>曲</span><span><b>'+totalSung+'</b>回歌唱</span></div>'
-      +   '<p>曲を登録しておくと、セットリストの入力で候補に出ます。</p></div>'
+      + '</div>'
       + '<div class="cat-search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4-4"/></svg><input type="search" id="catalogQ" placeholder="アーティストを検索・登録" autocomplete="off"></div>'
       + '<button type="button" class="btn ghost block catalog-add" id="catalogAddArtist" hidden></button>'
       + '<div class="cat-tiles" id="catalogList">'
@@ -5811,8 +5809,7 @@ function renderCatalogPage(){
             + '<span class="cat-r-c'+(x.n ? '' : ' z')+'">'+(x.n ? x.n : '未使用')+'</span>'
             + '</button>';
         }).join("") : '<p class="catalog-empty">'+(sort==="unused" && songs.length ? 'まだ歌っていない曲はありません。' : 'まだ曲がありません。上の欄に曲名を入れて登録できます。')+'</p>')
-      + '</div>'
-      + '<p class="catalog-note">曲を押すと、曲名・アーティストの変更と削除ができます。変更はLIVE記録のセトリにも反映されます。</p>';
+      + '</div>';
   }
   html += '<button type="button" class="btn ghost block" data-action="goto-mypage" style="margin-top:18px;">マイページへ戻る</button>';
   main.innerHTML = html;
