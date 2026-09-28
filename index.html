@@ -950,16 +950,21 @@
   .catalog-add[hidden]{display:none;}
   .catalog-list{margin-top:12px;background:var(--card);border:1px solid var(--line);border-radius:6px;overflow:hidden;}
   .catalog-row{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;border:none;padding:12px 14px;font-family:inherit;color:var(--text);cursor:pointer;}
-  .catalog-row.song{cursor:default;}
+  .catalog-row-pen{opacity:.6;}
+  .catalog-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;}
+  .catalog-head > div{min-width:0;}
+  .catalog-head h1{overflow-wrap:anywhere;}
+  .catalog-edit-btn{flex:none;display:inline-flex;align-items:center;gap:5px;margin-top:4px;border:1px solid var(--line-strong);background:var(--card);color:var(--heading);border-radius:99px;padding:6px 12px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;}
+  .catalog-edit-btn svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.8;}
+  .catalog-note{font-size:11.5px;color:var(--ink-soft);line-height:1.7;margin:10px 2px 0;}
+  .catalog-sheet-note{font-size:12px;color:var(--ink-soft);line-height:1.7;margin:-4px 0 0;}
   .catalog-row + .catalog-row{border-top:1px solid var(--line);}
   .catalog-row[hidden]{display:none;}
   .catalog-row-name{flex:1;min-width:0;font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .catalog-row-sub{flex:none;font-size:11.5px;color:var(--ink-soft);}
-  .catalog-del{flex:none;width:28px;height:28px;border-radius:50%;border:none;background:transparent;color:var(--ink-soft);font-size:16px;cursor:pointer;}
   .catalog-empty{margin:0;padding:14px;font-size:12.5px;color:var(--ink-soft);}
   .catalog-back{display:inline-flex;align-items:center;gap:4px;border:none;background:none;color:var(--accent);font-size:13px;font-weight:700;padding:0;margin-bottom:10px;cursor:pointer;font-family:inherit;}
   .catalog-back svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;}
-  .catalog-del-artist{display:block;margin:12px auto 0;}
   /* ユーザー管理 */
   .btn.admin-entry{margin-top:22px;display:flex;align-items:center;justify-content:center;gap:8px;border-color:var(--accent);color:var(--accent);background:var(--card);font-weight:700;}
   .btn.admin-entry svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.6;}
@@ -5694,22 +5699,21 @@ function renderCatalogPage(){
       + '</div>';
   } else {
     var songs = catalogSongsOf(a);
-    var reg = (state.artists||[]).find(function(x){ return (x.name||"").trim().toLowerCase()===a.trim().toLowerCase(); });
     html += '<button type="button" class="catalog-back" data-action="catalog-back"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>アーティスト一覧</button>'
-      + '<div class="page-head"><h1 class="mincho">'+escapeHtml(a)+'</h1><p>'+songs.length+'曲</p></div>'
+      + '<div class="page-head catalog-head"><div><h1 class="mincho">'+escapeHtml(a)+'</h1><p>'+songs.length+'曲</p></div>'
+      +   '<button type="button" class="catalog-edit-btn" data-action="catalog-edit-artist"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>編集</button></div>'
       + '<div class="catalog-search"><input type="search" id="catalogQ" placeholder="曲を検索・登録" autocomplete="off"></div>'
       + '<button type="button" class="btn ghost block catalog-add" id="catalogAddSong" hidden></button>'
       + '<div class="catalog-list" id="catalogList">'
       + (songs.length ? songs.map(function(x){
-          var canDel = x.id && !x.n;
-          return '<div class="catalog-row song" data-q="'+escapeHtml(x.title.toLowerCase())+'">'
+          return '<button type="button" class="catalog-row song" data-action="catalog-edit-song" data-t="'+escapeHtml(x.title)+'" data-q="'+escapeHtml(x.title.toLowerCase())+'">'
             + '<span class="catalog-row-name">'+escapeHtml(x.title)+'</span>'
             + '<span class="catalog-row-sub">'+(x.n ? x.n+'回' : '未使用')+'</span>'
-            + (canDel ? '<button type="button" class="catalog-del" data-action="catalog-del-song" data-id="'+escapeHtml(x.id)+'" aria-label="この曲の登録を削除">×</button>' : '')
-            + '</div>';
+            + '<svg class="catalog-row-pen" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>'
+            + '</button>';
         }).join("") : '<p class="catalog-empty">まだ曲がありません。上の欄に曲名を入れて登録できます。</p>')
       + '</div>'
-      + ((reg && !songs.length) ? '<button type="button" class="gd-link danger-text catalog-del-artist" data-action="catalog-del-artist" data-id="'+escapeHtml(reg.id)+'">このアーティストの登録を削除</button>' : '');
+      + '<p class="catalog-note">曲を押すと、曲名・アーティストの変更と削除ができます。変更はLIVE記録のセトリにも反映されます。</p>';
   }
   html += '<button type="button" class="btn ghost block" data-action="goto-mypage" style="margin-top:18px;">マイページへ戻る</button>';
   main.innerHTML = html;
@@ -5735,6 +5739,211 @@ function renderCatalogPage(){
     else { registerArtist(v); toast("「"+v+"」を登録しました"); catalogView.artist = v; }
     render();
     var nq = document.getElementById("catalogQ"); if(nq) nq.focus();
+  });
+}
+
+/* ---- アーティスト・曲の変更と削除（登録一覧から）。LIVE記録のセトリにも反映する ---- */
+function nameKey(v){ return (v||"").trim().toLowerCase(); }
+// 推しのグループ名（またはグループのない推しの人物名）としてのアーティストか
+function oshiArtistKind(name){
+  var k = nameKey(name), kind = "";
+  state.oshis.forEach(function(o){
+    var gs = oshiGroupsList(o);
+    if(gs.length){ if(gs.some(function(g){ return nameKey(g.name)===k; })) kind = kind || "group"; }
+    else if(nameKey(o.name)===k) kind = "person";
+  });
+  return kind;
+}
+// LIVE記録のセトリを1件ずつ直す。fn が true を返した記録だけ setlists に書き戻す
+function eachSetlistRec(fn){
+  var n = 0;
+  state.live.forEach(function(r){
+    var bl = recSetlists(r);
+    if(!bl.length) return;
+    var copy = bl.map(function(b){ return {artist:b.artist||"", items:b.items.map(function(it){ return Object.assign({}, it); })}; });
+    if(fn(copy, r)){
+      r.setlists = copy.filter(function(b){ return b.items.length || (b.artist||"").trim(); });
+      delete r.setlist;
+      n++;
+    }
+  });
+  return n;
+}
+function songMatches(it, b, title, artist){
+  return it.t==="song" && nameKey(it.title)===nameKey(title) && nameKey(songArtist(it, b))===nameKey(artist);
+}
+function countArtistUse(name){
+  var k = nameKey(name), n = 0;
+  state.live.forEach(function(r){
+    if(recSetlists(r).some(function(b){ return nameKey(b.artist)===k || b.items.some(function(it){ return it.t==="song" && nameKey(songArtist(it, b))===k; }); })) n++;
+  });
+  return n;
+}
+function countSongUse(title, artist){
+  var n = 0;
+  state.live.forEach(function(r){
+    if(recSetlists(r).some(function(b){ return b.items.some(function(it){ return songMatches(it, b, title, artist); }); })) n++;
+  });
+  return n;
+}
+function dedupeCatalog(){
+  var seenA = {}, seenS = {};
+  state.artists = (state.artists||[]).filter(function(a){ var k = nameKey(a.name); if(!k || seenA[k]) return false; seenA[k] = true; return true; });
+  state.songs = (state.songs||[]).filter(function(x){ var k = nameKey(x.title)+"\u0000"+nameKey(x.artist); if(!nameKey(x.title) || seenS[k]) return false; seenS[k] = true; return true; });
+}
+function renameCatalogArtist(from, to){
+  var fk = nameKey(from);
+  to = (to||"").trim();
+  if(!to || fk===nameKey(to) && from.trim()===to) return;
+  var hit = false;
+  (state.artists||[]).forEach(function(a){ if(nameKey(a.name)===fk){ a.name = to; hit = true; } });
+  if(!hit) state.artists.push({id:uuid(), name:to, createdAt:Date.now()});
+  (state.songs||[]).forEach(function(x){ if(nameKey(x.artist)===fk) x.artist = to; });
+  eachSetlistRec(function(bl){
+    var ch = false;
+    bl.forEach(function(b){
+      if(nameKey(b.artist)===fk){ b.artist = to; ch = true; }
+      b.items.forEach(function(it){ if(it.t==="song" && it.artist && nameKey(it.artist)===fk){ it.artist = to; ch = true; } });
+    });
+    return ch;
+  });
+  // 推しのグループ名も同じ名前なら合わせて変える（同じアーティストのため）
+  state.oshis.forEach(function(o){
+    if(o.groups && o.groups.length) o.groups.forEach(function(g){ if(nameKey(g.name)===fk) g.name = to; });
+    else if(o.group && nameKey(o.group)===fk) o.group = to;
+  });
+  dedupeCatalog();
+}
+function deleteCatalogArtist(name){
+  var k = nameKey(name);
+  state.artists = (state.artists||[]).filter(function(a){ return nameKey(a.name)!==k; });
+  state.songs = (state.songs||[]).filter(function(x){ return nameKey(x.artist)!==k; });
+  eachSetlistRec(function(bl){
+    var ch = false;
+    for(var i=bl.length-1;i>=0;i--){
+      var b = bl[i];
+      if(nameKey(b.artist)===k){ bl.splice(i, 1); ch = true; continue; }
+      var before = b.items.length;
+      b.items = b.items.filter(function(it){ return !(it.t==="song" && nameKey(songArtist(it, b))===k); });
+      if(b.items.length!==before) ch = true;
+    }
+    return ch;
+  });
+}
+function editCatalogSong(title, artist, nt, na){
+  nt = (nt||"").trim(); na = (na||"").trim();
+  if(!nt) return;
+  var hit = false;
+  (state.songs||[]).forEach(function(x){
+    if(nameKey(x.title)===nameKey(title) && nameKey(x.artist)===nameKey(artist)){ x.title = nt; x.artist = na; hit = true; }
+  });
+  if(!hit) state.songs.push({id:uuid(), title:nt, artist:na, createdAt:Date.now()});
+  if(na) registerArtist(na, true);
+  eachSetlistRec(function(bl){
+    var ch = false;
+    bl.forEach(function(b){
+      b.items.forEach(function(it){
+        if(!songMatches(it, b, title, artist)) return;
+        it.title = nt;
+        if(nameKey(na)===nameKey(b.artist)) delete it.artist; else it.artist = na;
+        ch = true;
+      });
+    });
+    return ch;
+  });
+  dedupeCatalog();
+}
+function deleteCatalogSong(title, artist){
+  state.songs = (state.songs||[]).filter(function(x){ return !(nameKey(x.title)===nameKey(title) && nameKey(x.artist)===nameKey(artist)); });
+  eachSetlistRec(function(bl){
+    var ch = false;
+    bl.forEach(function(b){
+      var before = b.items.length;
+      b.items = b.items.filter(function(it){ return !songMatches(it, b, title, artist); });
+      if(b.items.length!==before) ch = true;
+    });
+    return ch;
+  });
+}
+function catalogArtistDatalist(){
+  return '<datalist id="catalogArtistOptions">'+setlistArtistOptions().map(function(v){ return '<option value="'+escapeHtml(v)+'">'; }).join("")+'</datalist>';
+}
+function openCatalogArtistSheet(name){
+  var used = countArtistUse(name), oshiKind = oshiArtistKind(name);
+  var songsN = catalogSongsOf(name).length;
+  openSheet('<h2 class="mincho">アーティストを編集</h2>'
+    + '<form id="catalogArtistForm">'
+    + '<div class="field"><label>アーティスト名</label><input type="text" name="name" value="'+escapeHtml(name)+'" required autocomplete="off"></div>'
+    + '<p class="catalog-sheet-note">'
+    +   (used ? '変更すると、'+used+'件のLIVE記録のセトリも新しい名前になります。' : 'まだLIVE記録のセトリでは使われていません。')
+    +   (oshiKind==="group" ? '<br>推しのグループ名も同じ名前に変わります。' : '')
+    +   '<br>すでにある名前にすると、そのアーティストにまとめます。'
+    + '</p>'
+    + '<div class="sheet-actions">'
+    +   '<button type="button" class="btn danger" id="catalogArtistDel">削除</button>'
+    +   '<button type="submit" class="btn primary">保存する</button>'
+    + '</div>'
+    + '</form>');
+  var form = document.getElementById("catalogArtistForm");
+  form.addEventListener("submit", function(e){
+    e.preventDefault();
+    var to = String(new FormData(form).get("name")||"").trim();
+    if(!to){ toast("アーティスト名を入力してください"); return; }
+    if(to!==name.trim()){
+      renameCatalogArtist(name, to);
+      saveLocal();
+      toast("「"+to+"」に変更しました");
+    }
+    catalogView.artist = to;
+    closeSheet(); render();
+  });
+  document.getElementById("catalogArtistDel").addEventListener("click", function(){
+    if(oshiKind==="person"){ toast("推しの名前のアーティストは、推しを編集・削除してください"); return; }
+    var msg = "「"+name+"」を削除しますか？";
+    if(songsN) msg += "\n登録している"+songsN+"曲も削除します。";
+    if(used) msg += "\n"+used+"件のLIVE記録のセトリから、このアーティストの出演と曲を取り除きます。";
+    if(oshiKind==="group") msg += "\n※推しのグループ名なので、アーティスト一覧には残ります。";
+    if(!confirm(msg)) return;
+    deleteCatalogArtist(name);
+    saveLocal();
+    toast("「"+name+"」を削除しました");
+    catalogView.artist = null;
+    closeSheet(); render(); window.scrollTo(0,0);
+  });
+}
+function openCatalogSongSheet(title, artist){
+  var used = countSongUse(title, artist);
+  openSheet('<h2 class="mincho">曲を編集</h2>'
+    + '<form id="catalogSongForm">'
+    + '<div class="field"><label>曲名</label><input type="text" name="title" value="'+escapeHtml(title)+'" required autocomplete="off"></div>'
+    + '<div class="field"><label>アーティスト</label><input type="text" name="artist" value="'+escapeHtml(artist)+'" list="catalogArtistOptions" autocomplete="off">'+catalogArtistDatalist()+'</div>'
+    + '<p class="catalog-sheet-note">'+(used ? '変更すると、'+used+'件のLIVE記録のセトリも直します。' : 'まだLIVE記録のセトリでは使われていません。')+'</p>'
+    + '<div class="sheet-actions">'
+    +   '<button type="button" class="btn danger" id="catalogSongDel">削除</button>'
+    +   '<button type="submit" class="btn primary">保存する</button>'
+    + '</div>'
+    + '</form>');
+  var form = document.getElementById("catalogSongForm");
+  form.addEventListener("submit", function(e){
+    e.preventDefault();
+    var fd = new FormData(form);
+    var nt = String(fd.get("title")||"").trim(), na = String(fd.get("artist")||"").trim();
+    if(!nt){ toast("曲名を入力してください"); return; }
+    if(nt!==title.trim() || na!==artist.trim()){
+      editCatalogSong(title, artist, nt, na);
+      saveLocal();
+      toast("「"+nt+(na ? "／"+na : "")+"」に変更しました");
+    }
+    closeSheet(); render();
+  });
+  document.getElementById("catalogSongDel").addEventListener("click", function(){
+    var msg = "「"+title+(artist ? "／"+artist : "")+"」を削除しますか？";
+    if(used) msg += "\n"+used+"件のLIVE記録のセトリからも、この曲を取り除きます。";
+    if(!confirm(msg)) return;
+    deleteCatalogSong(title, artist);
+    saveLocal();
+    toast("「"+title+"」を削除しました");
+    closeSheet(); render();
   });
 }
 
@@ -8682,19 +8891,8 @@ function onAppClick(e){
   if(action==="catalog-open"){ catalogView.artist = null; state.view = "catalog"; render(); window.scrollTo(0,0); return; }
   if(action==="catalog-artist"){ catalogView.artist = el.getAttribute("data-name"); render(); window.scrollTo(0,0); return; }
   if(action==="catalog-back"){ catalogView.artist = null; render(); window.scrollTo(0,0); return; }
-  if(action==="catalog-del-song"){
-    var sid = el.getAttribute("data-id");
-    if(!confirm("この曲の登録を削除しますか？")) return;
-    state.songs = state.songs.filter(function(x){ return x.id!==sid; });
-    saveLocal(); render(); return;
-  }
-  if(action==="catalog-del-artist"){
-    var aid = el.getAttribute("data-id");
-    if(!confirm("このアーティストの登録を削除しますか？")) return;
-    state.artists = state.artists.filter(function(x){ return x.id!==aid; });
-    catalogView.artist = null;
-    saveLocal(); render(); return;
-  }
+  if(action==="catalog-edit-artist"){ if(catalogView.artist) openCatalogArtistSheet(catalogView.artist); return; }
+  if(action==="catalog-edit-song"){ if(catalogView.artist) openCatalogSongSheet(el.getAttribute("data-t")||"", catalogView.artist); return; }
   if(action==="goto-admin"){ if(isMaster()){ adminUsers = null; state.view = "admin"; render(); window.scrollTo(0,0); } return; }
   if(action==="goto-mypage"){ state.view = "oshi"; render(); window.scrollTo(0,0); return; }
   if(action==="toggle-feature"){ if(isMaster()) toggleFeature(el.getAttribute("data-plan"), el.getAttribute("data-feature")); return; }
