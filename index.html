@@ -985,10 +985,20 @@
   .cat-hero-edit svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.9;}
   .cat-hero.has-img{background-color:var(--accent);background-size:cover;background-position:center;}
   .cat-hero.has-img::after{display:none;}
-  .cat-hero.has-img h1,.cat-hero.has-img .cat-hero-stats{text-shadow:0 1px 8px rgba(0,0,0,.45);}
+  .cat-hero.has-img h1,.cat-hero.has-img .cat-hero-stats,.cat-hero.has-img small{text-shadow:0 1px 8px rgba(0,0,0,.5);}
   .cat-hero-img{position:absolute;right:12px;top:12px;z-index:1;width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.22);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;cursor:pointer;color:#fff;}
   .cat-hero-img svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.8;}
-  .cat-img-clear{display:block;margin:4px 0 0;}
+  .cat-img-links{display:flex;flex-wrap:wrap;gap:4px 16px;margin:4px 0 0;}
+  .cat-pos-hero{position:relative;height:150px;border-radius:18px;overflow:hidden;background-color:var(--accent);background-size:cover;padding:14px 16px;color:#fff;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;display:flex;flex-direction:column;justify-content:flex-start;}
+  .cat-pos-hero.dragging{cursor:grabbing;}
+  .cat-pos-hero small{font-size:10px;letter-spacing:.22em;opacity:.85;}
+  .cat-pos-hero b{font-size:24px;font-weight:800;margin-top:4px;text-shadow:0 1px 8px rgba(0,0,0,.45);}
+  .cat-pos-hand{position:absolute;right:12px;bottom:12px;width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,.25);display:flex;align-items:center;justify-content:center;}
+  .cat-pos-hand svg{width:18px;height:18px;stroke:#fff;fill:none;stroke-width:1.6;}
+  .cat-pos-row{display:flex;align-items:center;gap:12px;margin-top:12px;}
+  .cat-pos-tile{flex:none;width:140px;height:96px;border-radius:14px;background-color:var(--tile, var(--accent));background-size:cover;display:flex;align-items:flex-end;padding:8px 10px;color:#fff;font-weight:900;font-size:13px;text-shadow:0 1px 6px rgba(0,0,0,.4);}
+  .cat-pos-tile span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .cat-pos-row .catalog-sheet-note{margin:0;}
   .cat-search{display:flex;align-items:center;gap:8px;margin-top:16px;background:var(--paper);border-radius:14px;padding:0 14px;box-shadow:0 1px 0 var(--line);border:1px solid transparent;}
   .cat-search:focus-within{border-color:var(--accent);}
   .cat-search svg{flex:none;width:16px;height:16px;stroke:var(--ink-soft);fill:none;stroke-width:2;}
@@ -5757,9 +5767,9 @@ function renderCatalogPage(){
       + '<div class="cat-tiles" id="catalogList">'
       + (list.length ? list.map(function(x){
           var img = catalogArtistImage(x.name), color = catalogArtistColor(x.name);
-          var style = '--tile:'+escapeHtml(color)+';' + (img ? DrivePhotos.bgStyle(img, CAT_TILE_GRAD) : '');
+          var style = '--tile:'+escapeHtml(color)+';' + (img ? 'background-position:'+catalogArtistImagePos(x.name)+';'+DrivePhotos.bgStyle(img, CAT_TILE_GRAD) : '');
           var initial = Array.from(x.name.trim())[0] || "";
-          return '<button type="button" class="cat-tile'+(img ? ' has-img' : '')+(x.songs ? '' : ' empty')+'" data-action="catalog-artist" data-name="'+escapeHtml(x.name)+'" data-q="'+escapeHtml(x.name.toLowerCase())+'" style="'+style+'">'
+          return '<button type="button" class="cat-tile'+(img ? ' has-img' : (x.songs ? '' : ' empty'))+'" data-action="catalog-artist" data-name="'+escapeHtml(x.name)+'" data-q="'+escapeHtml(x.name.toLowerCase())+'" style="'+style+'">'
             + (img ? '' : '<span class="cat-tile-mark" aria-hidden="true">'+escapeHtml(initial)+'</span>')
             + (oshiArtistKind(x.name) ? '<span class="cat-tile-tag">推し</span>' : '')
             + '<span class="cat-tile-name">'+escapeHtml(x.name)+'</span>'
@@ -5780,7 +5790,7 @@ function renderCatalogPage(){
     var heroImg = catalogArtistImage(a);
     html += '<button type="button" class="catalog-back" data-action="catalog-back"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>アーティスト一覧</button>'
       // 上部：アルバムジャケット風の見出し
-      + '<div class="cat-hero'+(heroImg ? ' has-img' : '')+'"'+(heroImg ? ' style="'+DrivePhotos.bgStyle(heroImg, CAT_HERO_GRAD)+'"' : '')+'>'
+      + '<div class="cat-hero'+(heroImg ? ' has-img' : '')+'"'+(heroImg ? ' style="background-position:'+catalogArtistImagePos(a)+';'+DrivePhotos.bgStyle(heroImg, CAT_HERO_GRAD)+'"' : '')+'>'
       +   '<label class="cat-hero-img" title="背景画像を設定" aria-label="背景画像を設定"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.4"/><path d="M8 6l1-2h6l1 2"/></svg><input type="file" id="catalogHeroInput" accept="image/*" hidden></label>'
       +   '<small>ARTIST</small>'
       +   '<h1 class="mincho">'+escapeHtml(a)+'</h1>'
@@ -5836,14 +5846,16 @@ function renderCatalogPage(){
 }
 
 /* アーティストの画面の見出しの背景画像（アーティストの登録に image として持つ。画像は Google ドライブへ） */
-var CAT_HERO_GRAD = "linear-gradient(180deg, rgba(0,0,0,.10), rgba(0,0,0,.58))";
+var CAT_HERO_GRAD = "linear-gradient(180deg, rgba(0,0,0,.42), rgba(0,0,0,.12) 38%, rgba(0,0,0,.15) 55%, rgba(0,0,0,.68))";
+var CAT_IMG_POS = "50% 30%";   // 位置を決めていない画像は、少し上寄り（集合写真の顔が切れにくい）
+function catalogArtistImagePos(name){ var e = catalogArtistEntry(name); return (e && /^\d{1,3}(\.\d+)?% \d{1,3}(\.\d+)?%$/.test(e.imagePos||"")) ? e.imagePos : CAT_IMG_POS; }
 function catalogArtistEntry(name){
   var k = nameKey(name);
   return (state.artists||[]).find(function(x){ return nameKey(x.name)===k; }) || null;
 }
 function catalogArtistImage(name){ var e = catalogArtistEntry(name); return e && e.image || ""; }
 // 一覧のタイルの色：推しのグループの色（無ければ推しの色）、それ以外はアプリの色
-var CAT_TILE_GRAD = "linear-gradient(180deg, rgba(0,0,0,.05) 30%, rgba(0,0,0,.62))";
+var CAT_TILE_GRAD = "linear-gradient(180deg, rgba(0,0,0,.28), rgba(0,0,0,.02) 35%, rgba(0,0,0,.70))";
 function catalogArtistColor(name){
   var k = nameKey(name), c = "";
   state.oshis.forEach(function(o){
@@ -5853,6 +5865,67 @@ function catalogArtistColor(name){
     else if(nameKey(o.name)===k) c = o.color;
   });
   return /^#[0-9a-fA-F]{3,8}$/.test(c||"") ? c : "var(--accent)";
+}
+// 背景画像の表示位置を決める：見出しの形の枠の中で画像をドラッグする。一覧のタイルの見え方も一緒に出す
+async function openCatalogImagePos(name){
+  var e = catalogArtistEntry(name);
+  if(!e || !e.image) return;
+  var url = DrivePhotos.cachedUrl(e.image);
+  if(!url){ try{ url = await DrivePhotos.localUrl(e.image); }catch(err){ toast("画像を読み込めませんでした"); return; } }
+  var pos = catalogArtistImagePos(name).split(" ").map(parseFloat);
+  var color = catalogArtistColor(name);
+  openSheet('<h2 class="mincho">背景画像の表示位置</h2>'
+    + '<p class="catalog-sheet-note" style="margin:0 0 10px;">画像をドラッグして、見せたい部分を枠に合わせてください。</p>'
+    + '<div class="cat-pos-hero" id="catPosHero"><small>ARTIST</small><b class="mincho">'+escapeHtml(name)+'</b><span class="cat-pos-hand"><svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></svg></span></div>'
+    + '<div class="cat-pos-row"><div class="cat-pos-tile" id="catPosTile" style="--tile:'+escapeHtml(color)+'"><span>'+escapeHtml(name)+'</span></div>'
+    +   '<p class="catalog-sheet-note">一覧のタイルでは、このように表示されます。</p></div>'
+    + '<div class="sheet-actions">'
+    +   '<button type="button" class="btn ghost" id="catPosReset">中央に戻す</button>'
+    +   '<button type="button" class="btn primary" id="catPosSave">決定</button>'
+    + '</div>');
+  var hero = document.getElementById("catPosHero"), tile = document.getElementById("catPosTile");
+  var nat = {w:0, h:0};
+  var img = new Image();
+  img.onload = function(){ nat.w = img.naturalWidth; nat.h = img.naturalHeight; };
+  img.src = url;
+  function apply(){
+    var v = pos[0].toFixed(1)+"% "+pos[1].toFixed(1)+"%";
+    hero.style.backgroundImage = CAT_HERO_GRAD+", url("+url+")";
+    hero.style.backgroundPosition = v;
+    tile.style.backgroundImage = CAT_TILE_GRAD+", url("+url+")";
+    tile.style.backgroundPosition = v;
+  }
+  apply();
+  // はみ出している長さ（cover で表示したとき）。動かせる向きだけ動く
+  function overflow(){
+    var fw = hero.clientWidth, fh = hero.clientHeight;
+    if(!nat.w || !nat.h) return {x:0, y:0};
+    var sc = Math.max(fw/nat.w, fh/nat.h);
+    return {x:nat.w*sc - fw, y:nat.h*sc - fh};
+  }
+  var drag = null;
+  hero.addEventListener("pointerdown", function(ev){
+    drag = {x:ev.clientX, y:ev.clientY, px:pos[0], py:pos[1], of:overflow()};
+    hero.setPointerCapture(ev.pointerId);
+    hero.classList.add("dragging");
+  });
+  hero.addEventListener("pointermove", function(ev){
+    if(!drag) return;
+    if(drag.of.x > 1) pos[0] = clamp(drag.px - (ev.clientX-drag.x)/drag.of.x*100, 0, 100);
+    if(drag.of.y > 1) pos[1] = clamp(drag.py - (ev.clientY-drag.y)/drag.of.y*100, 0, 100);
+    apply();
+  });
+  function end(){ drag = null; hero.classList.remove("dragging"); }
+  hero.addEventListener("pointerup", end);
+  hero.addEventListener("pointercancel", end);
+  document.getElementById("catPosReset").addEventListener("click", function(){ pos = [50, 50]; apply(); });
+  document.getElementById("catPosSave").addEventListener("click", function(){
+    var cur = catalogArtistEntry(name);
+    if(cur){ cur.imagePos = Math.round(pos[0])+"% "+Math.round(pos[1])+"%"; saveLocal(); }
+    closeSheet();
+    toast("背景画像を設定しました");
+    render();
+  });
 }
 function bindCatalogHero(name){
   var input = document.getElementById("catalogHeroInput");
@@ -5874,9 +5947,10 @@ function bindCatalogHero(name){
       var e = catalogArtistEntry(name);
       if(!e) return;
       e.image = ref;
+      delete e.imagePos;
       saveLocal();
-      toast("背景画像を設定しました");
       if(state.view==="catalog" && nameKey(catalogView.artist)===nameKey(name)) render();
+      openCatalogImagePos(name);
     }catch(err){ console.warn("artist image failed", err); toast("画像の読み込みに失敗しました"); }
   });
 }
@@ -6020,7 +6094,7 @@ function openCatalogArtistSheet(name){
     +   (oshiKind==="group" ? '<br>推しのグループ名も同じ名前に変わります。' : '')
     +   '<br>すでにある名前にすると、そのアーティストにまとめます。'
     + '</p>'
-    + (catalogArtistImage(name) ? '<button type="button" class="gd-link danger-text cat-img-clear" id="catalogArtistImgClear">背景画像を外す</button>' : '')
+    + (catalogArtistImage(name) ? '<div class="cat-img-links"><button type="button" class="gd-link" id="catalogArtistImgPos">背景画像の表示位置を調整</button><button type="button" class="gd-link danger-text" id="catalogArtistImgClear">背景画像を外す</button></div>' : '')
     + '<div class="sheet-actions">'
     +   '<button type="button" class="btn danger" id="catalogArtistDel">削除</button>'
     +   '<button type="submit" class="btn primary">保存する</button>'
@@ -6039,11 +6113,14 @@ function openCatalogArtistSheet(name){
     catalogView.artist = to;
     closeSheet(); render();
   });
+  var imgPos = document.getElementById("catalogArtistImgPos");
+  if(imgPos) imgPos.addEventListener("click", function(){ openCatalogImagePos(name); });
   var imgClear = document.getElementById("catalogArtistImgClear");
   if(imgClear) imgClear.addEventListener("click", function(){
     var e = catalogArtistEntry(name);
     if(!e || !confirm("背景画像を外しますか？")) return;
     delete e.image;
+    delete e.imagePos;
     saveLocal();
     toast("背景画像を外しました");
     closeSheet(); render();
