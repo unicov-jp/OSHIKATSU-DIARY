@@ -769,6 +769,22 @@
   .ck-thumb .top{position:absolute;left:0;right:0;bottom:0;background:var(--accent);color:var(--on-accent);font-size:10px;font-weight:700;text-align:center;line-height:1.7;}
   .ck-thumb.dragging{z-index:5;opacity:.9;box-shadow:0 10px 22px -8px rgba(33,28,23,.55);transition:none;cursor:grabbing;}
   .ck-thumb.drop-to{outline:2px dashed var(--accent);outline-offset:2px;}
+  /* ユーザー管理 */
+  .btn.admin-entry{margin-top:22px;display:flex;align-items:center;justify-content:center;gap:8px;border-color:var(--accent);color:var(--accent);background:var(--card);font-weight:700;}
+  .btn.admin-entry svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.6;}
+  .plan-table{background:var(--card);border:1px solid var(--line);border-radius:6px;overflow:hidden;}
+  .plan-row{display:grid;grid-template-columns:1fr 64px 64px;align-items:center;gap:6px;padding:9px 12px;}
+  .plan-row + .plan-row{border-top:1px solid var(--line);}
+  .plan-row > span:not(.plan-f), .plan-row > button{justify-self:center;}
+  .plan-head{font-size:11px;font-weight:700;color:var(--ink-soft);padding:8px 12px;}
+  .plan-f b{display:block;font-size:13px;}
+  .plan-f small{display:block;font-size:10.5px;color:var(--ink-soft);margin-top:1px;}
+  .plan-switch{position:relative;width:44px;height:26px;border-radius:99px;border:1px solid var(--line-strong);background:var(--paper-alt);padding:0;cursor:pointer;}
+  .plan-switch i{position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#FFFFFF;box-shadow:0 1px 3px rgba(33,28,23,.3);transition:left .15s ease;}
+  .plan-switch.on{background:var(--accent);border-color:var(--accent);}
+  .plan-switch.on i{left:20px;}
+  .admin-email{font-size:13px;}
+  .admin-plan{flex:none;border:1px solid var(--line-strong);border-radius:8px;padding:6px 8px;background:var(--paper);font-family:inherit;font-size:13px;color:var(--text);}
   .ck-photos-hint{font-size:11px;color:var(--ink-soft);margin:6px 0 0;}
   .ck-thumb.add{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;border-style:dashed;color:var(--accent);font-size:11px;font-weight:700;font-family:inherit;}
   .ck-thumb.add svg{width:24px;height:24px;stroke:currentColor;fill:none;stroke-width:1.5;}
@@ -2116,9 +2132,11 @@ async function enterUserMode(user){
   cloud.tomb = meta.tomb || {};
   cloud.lastSyncedAt = meta.lastSyncedAt ? new Date(meta.lastSyncedAt) : null;
   cloud.status = "idle";
+  restoreAccess();
   loadLocal();
   state.ready = true;
   render();
+  loadAccess();
   await syncNow();
   if(!cloud.user || cloud.user.id!==user.id) return;
 
@@ -2136,6 +2154,8 @@ async function enterUserMode(user){
 }
 function leaveUserMode(){
   clearTimeout(cloud.timer);
+  access = {plan:null, features:{paid:{}, free:{}}, loaded:false};
+  adminUsers = null;
   DrivePhotos.forget();
   cloud.user = null;
   cloud.hashes = {};
@@ -2912,7 +2932,7 @@ var DrivePhotos = (function(){
     return await (await api("https://www.googleapis.com/drive/v3/files/"+encodeURIComponent(id)+"?alt=media")).json();
   }
   async function autoBackup(){
-    if(backingUp || !available() || !connected() || !cloud.user || !state.ready) return;
+    if(backingUp || !available() || !connected() || !cloud.user || !state.ready || !canUse("backup")) return;
     var last = 0;
     try{ last = Number(localStorage.getItem(AUTO_KEY+cloud.user.id)||0); }catch(e){}
     if(Date.now()-last < 24*3600*1000) return;
@@ -3106,33 +3126,34 @@ function googleStorageRowsHtml(){
     +   '<span class="account-row-value'+(on?'':' muted')+'">'+status+'</span>'
     +   (on ? '<button type="button" class="account-row-btn" data-action="gdrive-organize">整理</button>' : '<button type="button" class="account-row-btn" data-action="gdrive-connect"'+dis+'>'+(ever?'再接続':'接続')+'</button>')
     + '</div>'
-    + '<div class="account-row">'
+    + (canUse("calendarExport") ? '<div class="account-row">'
     +   '<span class="account-row-label">Googleカレンダー</span>'
     +   '<span class="account-row-value'+(calSet?'':' muted')+'">'+(calSet ? '設定済み' : '未設定')+'</span>'
     +   '<button type="button" class="account-row-btn" data-action="calendar-setting">'+(calSet ? '変更' : '接続')+'</button>'
-    + '</div>'
+    + '</div>' : '')
     + '<div class="account-row">'
     +   '<span class="account-row-label">週の始まり</span>'
     +   '<span class="account-row-value">'+WEEK_DAYS[normWeekStart(state.weekStart)]+'曜日<small class="account-row-sub">カレンダーの並び</small></span>'
     +   '<button type="button" class="account-row-btn" data-action="week-start-menu">変更</button>'
     +   weekStartMenuHtml()
     + '</div>'
-    + '<div class="account-row">'
+    + (!canUse("backup") ? '' : '<div class="account-row">'
     +   '<span class="account-row-label">バックアップ</span>'
     +   '<span class="account-row-value'+(last?'':' muted')+'">'+(last ? fmtDateTime(last).slice(5) : 'なし')+'<small class="account-row-sub">毎日自動</small></span>'
     +   '<span class="account-row-btns">'
     +     '<button type="button" class="account-row-btn" data-action="backup-drive-save"'+dis+'>保存</button>'
     +     '<button type="button" class="account-row-btn" data-action="backup-drive-restore"'+dis+'>戻す</button>'
     +   '</span>'
-    + '</div>';
+    + '</div>');
 }
 // カードの下：ファイルでの保存・復元と、削除された記録の復元
 function backupLinksHtml(){
-  return '<div class="gd-more">'
-    +   '<button type="button" class="gd-link" data-action="backup-export">ファイルに保存</button>'
-    +   '<label class="gd-link">ファイルから戻す<input type="file" id="backupImportInput" accept="application/json,.json" style="display:none;"></label>'
-    +   '<button type="button" class="gd-link" data-action="restore-deleted">削除された記録を探す</button>'
-    + '</div>';
+  var links = (canUse("backup")
+      ? '<button type="button" class="gd-link" data-action="backup-export">ファイルに保存</button>'
+      + '<label class="gd-link">ファイルから戻す<input type="file" id="backupImportInput" accept="application/json,.json" style="display:none;"></label>'
+      : '')
+    + (canUse("restore") ? '<button type="button" class="gd-link" data-action="restore-deleted">削除された記録を探す</button>' : '');
+  return links ? '<div class="gd-more">'+links+'</div>' : '';
 }
 
 /* マイページ「Googleドライブ」の「整理」：フォルダ分けと、使われていない重複写真の片付け */
@@ -3636,6 +3657,7 @@ function accountSectionHtml(){
     : (canUnlinkGoogle ? '<button type="button" class="account-row-btn" data-action="unlink-google">解除</button>' : '');
   return '<div class="section-label">アカウント</div>'
     + '<div class="account-list">'
+    +   (access.plan ? '<div class="account-row"><span class="account-row-label">プラン</span><span class="account-row-value">'+PLAN_LABEL[access.plan]+'</span></div>' : '')
     +   '<div class="account-row">'
     +     '<span class="account-row-label">Google認証</span>'
     +     '<span class="account-row-value'+(hasGoogle?'':' muted')+'">'+(hasGoogle?'連携済み':'未連携')+'</span>'
@@ -4448,7 +4470,9 @@ function renderHome(){
   parts.chart = chartHtml;
 
   // ギャラリー・遠征マップ・月別費用は、上のつまみで並べ替えた順に出す
+  var homeFeature = {gallery:"gallery", map:"tripMap", chart:"chart"};
   homeOrder().forEach(function(k){
+    if(!canUse(homeFeature[k])) return;
     html += '<div class="home-sec" data-home-sec="'+k+'">'
       + DRAG_GRIP_HTML
       + parts[k]
@@ -5280,6 +5304,11 @@ function applyOshiOrder(ids){
 function renderOshiPage(){
   var html = '<div class="page-head"><h1 class="mincho">マイページ</h1></div>';
   html += accountSectionHtml();
+  // ユーザー管理はマスターだけ（ログアウトの上）
+  if(isMaster()){
+    html += '<button type="button" class="btn block admin-entry" data-action="goto-admin">'
+      + '<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.6-3 2.8-4.8 5.5-4.8s4.9 1.8 5.5 4.8"/><path d="M16 5.5l1 1.8 2 .3-1.5 1.4.4 2-1.9-1-1.9 1 .4-2L13 7.6l2-.3z"/></svg>ユーザー管理</button>';
+  }
   html += logoutButtonHtml();
   html += '<p class="legal-links"><a href="privacy.html">プライバシーポリシー</a></p>';
   document.getElementById("main").innerHTML = html;
@@ -5354,6 +5383,161 @@ function renderTopChipMenu(){
 }
 
 /* ============ router ============ */
+/* ============ アカウントの種類（マスター・有料・無料）と機能のON/OFF ============
+   種類は Supabase の oshikatsu_profiles（本人は読むだけ。変更できるのはマスターだけ）。
+   種類ごとの機能のON/OFFは oshikatsu_plan_features（行が無い機能はON）。マスターは常に全部使える。
+   表が無い（SQL未実行）ときや読み込めないときは、全部の機能を使えるようにする。
+   ※ 機能を隠すのは画面の上だけ（記録そのものはこれまでどおり本人のもの）。 */
+var PLAN_LABEL = {master:"マスター", paid:"有料", free:"無料"};
+var PLAN_FEATURES = [
+  {id:"cheki",          label:"チェキ記録",               note:"チェキタブ"},
+  {id:"goods",          label:"物販記録",                 note:"物販タブ"},
+  {id:"stats",          label:"集計",                     note:"集計タブ"},
+  {id:"gallery",        label:"ホームのギャラリー",       note:""},
+  {id:"tripMap",        label:"遠征マップ",               note:"ホーム"},
+  {id:"chart",          label:"月別 推し活費用",          note:"ホーム"},
+  {id:"photos",         label:"写真の登録",               note:"LIVE・チェキ・物販"},
+  {id:"multiPhoto",     label:"写真を複数登録",           note:"1件に2枚以上"},
+  {id:"multiOshi",      label:"推しを複数登録",           note:"2人目以降"},
+  {id:"calendarExport", label:"Googleカレンダーに追加",   note:""},
+  {id:"backup",         label:"バックアップ",             note:"ドライブ・ファイル"},
+  {id:"restore",        label:"削除された記録を探す",     note:""}
+];
+var ACCESS_KEY = "oshikatsu_access_v1:";
+var access = {plan:null, features:{paid:{}, free:{}}, loaded:false};
+function accessKey(){ return ACCESS_KEY + (cloud.user ? cloud.user.id : ""); }
+function restoreAccess(){
+  var a = readStored(accessKey());
+  access = (a && a.features) ? {plan:a.plan||null, features:a.features, loaded:false} : {plan:null, features:{paid:{}, free:{}}, loaded:false};
+}
+function isMaster(){ return access.plan==="master"; }
+// その機能を使えるか（マスター・種類が分からないときは使える）
+function canUse(feature){
+  var plan = access.plan;
+  if(!plan || plan==="master") return true;
+  var f = access.features[plan] || {};
+  return f[feature]!==false;
+}
+function featureBlocked(){ toast("この機能は、今のプランでは使えません"); }
+async function loadAccess(){
+  if(!sb || !cloud.user) return;
+  var uid = cloud.user.id;
+  try{
+    var pr = await sb.from("oshikatsu_profiles").select("plan").eq("user_id", uid).limit(1);
+    if(pr.error) throw pr.error;
+    var fr = await sb.from("oshikatsu_plan_features").select("plan,feature,enabled");
+    if(fr.error) throw fr.error;
+    if(!cloud.user || cloud.user.id!==uid) return;
+    var feats = {paid:{}, free:{}};
+    (fr.data||[]).forEach(function(r){ if(feats[r.plan]) feats[r.plan][r.feature] = !!r.enabled; });
+    var before = JSON.stringify([access.plan, access.features]);
+    access = {plan:(pr.data && pr.data[0] && pr.data[0].plan) || "free", features:feats, loaded:true};
+    try{ localStorage.setItem(accessKey(), JSON.stringify({plan:access.plan, features:access.features})); }catch(e){}
+    if(JSON.stringify([access.plan, access.features])!==before) render();
+  }catch(e){
+    console.warn("plan load failed", e);   // 表がまだ無いときなど：全部使える
+  }
+}
+// 使えない機能のタブは隠し、そのタブを開いていたらホームへ
+function applyFeatureGates(){
+  var tabFeature = {cheki:"cheki", goods:"goods", stats:"stats"};
+  document.querySelectorAll("nav.tabs button").forEach(function(b){
+    var f = tabFeature[b.getAttribute("data-view")];
+    b.style.display = (f && !canUse(f)) ? "none" : "";
+  });
+  if(tabFeature[state.view] && !canUse(tabFeature[state.view])) state.view = "home";
+  if(state.view==="admin" && !isMaster()) state.view = "oshi";
+}
+
+/* ユーザー管理（マスターだけ）：種類ごとの機能のON/OFFと、ユーザーの種類の変更 */
+var adminUsers = null, adminLoading = false;
+function renderAdminPage(){
+  var html = '<div class="page-head"><h1 class="mincho">ユーザー管理</h1><p>アカウントの種類ごとに使える機能を決め、ユーザーの種類を変更します。マスターはすべての機能を使えます。</p></div>';
+  html += '<div class="section-label">機能の設定</div>'
+    + '<div class="plan-table">'
+    +   '<div class="plan-row plan-head"><span class="plan-f">機能</span><span>有料</span><span>無料</span></div>'
+    +   PLAN_FEATURES.map(function(f){
+          function sw(plan){
+            var on = (access.features[plan]||{})[f.id]!==false;
+            return '<button type="button" class="plan-switch'+(on?' on':'')+'" data-action="toggle-feature" data-plan="'+plan+'" data-feature="'+f.id+'" role="switch" aria-checked="'+(on?'true':'false')+'" aria-label="'+escapeHtml(PLAN_LABEL[plan]+"："+f.label)+'"><i></i></button>';
+          }
+          return '<div class="plan-row"><span class="plan-f"><b>'+escapeHtml(f.label)+'</b>'+(f.note?'<small>'+escapeHtml(f.note)+'</small>':'')+'</span>'+sw("paid")+sw("free")+'</div>';
+        }).join("")
+    + '</div>';
+  html += '<div class="section-label">ユーザー</div>';
+  if(!adminUsers){
+    html += '<p class="rs-note">ユーザーを読み込んでいます…</p>';
+    loadAdminUsers();
+  } else {
+    html += '<div class="account-list">' + adminUsers.map(function(u){
+      var me = cloud.user && u.user_id===cloud.user.id;
+      return '<div class="account-row"><span class="account-row-value admin-email">'+escapeHtml(u.email||u.user_id)+(me?'<small class="account-row-sub">あなた</small>':'')+'</span>'
+        + '<select class="admin-plan" data-user="'+escapeHtml(u.user_id)+'" aria-label="アカウントの種類">'
+        + ["master","paid","free"].map(function(p){ return '<option value="'+p+'"'+(u.plan===p?' selected':'')+'>'+PLAN_LABEL[p]+'</option>'; }).join("")
+        + '</select></div>';
+    }).join("") + '</div>';
+  }
+  html += '<button type="button" class="btn ghost block" data-action="goto-mypage" style="margin-top:18px;">マイページへ戻る</button>';
+  document.getElementById("main").innerHTML = html;
+  document.querySelectorAll(".admin-plan").forEach(function(sel){
+    sel.addEventListener("change", function(){ setUserPlan(sel.getAttribute("data-user"), sel.value, sel); });
+  });
+}
+async function loadAdminUsers(){
+  if(adminLoading || !sb) return;
+  adminLoading = true;
+  try{
+    var r = await sb.from("oshikatsu_profiles").select("user_id,email,plan,created_at").order("created_at", {ascending:true});
+    if(r.error) throw r.error;
+    adminUsers = r.data || [];
+  }catch(e){
+    console.warn("admin users load failed", e);
+    adminUsers = [];
+    toast("ユーザーを読み込めませんでした");
+  }finally{
+    adminLoading = false;
+  }
+  if(state.view==="admin") render();
+}
+async function setUserPlan(userId, plan, sel){
+  var u = (adminUsers||[]).find(function(x){ return x.user_id===userId; });
+  if(!u || u.plan===plan) return;
+  var me = cloud.user && userId===cloud.user.id;
+  if(me && plan!=="master"){
+    var masters = adminUsers.filter(function(x){ return x.plan==="master"; }).length;
+    if(masters<=1){ toast("マスターが1人もいなくなるため変更できません"); sel.value = u.plan; return; }
+    if(!confirm("自分をマスターから外すと、ユーザー管理を使えなくなります。変更しますか？")){ sel.value = u.plan; return; }
+  }
+  try{
+    var r = await sb.from("oshikatsu_profiles").update({plan:plan, updated_at:new Date().toISOString()}).eq("user_id", userId);
+    if(r.error) throw r.error;
+    u.plan = plan;
+    toast((u.email||"ユーザー")+" を「"+PLAN_LABEL[plan]+"」にしました");
+    if(me){ await loadAccess(); render(); }
+  }catch(e){
+    console.warn("plan update failed", e);
+    sel.value = u.plan;
+    toast("変更できませんでした");
+  }
+}
+async function toggleFeature(plan, feature){
+  var cur = (access.features[plan]||{})[feature]!==false;
+  var next = !cur;
+  access.features[plan] = access.features[plan] || {};
+  access.features[plan][feature] = next;
+  render();
+  try{
+    var r = await sb.from("oshikatsu_plan_features").upsert({plan:plan, feature:feature, enabled:next, updated_at:new Date().toISOString()}, {onConflict:"plan,feature"});
+    if(r.error) throw r.error;
+    try{ localStorage.setItem(accessKey(), JSON.stringify({plan:access.plan, features:access.features})); }catch(e){}
+  }catch(e){
+    console.warn("feature update failed", e);
+    access.features[plan][feature] = cur;
+    render();
+    toast("変更できませんでした");
+  }
+}
+
 function render(){
   var app = document.getElementById("app");
   app.classList.remove("booting");
@@ -5383,11 +5567,13 @@ function render(){
   renderTopChipMenu();
   refreshHeaderLogo();
 
+  applyFeatureGates();
   document.querySelectorAll("nav.tabs button").forEach(function(b){
-    b.classList.toggle("active", b.getAttribute("data-view")===state.view);
+    b.classList.toggle("active", b.getAttribute("data-view")===state.view || (state.view==="admin" && b.getAttribute("data-view")==="oshi"));
   });
 
   if(state.view==="home") renderHome();
+  else if(state.view==="admin") renderAdminPage();
   else if(state.view==="oshi") renderOshiPage();
   else if(state.view==="oshis") renderOshisPage();
   else if(state.view==="stats") renderStatsPage();
@@ -5637,7 +5823,8 @@ function oshiFormHtml(oshi){
 /* 写真欄（LIVE・チェキ・物販 共通）：複数枚を並べ、＋で追加（撮る・選ぶ）、写真を押すと拡大・編集・削除。
    写真はドラッグで並べ替えられ、1枚目が一覧などに表示される。「写真を編集する」（チェキの枠合わせ）はチェキだけ */
 function recordPhotosFieldHtml(type, labelText){
-  return '<div class="field"><label>'+labelText+'</label>'
+  // 写真の登録を使えないプランでは欄を隠す（登録済みの写真はそのまま残る）
+  return '<div class="field"'+(canUse("photos") ? '' : ' style="display:none;"')+'><label>'+labelText+'</label>'
     + '<div class="ck-photos" id="ckPhotos"></div>'
     + '<p class="ck-photos-hint">写真を押したまま動かすと並べ替えられます。1枚目が一覧に表示されます。</p>'
     + '<div class="photo-menu" id="ckAddMenu" style="display:none;">'
@@ -6344,8 +6531,8 @@ function bindRecordForm(type,existingRec){
       elCk.innerHTML = ckPhotos.map(function(src, i){
         return '<button type="button" class="ck-thumb'+(i===0?' first':'')+'" data-ck-i="'+i+'" aria-label="'+(i+1)+'枚目の写真"><img '+DrivePhotos.imgAttrs(src)+' alt="" draggable="false"><span class="n">'+(i+1)+'</span>'+(i===0 && ckPhotos.length>1 ? '<span class="top">表示</span>' : '')+'</button>';
       }).join("")
-        + '<button type="button" class="ck-thumb add" id="ckAddTile" aria-label="写真を追加">'
-        +   '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.4"/><path d="M8 6l1-2h6l1 2"/></svg><span>追加</span></button>';
+        + ((ckPhotos.length>=1 && !canUse("multiPhoto")) ? '' : '<button type="button" class="ck-thumb add" id="ckAddTile" aria-label="写真を追加">'
+        +   '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.4"/><path d="M8 6l1-2h6l1 2"/></svg><span>追加</span></button>');
       // 写真の数より枚数が少なければ合わせる
       if(elCount && Number(elCount.value||0) < ckPhotos.length) elCount.value = ckPhotos.length;
       if(elHint) elHint.style.display = ckPhotos.length>1 ? "block" : "none";
@@ -6428,6 +6615,11 @@ function bindRecordForm(type,existingRec){
     async function addCkFiles(input){
       var files = Array.prototype.slice.call(input.files || []);
       input.value = "";
+      // 写真を複数登録できないプランでは1枚まで
+      if(!canUse("multiPhoto")){
+        var room = Math.max(0, 1 - ckPhotos.length);
+        if(files.length > room){ files = files.slice(0, room); featureBlocked(); }
+      }
       for(var i=0;i<files.length;i++){
         var f = files[i];
         if(f.type.indexOf("image/")!==0){ toast("画像ファイルを選択してください"); continue; }
@@ -6602,6 +6794,7 @@ async function applyVenueToSameName(oldRec, rec){
 }
 
 function openOshiSheet(oshi){
+  if(!oshi && state.oshis.length>=1 && !canUse("multiOshi")){ featureBlocked(); return; }
   openSheet(oshiFormHtml(oshi));
   bindOshiForm(oshi);
 }
@@ -7330,6 +7523,9 @@ function onAppClick(e){
   var action = el.getAttribute("data-action");
 
   if(action==="add-oshi"){ openOshiSheet(null); return; }
+  if(action==="goto-admin"){ if(isMaster()){ adminUsers = null; state.view = "admin"; render(); window.scrollTo(0,0); } return; }
+  if(action==="goto-mypage"){ state.view = "oshi"; render(); window.scrollTo(0,0); return; }
+  if(action==="toggle-feature"){ if(isMaster()) toggleFeature(el.getAttribute("data-plan"), el.getAttribute("data-feature")); return; }
   if(action==="change-password"){ openNewPasswordSheet(userHasPassword() ? "change" : "set"); return; }
   if(action==="link-google"){ linkGoogle(); return; }
   if(action==="unlink-google"){ unlinkGoogle(); return; }
@@ -7461,7 +7657,8 @@ function onAppClick(e){
       var host = u; try{ host = new URL(u).hostname.replace(/^www\./, ""); }catch(err){}
       items.push('<a class="photo-menu-item" href="'+escapeHtml(u)+'" target="_blank" rel="noopener noreferrer">配信を見る'+(su.length>1 ? '（'+(i+1)+'）' : '')+'<span class="host">'+escapeHtml(host)+'</span></a>');
     });
-    items.push('<a class="photo-menu-item" href="'+escapeHtml(googleCalendarUrl(lr))+'" target="_blank" rel="noopener noreferrer">Googleカレンダーに追加</a>');
+    if(canUse("calendarExport")) items.push('<a class="photo-menu-item" href="'+escapeHtml(googleCalendarUrl(lr))+'" target="_blank" rel="noopener noreferrer">Googleカレンダーに追加</a>');
+    if(!items.length){ toast("チケット・配信のURLは登録されていません"); return; }
     lmenu.innerHTML = items.join("");
     lmenu.setAttribute("data-for", "live:"+el.getAttribute("data-id"));
     openPopoverNear(el, lmenu);
