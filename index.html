@@ -815,8 +815,24 @@
   .setlist-del{flex:none;width:28px;height:28px;border-radius:50%;border:none;background:transparent;color:var(--ink-soft);font-size:16px;cursor:pointer;}
   .setlist-meta{font-size:13px;font-weight:700;color:var(--heading);margin:0 0 10px;}
   .setlist-meta span{margin-left:8px;font-weight:400;color:var(--ink-soft);font-size:12px;}
-  .setlist-view{margin:0 0 16px;padding:0 0 0 1.8em;font-size:14px;line-height:2;}
-  .setlist-view li::marker{color:var(--accent);font-weight:700;}
+  .setlist-blocks{display:flex;flex-direction:column;gap:10px;margin-bottom:8px;}
+  .setlist-block{border:1px solid var(--line);border-radius:10px;padding:8px;background:rgba(255,255,255,.35);}
+  .setlist-block-head{display:flex;align-items:center;gap:4px;margin-bottom:6px;}
+  .setlist-artist{flex:1;min-width:0;border:1px solid var(--line-strong);border-radius:8px;padding:8px 10px;font-size:14px;font-weight:700;background:var(--paper);font-family:inherit;color:var(--heading);}
+  .setlist-mini{flex:none;width:28px;height:28px;border-radius:6px;border:1px solid var(--line);background:var(--paper);color:var(--ink-soft);font-size:10px;cursor:pointer;padding:0;}
+  .setlist-mini:disabled{opacity:.35;cursor:default;}
+  .setlist-row.mc{background:rgba(33,28,23,.04);border-style:dashed;}
+  .setlist-row.mc .setlist-no{color:var(--ink-soft);font-size:10.5px;}
+  .setlist-add-row{display:flex;gap:6px;}
+  .setlist-add{flex:1;border:1px dashed var(--line-strong);background:transparent;border-radius:8px;padding:7px;font-size:12px;font-weight:700;color:var(--accent);cursor:pointer;font-family:inherit;}
+  .setlist-add[data-sl-add="mc"]{color:var(--ink-soft);}
+  .setlist-view-block + .setlist-view-block{margin-top:12px;}
+  .setlist-view-artist{font-size:14px;margin:0 0 4px;color:var(--heading);border-left:3px solid var(--accent);padding-left:8px;}
+  .setlist-view{list-style:none;margin:0 0 16px;padding:0;font-size:14px;line-height:2;}
+  .setlist-view li{display:flex;gap:10px;}
+  .setlist-view .n{flex:none;min-width:22px;text-align:right;color:var(--accent);font-weight:700;}
+  .setlist-view li.mc{color:var(--ink-soft);font-size:12.5px;}
+  .setlist-view li.mc .n{color:var(--ink-soft);font-size:11px;}
   .setlist-actions{display:flex;gap:8px;}
   .setlist-actions .btn{flex:1;}
   /* ユーザー管理 */
@@ -6079,71 +6095,196 @@ function recordPhotosFieldHtml(type, labelText){
     + '</div>';
 }
 
-/* セットリスト（LIVE）：曲名を1行ずつ。左のつまみを押したまま上下に動かすと並べ替え、×で削除。
-   複数行の文字を貼り付けると、1行ずつの曲に分ける。記録には setlist（曲名の配列）として持つ */
+/* セットリスト（LIVE）：対バンを考えて、アーティストごとに分ける。
+   記録には setlists = [{artist:"アーティスト名", items:[{t:"song", title:"曲名"} | {t:"mc", note:"メモ"}]}] として持つ。
+   以前の setlist（曲名の配列）は、そのLIVEのグループを1組目として読み替える（recSetlists）。
+   アーティスト名・曲名は、自分が登録した値（推しのグループ・ほかのLIVEのセットリスト）を入力候補に出す（同じアカウントのどの端末でも同じ） */
+function recSetlists(r){
+  if(r && Array.isArray(r.setlists)) return r.setlists.filter(function(b){ return b && Array.isArray(b.items); });
+  if(r && Array.isArray(r.setlist) && r.setlist.length){
+    var names = liveArtistNames(r);
+    return [{artist:names[0] || "", items:r.setlist.map(function(t){ return {t:"song", title:t}; })}];
+  }
+  return [];
+}
+function setlistSongCount(r){
+  return recSetlists(r).reduce(function(n, b){ return n + b.items.filter(function(it){ return it.t!=="mc"; }).length; }, 0);
+}
+// そのLIVEの出演グループ名（グループのない推しは人物名）
+function liveArtistNames(r){
+  var seen = {}, out = [];
+  recOshiEntries(r).forEach(function(e){
+    var o = getOshi(e.oshiId);
+    if(!o) return;
+    var gs = oshiGroupsList(o);
+    var g = gs.find(function(x){ return x.id===e.groupId; }) || gs[0];
+    var name = (g && g.name) || o.name;
+    if(name && !seen[name]){ seen[name] = true; out.push(name); }
+  });
+  return out;
+}
+// 入力候補：アーティスト名（推しのグループ・人物名と、登録済みのセットリスト）
+function setlistArtistOptions(){
+  var seen = {}, out = [];
+  function add(v){ v = (v||"").trim(); if(v && !seen[v]){ seen[v] = true; out.push(v); } }
+  state.oshis.forEach(function(o){ oshiGroupsList(o).forEach(function(g){ add(g.name); }); if(!oshiGroupsList(o).length) add(o.name); });
+  state.live.forEach(function(r){ recSetlists(r).forEach(function(b){ add(b.artist); }); });
+  return out.sort(function(a,b){ return a.localeCompare(b, "ja"); });
+}
+// 入力候補：曲名（そのアーティストで登録した曲。アーティストが空ならすべての曲）
+function setlistSongOptions(artist){
+  artist = (artist||"").trim().toLowerCase();
+  var seen = {}, out = [];
+  state.live.forEach(function(r){
+    recSetlists(r).forEach(function(b){
+      if(artist && (b.artist||"").trim().toLowerCase()!==artist) return;
+      b.items.forEach(function(it){ var t = (it.title||"").trim(); if(it.t!=="mc" && t && !seen[t]){ seen[t] = true; out.push(t); } });
+    });
+  });
+  return out.sort(function(a,b){ return a.localeCompare(b, "ja"); });
+}
 function setlistFieldHtml(){
   return '<div class="field"><label>セットリスト（任意）</label>'
-    + '<ol class="setlist-edit" id="setlistEdit"></ol>'
-    + '<button type="button" class="add-rec-oshi-btn" id="setlistAddBtn">＋ 曲を追加</button>'
-    + '<p class="ck-photos-hint">曲名をまとめて貼り付けると、1行ずつ分けて入ります。</p>'
+    + '<div class="setlist-blocks" id="setlistEdit"></div>'
+    + '<button type="button" class="add-rec-oshi-btn" id="setlistAddArtistBtn">＋ アーティストを追加</button>'
+    + '<p class="ck-photos-hint">対バンのときは、出演したアーティストごとに分けて入れられます。曲名をまとめて貼り付けると1行ずつ入り、「MC」だけの行はMCになります。</p>'
     + '</div>';
 }
-function bindSetlistField(form, rec){
-  var list = form.querySelector("#setlistEdit");
-  if(!list) return null;
-  var songs = (rec && Array.isArray(rec.setlist)) ? rec.setlist.slice() : [];
+function bindSetlistField(form, rec, defaultArtists){
+  var box = form.querySelector("#setlistEdit");
+  if(!box) return null;
+  var blocks = recSetlists(rec).map(function(b){ return {artist:b.artist||"", items:b.items.map(function(it){ return {t:it.t==="mc"?"mc":"song", title:it.title||"", note:it.note||""}; })}; });
+  var artistList = setlistArtistOptions();
+  // 画面の入力内容を blocks に読み戻す
   function readInputs(){
-    songs = Array.prototype.map.call(list.querySelectorAll("input"), function(i){ return i.value; });
+    Array.prototype.forEach.call(box.querySelectorAll(".setlist-block"), function(bl, bi){
+      if(!blocks[bi]) return;
+      blocks[bi].artist = bl.querySelector(".setlist-artist").value;
+      Array.prototype.forEach.call(bl.querySelectorAll(".setlist-row"), function(row, ii){
+        var it = blocks[bi].items[ii], inp = row.querySelector("input");
+        if(!it || !inp) return;
+        if(it.t==="mc") it.note = inp.value; else it.title = inp.value;
+      });
+    });
   }
-  function draw(focusIdx){
-    list.innerHTML = songs.map(function(t, i){
-      return '<li class="setlist-row" data-i="'+i+'">'
-        + '<span class="setlist-grip" aria-label="並べ替え" title="上下にドラッグして並べ替え"><svg viewBox="0 0 24 24"><path d="M5 8h14M5 12h14M5 16h14"/></svg></span>'
-        + '<span class="setlist-no">'+(i+1)+'</span>'
-        + '<input type="text" value="'+escapeHtml(t)+'" placeholder="曲名" aria-label="'+(i+1)+'曲目">'
-        + '<button type="button" class="setlist-del" data-i="'+i+'" aria-label="この曲を削除">×</button>'
-        + '</li>';
-    }).join("");
-    if(focusIdx!=null){ var inp = list.querySelectorAll("input")[focusIdx]; if(inp) inp.focus(); }
+  function draw(focus){
+    box.innerHTML = '<datalist id="setlistArtistOptions">'+artistList.map(function(v){ return '<option value="'+escapeHtml(v)+'"></option>'; }).join("")+'</datalist>'
+      + blocks.map(function(b, bi){
+          var no = 0;
+          var songs = setlistSongOptions(b.artist);
+          return '<div class="setlist-block" data-b="'+bi+'">'
+            + '<div class="setlist-block-head">'
+            +   '<input type="text" class="setlist-artist" list="setlistArtistOptions" value="'+escapeHtml(b.artist)+'" placeholder="アーティスト名" aria-label="アーティスト名" autocomplete="off">'
+            +   '<button type="button" class="setlist-mini" data-sl-move="'+bi+'" data-dir="-1" aria-label="上へ"'+(bi===0?' disabled':'')+'>▲</button>'
+            +   '<button type="button" class="setlist-mini" data-sl-move="'+bi+'" data-dir="1" aria-label="下へ"'+(bi===blocks.length-1?' disabled':'')+'>▼</button>'
+            +   '<button type="button" class="setlist-del" data-sl-del-block="'+bi+'" aria-label="このアーティストを削除">×</button>'
+            + '</div>'
+            + '<datalist id="setlistSongs'+bi+'">'+songs.map(function(v){ return '<option value="'+escapeHtml(v)+'"></option>'; }).join("")+'</datalist>'
+            + '<ol class="setlist-edit">'
+            + b.items.map(function(it, ii){
+                var isMc = it.t==="mc";
+                if(!isMc) no++;
+                return '<li class="setlist-row'+(isMc?' mc':'')+'" data-i="'+ii+'">'
+                  + '<span class="setlist-grip" aria-label="並べ替え" title="上下にドラッグして並べ替え"><svg viewBox="0 0 24 24"><path d="M5 8h14M5 12h14M5 16h14"/></svg></span>'
+                  + '<span class="setlist-no">'+(isMc ? 'MC' : no)+'</span>'
+                  + (isMc
+                      ? '<input type="text" value="'+escapeHtml(it.note)+'" placeholder="MC（メモは任意）" aria-label="MCのメモ">'
+                      : '<input type="text" value="'+escapeHtml(it.title)+'" placeholder="曲名" list="setlistSongs'+bi+'" autocomplete="off" aria-label="'+no+'曲目">')
+                  + '<button type="button" class="setlist-del" data-sl-del="'+ii+'" aria-label="削除">×</button>'
+                  + '</li>';
+              }).join("")
+            + '</ol>'
+            + '<div class="setlist-add-row"><button type="button" class="setlist-add" data-sl-add="song">＋ 曲</button><button type="button" class="setlist-add" data-sl-add="mc">＋ MC</button></div>'
+            + '</div>';
+        }).join("");
+    if(focus){
+      var bl = box.querySelectorAll(".setlist-block")[focus.b];
+      var el = bl ? (focus.i==null ? bl.querySelector(".setlist-artist") : bl.querySelectorAll(".setlist-row input")[focus.i]) : null;
+      if(el) el.focus();
+    }
+  }
+  function addBlock(){
+    readInputs();
+    var used = {};
+    blocks.forEach(function(b){ used[(b.artist||"").trim()] = true; });
+    var name = (defaultArtists() || []).filter(function(n){ return !used[n]; })[0] || "";
+    blocks.push({artist:name, items:[{t:"song", title:"", note:""}]});
+    draw({b:blocks.length-1, i:name ? 0 : null});
   }
   draw();
-  form.querySelector("#setlistAddBtn").addEventListener("click", function(){
-    readInputs(); songs.push(""); draw(songs.length-1);
+  form.querySelector("#setlistAddArtistBtn").addEventListener("click", addBlock);
+  box.addEventListener("click", function(e){
+    var t = e.target;
+    var bl = t.closest(".setlist-block");
+    if(!bl) return;
+    var bi = Number(bl.getAttribute("data-b"));
+    if(t.closest("[data-sl-add]")){
+      readInputs();
+      var kind = t.closest("[data-sl-add]").getAttribute("data-sl-add");
+      blocks[bi].items.push({t:kind, title:"", note:""});
+      draw({b:bi, i:blocks[bi].items.length-1});
+    } else if(t.closest("[data-sl-del]")){
+      readInputs();
+      blocks[bi].items.splice(Number(t.closest("[data-sl-del]").getAttribute("data-sl-del")), 1);
+      draw();
+    } else if(t.closest("[data-sl-del-block]")){
+      readInputs();
+      var b = blocks[bi];
+      var filled = b.items.some(function(it){ return (it.title||it.note||"").trim(); });
+      if(filled && !confirm("「"+(b.artist||"このアーティスト")+"」のセットリストを削除しますか？")) return;
+      blocks.splice(bi, 1);
+      draw();
+    } else if(t.closest("[data-sl-move]")){
+      readInputs();
+      var to = bi + Number(t.closest("[data-sl-move]").getAttribute("data-dir"));
+      if(to<0 || to>=blocks.length) return;
+      var mv = blocks.splice(bi, 1)[0]; blocks.splice(to, 0, mv);
+      draw();
+    }
   });
-  list.addEventListener("click", function(e){
-    var d = e.target.closest(".setlist-del");
-    if(!d) return;
-    readInputs(); songs.splice(Number(d.getAttribute("data-i")), 1); draw();
+  // アーティスト名を変えたら、曲名の候補をそのアーティストの曲にする
+  box.addEventListener("change", function(e){
+    if(!e.target.classList.contains("setlist-artist")) return;
+    var bl = e.target.closest(".setlist-block"), bi = Number(bl.getAttribute("data-b"));
+    var dl = box.querySelector("#setlistSongs"+bi);
+    if(dl) dl.innerHTML = setlistSongOptions(e.target.value).map(function(v){ return '<option value="'+escapeHtml(v)+'"></option>'; }).join("");
   });
-  // 複数行を貼り付けたら、1行ずつの曲に分ける
-  list.addEventListener("paste", function(e){
-    var inp = e.target.closest("input");
+  // 複数行を貼り付けたら、1行ずつに分ける（「MC」だけの行はMC）
+  box.addEventListener("paste", function(e){
+    var inp = e.target.closest(".setlist-row input");
+    if(!inp) return;
     var text = (e.clipboardData || window.clipboardData).getData("text") || "";
-    var lines = text.split(/\r?\n/).map(function(l){ return l.replace(/^\s*(?:\d+[.)．、:：]?|M\d+[.:：]?|EN\d*[.:：]?)\s*/i, "").trim(); }).filter(Boolean);
-    if(!inp || lines.length<2) return;
+    var lines = text.split(/\r?\n/).map(function(l){ return l.trim(); }).filter(Boolean);
+    if(lines.length<2) return;
     e.preventDefault();
     readInputs();
+    var bl = inp.closest(".setlist-block"), bi = Number(bl.getAttribute("data-b"));
     var idx = Number(inp.closest(".setlist-row").getAttribute("data-i"));
-    var head = songs[idx] ? [songs[idx]] : [];
-    songs.splice.apply(songs, [idx, 1].concat(head.concat(lines)));
-    draw(idx + head.length + lines.length - 1);
+    var items = lines.map(function(l){
+      if(/^MC\s*[\d:：.．]*\s*$/i.test(l) || /^MC[\s:：]/i.test(l)) return {t:"mc", title:"", note:l.replace(/^MC\s*[\d:：.．]*\s*/i, "")};
+      return {t:"song", title:l.replace(/^\s*(?:\d+[.)．、:：]?|M\d+[.:：]?|EN\d*[.:：]?)\s*/i, "").trim(), note:""};
+    });
+    var cur = blocks[bi].items[idx];
+    var keep = (cur && (cur.title||cur.note||"").trim()) ? [cur] : [];
+    blocks[bi].items.splice.apply(blocks[bi].items, [idx, 1].concat(keep.concat(items)));
+    draw({b:bi, i:idx + keep.length + items.length - 1});
   });
-  // つまみを押したまま上下に動かして並べ替え
-  list.addEventListener("pointerdown", function(e){
+  // つまみを押したまま上下に動かして、同じアーティストの中で並べ替え
+  box.addEventListener("pointerdown", function(e){
     var grip = e.target.closest(".setlist-grip");
     if(!grip || (e.button!==undefined && e.button!==0)) return;
     e.preventDefault();
     readInputs();
+    var list = grip.closest(".setlist-edit"), bi = Number(grip.closest(".setlist-block").getAttribute("data-b"));
     var row = grip.closest(".setlist-row"), from = Number(row.getAttribute("data-i")), to = from, startY = e.clientY;
     try{ grip.setPointerCapture(e.pointerId); }catch(err){}
     row.classList.add("dragging");
     function onMove(ev){
       row.style.transform = "translateY("+(ev.clientY-startY)+"px)";
-      var rows = Array.prototype.slice.call(list.querySelectorAll(".setlist-row"));
       to = from;
-      rows.forEach(function(r, k){
+      Array.prototype.forEach.call(list.querySelectorAll(".setlist-row"), function(r, k){
         if(r===row) return;
-        var b = r.getBoundingClientRect(), mid = b.top + b.height/2;
+        var bb = r.getBoundingClientRect(), mid = bb.top + bb.height/2;
         if(k<from && ev.clientY < mid) to = Math.min(to, k);
         if(k>from && ev.clientY > mid) to = Math.max(to, k);
       });
@@ -6154,39 +6295,66 @@ function bindSetlistField(form, rec){
       grip.removeEventListener("pointercancel", onUp);
       row.classList.remove("dragging");
       row.style.transform = "";
-      if(to!==from){ var v = songs.splice(from, 1)[0]; songs.splice(to, 0, v); }
+      var items = blocks[bi].items;
+      if(to!==from){ var v = items.splice(from, 1)[0]; items.splice(to, 0, v); }
       draw();
     }
     grip.addEventListener("pointermove", onMove);
     grip.addEventListener("pointerup", onUp);
     grip.addEventListener("pointercancel", onUp);
   });
-  return {values:function(){ readInputs(); return songs.map(function(t){ return t.trim(); }).filter(Boolean); }};
+  return {
+    values:function(){
+      readInputs();
+      return blocks.map(function(b){
+        return {artist:(b.artist||"").trim(), items:b.items.map(function(it){
+          return it.t==="mc" ? {t:"mc", note:(it.note||"").trim()} : {t:"song", title:(it.title||"").trim()};
+        }).filter(function(it){ return it.t==="mc" || it.title; })};
+      }).filter(function(b){ return b.items.length; });
+    },
+    ensureStarted:function(){ if(!blocks.length) addBlock(); }
+  };
 }
 // セットリストを見る（LIVEの「…」メニューから）
 function openSetlistSheet(r){
-  var songs = Array.isArray(r.setlist) ? r.setlist : [];
+  var sls = recSetlists(r);
+  var html = sls.map(function(b){
+    var no = 0;
+    return '<div class="setlist-view-block">'
+      + (b.artist ? '<h3 class="setlist-view-artist">'+escapeHtml(b.artist)+'</h3>' : '')
+      + '<ul class="setlist-view">'+b.items.map(function(it){
+          if(it.t==="mc") return '<li class="mc"><span class="n">MC</span>'+escapeHtml(it.note||"")+'</li>';
+          no++;
+          return '<li><span class="n">'+no+'</span>'+escapeHtml(it.title)+'</li>';
+        }).join("")+'</ul></div>';
+  }).join("");
   openSheet('<h2 class="mincho">セットリスト</h2>'
     + '<p class="setlist-meta">'+escapeHtml(r.title||"")+(r.date ? '<span>'+escapeHtml(r.date.replace(/-/g,"."))+'</span>' : '')+'</p>'
-    + '<ol class="setlist-view">'+songs.map(function(t){ return '<li>'+escapeHtml(t)+'</li>'; }).join("")+'</ol>'
+    + html
     + '<div class="setlist-actions"><button type="button" class="btn ghost" id="setlistCopyBtn">コピー</button>'
     + '<button type="button" class="btn primary" id="setlistEditBtn">編集する</button></div>');
   document.getElementById("setlistCopyBtn").addEventListener("click", function(){
-    var text = (r.title||"")+"\n"+songs.map(function(t, i){ return (i+1)+". "+t; }).join("\n");
+    var text = (r.title||"") + "\n" + sls.map(function(b){
+      var no = 0;
+      return (b.artist ? "【"+b.artist+"】\n" : "") + b.items.map(function(it){
+        if(it.t==="mc") return "MC" + (it.note ? " "+it.note : "");
+        no++; return no+". "+it.title;
+      }).join("\n");
+    }).join("\n\n");
     (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(function(){ toast("セットリストをコピーしました"); }, function(){ toast("コピーできませんでした"); });
   });
   document.getElementById("setlistEditBtn").addEventListener("click", function(){ closeSheet(); openSetlistEditor(r); });
 }
-// LIVEの編集画面を開き、セットリストの欄までスクロールする（曲がなければ1行目を用意して入力できる状態にする）
+// LIVEの編集画面を開き、セットリストの欄までスクロールする（未登録ならアーティストの枠と1曲目を用意する）
 function openSetlistEditor(r){
   openRecordSheet("live", r);
   setTimeout(function(){
-    var list = document.getElementById("setlistEdit");
-    if(!list) return;
-    if(!list.querySelector("input")){ var add = document.getElementById("setlistAddBtn"); if(add) add.click(); }
-    var field = list.closest(".field");
+    if(window.__setlistCtl) window.__setlistCtl.ensureStarted();
+    var box = document.getElementById("setlistEdit");
+    if(!box) return;
+    var field = box.closest(".field");
     if(field) field.scrollIntoView({block:"center", behavior:"smooth"});
-    var inp = list.querySelector("input");
+    var inp = box.querySelector(".setlist-row input") || box.querySelector(".setlist-artist");
     if(inp) setTimeout(function(){ inp.focus(); }, 350);
   }, 80);
 }
@@ -7019,14 +7187,21 @@ function bindRecordForm(type,existingRec){
     l.addEventListener("click", function(e){ DrivePhotos.requireConnection(e); }, true);
   });
 
-  var setlistCtl = type==="live" ? bindSetlistField(form, existingRec) : null;
+  // セットリストの「＋ アーティストを追加」では、このLIVEの出演グループから順に名前を入れる
+  var setlistCtl = type==="live" ? bindSetlistField(form, existingRec, function(){
+    return liveArtistNames({oshiId:oshiRows[0] && oshiRows[0].oshiId, groupId:oshiRows[0] && oshiRows[0].groupId, extraOshis:oshiRows.slice(1)});
+  }) : null;
+  window.__setlistCtl = setlistCtl;
   form.addEventListener("submit", async function(e){
     e.preventDefault();
     var fd = new FormData(form);
     var rec = { id: existingRec ? existingRec.id : uuid() };
     fd.forEach(function(v,k){ rec[k]=v; });
     // セットリスト（欄を使えないプランでは、登録済みのものをそのまま残す）
-    if(type==="live") rec.setlist = setlistCtl ? setlistCtl.values() : ((existingRec && existingRec.setlist) || []);
+    if(type==="live"){
+      rec.setlists = setlistCtl ? setlistCtl.values() : recSetlists(existingRec||{});
+      delete rec.setlist;   // 以前の形（曲名の配列）は setlists に移す
+    }
     // チェキの作成元（LIVE・物販のチェキボタンで作ったもの）は編集しても残す
     if(type==="cheki" && existingRec && existingRec.source) rec.source = existingRec.source;
     if(rec.ticketUrl!==undefined){
@@ -8036,8 +8211,8 @@ function onAppClick(e){
     });
     // セットリストはいつも出す（未登録なら「セットリストを登録」で編集画面のセットリストの欄を開く）
     if(canUse("setlist")){
-      var hasSl = Array.isArray(lr.setlist) && lr.setlist.length;
-      items.push('<button type="button" class="photo-menu-item" data-action="view-setlist" data-id="'+lr.id+'">'+(hasSl ? 'セットリスト（'+lr.setlist.length+'曲）' : 'セットリストを登録')+'</button>');
+      var slN = setlistSongCount(lr), slA = recSetlists(lr).length;
+      items.push('<button type="button" class="photo-menu-item" data-action="view-setlist" data-id="'+lr.id+'">'+(slA ? 'セットリスト（'+(slA>1 ? slA+'組・' : '')+slN+'曲）' : 'セットリストを登録')+'</button>');
     }
     if(canUse("calendarExport")) items.push('<a class="photo-menu-item" href="'+escapeHtml(googleCalendarUrl(lr))+'" target="_blank" rel="noopener noreferrer">Googleカレンダーに追加</a>');
     if(!items.length){ toast("チケット・配信のURLは登録されていません"); return; }
@@ -8050,7 +8225,7 @@ function onAppClick(e){
     document.getElementById("streamMenu").style.display = "none";
     var slr = state.live.find(function(r){ return r.id===el.getAttribute("data-id"); });
     if(!slr) return;
-    if(Array.isArray(slr.setlist) && slr.setlist.length) openSetlistSheet(slr);
+    if(recSetlists(slr).length) openSetlistSheet(slr);
     else openSetlistEditor(slr);
     return;
   }
