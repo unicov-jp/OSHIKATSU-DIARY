@@ -1295,14 +1295,6 @@
   /* 上限に達したとき */
   .trip-map.off{display:flex;align-items:center;justify-content:center;}
   .trip-map-off{padding:0 24px;text-align:center;font-size:12px;line-height:1.8;color:var(--ink-soft);}
-  /* 広げる（全画面） */
-  .trip-map-card.expanded{
-    position:fixed;inset:0;z-index:45;margin:0;border-radius:0;border:none;display:flex;flex-direction:column;
-    padding:calc(12px + var(--safe-t)) 12px calc(12px + var(--safe-b));
-  }
-  .trip-map-card.expanded .trip-map-frame{flex:1;display:flex;min-height:0;}
-  .trip-map-card.expanded .trip-map{flex:1;height:auto;}
-  body.trip-map-open{overflow:hidden;}
   .time-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;}
   .time-row .time-cap{display:block;font-size:10.5px;color:var(--ink-soft);margin-bottom:3px;}
   .field .time-row input[type=time]{padding-left:8px;padding-right:4px;min-width:0;}
@@ -8760,7 +8752,7 @@ var TripMap = (function(){
   var GEO_KEY = "oshikatsu_geo_v1";
   var RADII = [0, 3, 10, 30];   // km（0 = すべて）
   var map = null, layer = null, meLayer = null, queue = [], busy = false, currentOshiId = null, markers = {}, popupTimer = null;
-  var userPos = null, radiusKm = 0, locating = null, viewTouched = false, expanded = false, lastShown = [], resizeObs = null;
+  var userPos = null, radiusKm = 0, locating = null, viewTouched = false, lastShown = [], resizeObs = null;
   function geoCache(){ return readStored(GEO_KEY) || {}; }
   function saveGeo(c){ try{ localStorage.setItem(GEO_KEY, JSON.stringify(c)); }catch(e){} }
   function venueKey(name){ return (name||"").trim().toLowerCase(); }
@@ -8926,40 +8918,18 @@ var TripMap = (function(){
       else map.setView([userPos.lat, userPos.lng], Math.max(map.getZoom(), 13), {animate:false});
     }, function(){});
   }
-  function setExpanded(on){
-    expanded = !!on;
-    var card = document.querySelector(".trip-map-card");
-    if(card) card.classList.toggle("expanded", expanded);
-    document.body.classList.toggle("trip-map-open", expanded);
-    var b = map && map.getContainer().querySelector('[data-trip-ctl="expand"]');
-    if(b){
-      b.innerHTML = expanded ? ICONS.shrink : ICONS.expand;
-      b.title = expanded ? "元に戻す" : "広げる";
-      b.setAttribute("aria-label", b.title);
-    }
-    if(map){
-      var target = map;
-      setTimeout(function(){ if(map===target){ map.invalidateSize({animate:false}); if(!viewTouched) fitView(); } }, 60);
-    }
-  }
-  function onKey(e){ if(e.key==="Escape" && expanded) setExpanded(false); }
-  document.addEventListener("keydown", onKey);
-
   var ICONS = {
-    expand:'<svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>',
-    shrink:'<svg viewBox="0 0 24 24"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>',
     center:'<svg viewBox="0 0 24 24"><path d="M12 21s-6-5.3-6-10a6 6 0 0112 0c0 4.7-6 10-6 10z"/><circle cx="12" cy="11" r="2.2"/></svg>',
     locate:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><circle cx="12" cy="12" r="7.5"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22"/></svg>'
   };
-  // 地図の右上の操作ボタン（広げる・ピンを中央に・現在地）
+  // 地図の右上の操作ボタン（ピンを中央に・現在地）
   function addControls(){
     var Ctl = L.Control.extend({
       options:{position:"topright"},
       onAdd:function(){
         var box = L.DomUtil.create("div", "trip-ctl");
         box.innerHTML =
-            '<button type="button" data-trip-ctl="expand" title="広げる" aria-label="広げる">'+ICONS.expand+'</button>'
-          + '<button type="button" data-trip-ctl="center" title="ピンを中央に" aria-label="ピンを中央に">'+ICONS.center+'</button>'
+            '<button type="button" data-trip-ctl="center" title="ピンを中央に" aria-label="ピンを中央に">'+ICONS.center+'</button>'
           + '<button type="button" data-trip-ctl="locate" title="現在地" aria-label="現在地">'+ICONS.locate+'</button>';
         L.DomEvent.disableClickPropagation(box);
         L.DomEvent.disableScrollPropagation(box);
@@ -8967,8 +8937,7 @@ var TripMap = (function(){
           var b = e.target.closest("[data-trip-ctl]");
           if(!b) return;
           var act = b.getAttribute("data-trip-ctl");
-          if(act==="expand") setExpanded(!expanded);
-          else if(act==="center"){ viewTouched = false; map.closePopup(); fitView(); }
+          if(act==="center"){ viewTouched = false; map.closePopup(); fitView(); }
           else if(act==="locate") goToMe();
         });
         return box;
@@ -9100,8 +9069,6 @@ var TripMap = (function(){
     // 移動アニメーション中に作り直すとエラーになるため、止めてから破棄する
     if(resizeObs){ resizeObs.disconnect(); resizeObs = null; }
     if(map){ map.stop(); map.off(); map.remove(); map = null; }
-    expanded = false;
-    document.body.classList.remove("trip-map-open");
     viewTouched = false;
     if(!el || !window.L){ return; }
     currentOshiId = oshi ? oshi.id : null;
