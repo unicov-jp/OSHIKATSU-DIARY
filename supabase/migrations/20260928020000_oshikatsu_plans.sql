@@ -2,6 +2,7 @@
 --
 -- oshikatsu_profiles       … 1人1行。plan は 'master'（マスター）/ 'paid'（有料）/ 'free'（無料）
 -- oshikatsu_plan_features  … 種類ごとの機能のON/OFF（行が無い機能はON）
+-- oshikatsu_news           … マイページの NEWS（お知らせ）。書けるのはマスターだけ
 --
 -- ・新しく登録した人は自動で「無料」になる。今いる人も「無料」として行を作る。
 -- ・本人は自分の行を読めるだけで、種類を書き換えることはできない（有料・マスターへの自己昇格を防ぐ）。
@@ -95,6 +96,31 @@ revoke all on public.oshikatsu_profiles from anon;
 revoke all on public.oshikatsu_plan_features from anon;
 grant select, update (plan, updated_at) on public.oshikatsu_profiles to authenticated;
 grant select, insert, update, delete on public.oshikatsu_plan_features to authenticated;
+
+-- お知らせ（マイページの NEWS）：だれでも読める。書けるのはマスターだけ
+create table if not exists public.oshikatsu_news (
+  id           uuid        primary key default gen_random_uuid(),
+  title        text        not null,
+  body         text        not null default '',
+  published_at timestamptz not null default now(),
+  created_by   uuid        references auth.users (id) on delete set null,
+  updated_at   timestamptz not null default now()
+);
+create index if not exists oshikatsu_news_published_idx on public.oshikatsu_news (published_at desc);
+alter table public.oshikatsu_news enable row level security;
+
+drop policy if exists "oshikatsu_news_select" on public.oshikatsu_news;
+create policy "oshikatsu_news_select" on public.oshikatsu_news
+  for select to authenticated using (true);
+
+drop policy if exists "oshikatsu_news_write_master" on public.oshikatsu_news;
+create policy "oshikatsu_news_write_master" on public.oshikatsu_news
+  for all to authenticated
+  using ((select public.oshikatsu_is_master()))
+  with check ((select public.oshikatsu_is_master()));
+
+revoke all on public.oshikatsu_news from anon;
+grant select, insert, update, delete on public.oshikatsu_news to authenticated;
 
 -- 最初のマスターを決める（メールアドレスを自分のものに書き換えて、この1行を実行する）
 -- update public.oshikatsu_profiles set plan = 'master', updated_at = now() where email = 'ここにマスターにするメールアドレス';

@@ -787,6 +787,35 @@
   .btn.danger-text{color:#B23A3A;}
   .billing-note{font-size:11px;color:var(--ink-soft);line-height:1.7;margin:8px 2px 0;}
   .billing-note a{color:var(--accent);}
+  /* NEWS */
+  .news-list{background:var(--card);border:1px solid var(--line);border-radius:6px;overflow:hidden;}
+  .news-item + .news-item{border-top:1px solid var(--line);}
+  .news-head{display:flex;align-items:baseline;gap:8px;width:100%;text-align:left;background:none;border:none;padding:11px 14px;cursor:pointer;font-family:inherit;color:var(--text);}
+  .news-date{flex:none;font-size:11.5px;color:var(--ink-soft);font-variant-numeric:tabular-nums;}
+  .news-new{flex:none;font-size:9.5px;font-weight:800;color:var(--on-accent);background:var(--accent);border-radius:3px;padding:1px 5px;letter-spacing:.05em;}
+  .news-title{flex:1;min-width:0;font-size:13.5px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .news-item.open .news-title{white-space:normal;}
+  .news-body{padding:0 14px 12px;font-size:13px;line-height:1.8;color:var(--text);}
+  .news-admin{display:flex;gap:14px;margin-top:6px;}
+  .news-empty{margin:0;padding:12px 14px;font-size:12.5px;color:var(--ink-soft);}
+  nav.tabs button.has-news .ic{position:relative;}
+  nav.tabs button.has-news .ic::after{content:"";position:absolute;top:2px;right:6px;width:8px;height:8px;border-radius:50%;background:#D64545;box-shadow:0 0 0 2px var(--bg);}
+  /* セットリスト */
+  .setlist-edit{list-style:none;margin:0 0 8px;padding:0;display:flex;flex-direction:column;gap:6px;}
+  .setlist-row{display:flex;align-items:center;gap:6px;background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:4px 6px;position:relative;}
+  .setlist-row.dragging{z-index:5;box-shadow:0 8px 18px -8px rgba(33,28,23,.5);transition:none;}
+  .setlist-grip{flex:none;width:26px;height:30px;display:flex;align-items:center;justify-content:center;color:var(--ink-soft);cursor:grab;touch-action:none;}
+  .setlist-grip svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;}
+  .setlist-no{flex:none;min-width:18px;text-align:right;font-size:12px;font-weight:700;color:var(--accent);}
+  .setlist-row input{flex:1;min-width:0;border:none;background:transparent;font-size:14px;padding:6px 4px;font-family:inherit;color:var(--text);}
+  .setlist-row input:focus{outline:none;}
+  .setlist-del{flex:none;width:28px;height:28px;border-radius:50%;border:none;background:transparent;color:var(--ink-soft);font-size:16px;cursor:pointer;}
+  .setlist-meta{font-size:13px;font-weight:700;color:var(--heading);margin:0 0 10px;}
+  .setlist-meta span{margin-left:8px;font-weight:400;color:var(--ink-soft);font-size:12px;}
+  .setlist-view{margin:0 0 16px;padding:0 0 0 1.8em;font-size:14px;line-height:2;}
+  .setlist-view li::marker{color:var(--accent);font-weight:700;}
+  .setlist-actions{display:flex;gap:8px;}
+  .setlist-actions .btn{flex:1;}
   /* ユーザー管理 */
   .btn.admin-entry{margin-top:22px;display:flex;align-items:center;justify-content:center;gap:8px;border-color:var(--accent);color:var(--accent);background:var(--card);font-weight:700;}
   .btn.admin-entry svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.6;}
@@ -2155,6 +2184,7 @@ async function enterUserMode(user){
   state.ready = true;
   render();
   loadAccess();
+  loadNews();
   await syncNow();
   if(!cloud.user || cloud.user.id!==user.id) return;
 
@@ -4247,14 +4277,14 @@ function recStreamUrls(r){
   var list = Array.isArray(r.streamUrls) ? r.streamUrls : (r.streamUrl ? [r.streamUrl] : []);
   return list.map(safeWebUrl).filter(Boolean);
 }
-function fmtYen(n){
+// 金額は千円単位（K）で表す（例：¥7,000 → ¥7K、¥12,500 → ¥12.5K）。アプリ課金の料金には使わない
+function fmtK(n){
   n = Number(n)||0;
-  return "&#165;"+n.toLocaleString("ja-JP");
+  if(!n) return "0";
+  return (n/1000).toLocaleString("ja-JP", {maximumFractionDigits:1})+"K";
 }
-function fmtYenPlain(n){
-  n = Number(n)||0;
-  return "\u00A5"+n.toLocaleString("ja-JP");
-}
+function fmtYen(n){ return "&#165;"+fmtK(n); }
+function fmtYenPlain(n){ return "\u00A5"+fmtK(n); }
 function fmtDate(d){
   if(!d) return "-";
   var parts = d.split("-");
@@ -5320,6 +5350,112 @@ function applyOshiOrder(ids){
   renderTopChipMenu();
 }
 /* マイページ：アカウント・ログアウト（推しの一覧は「推しの管理」ページへ） */
+/* ============ NEWS（お知らせ） ============
+   マイページの一番上に新しい順で出す（はじめは3件。「すべて見る」で全部）。題名を押すと本文を開く。
+   お知らせは Supabase の oshikatsu_news（だれでも読める。追加・編集・削除はマスターだけ）。
+   7日以内のものに NEW、まだ見ていないお知らせがあるときはマイページのタブに印を付ける。 */
+var NEWS_CACHE = "oshikatsu_news_v1";
+var NEWS_SEEN_KEY = "oshikatsu_news_seen_v1:";
+var news = {items:readStored(NEWS_CACHE) || [], all:false, open:{}};
+async function loadNews(){
+  if(!sb || !cloud.user) return;
+  try{
+    var r = await sb.from("oshikatsu_news").select("id,title,body,published_at").order("published_at", {ascending:false}).limit(50);
+    if(r.error) throw r.error;
+    var before = JSON.stringify(news.items);
+    news.items = r.data || [];
+    try{ localStorage.setItem(NEWS_CACHE, JSON.stringify(news.items)); }catch(e){}
+    if(JSON.stringify(news.items)!==before) render(); else updateNewsDot();
+  }catch(e){ console.warn("news load failed", e); }
+}
+function newsSeenAt(){ try{ return localStorage.getItem(NEWS_SEEN_KEY+(cloud.user?cloud.user.id:"")) || ""; }catch(e){ return ""; } }
+function markNewsSeen(){
+  if(!news.items.length) return;
+  try{ localStorage.setItem(NEWS_SEEN_KEY+(cloud.user?cloud.user.id:""), news.items[0].published_at); }catch(e){}
+  updateNewsDot();
+}
+function updateNewsDot(){
+  var b = document.querySelector('nav.tabs button[data-view="oshi"]');
+  if(!b) return;
+  var seen = newsSeenAt();
+  b.classList.toggle("has-news", !!(cloud.user && news.items.length && news.items[0].published_at > seen));
+}
+function newsDate(iso){ var d = new Date(iso); return isNaN(d) ? "" : d.getFullYear()+"."+String(d.getMonth()+1).padStart(2,"0")+"."+String(d.getDate()).padStart(2,"0"); }
+function newsSectionHtml(){
+  var can = isMaster() && realMaster();
+  var items = news.items;
+  if(!items.length && !can) return '';
+  var shown = news.all ? items : items.slice(0, 3);
+  var weekAgo = new Date(Date.now()-7*24*3600*1000).toISOString();
+  var html = '<div class="section-label">NEWS</div><div class="news-list">';
+  if(!items.length) html += '<p class="news-empty">お知らせはまだありません。</p>';
+  shown.forEach(function(n){
+    var open = !!news.open[n.id];
+    html += '<div class="news-item'+(open?' open':'')+'">'
+      + '<button type="button" class="news-head" data-action="news-toggle" data-id="'+escapeHtml(n.id)+'" aria-expanded="'+(open?'true':'false')+'">'
+      +   '<span class="news-date">'+newsDate(n.published_at)+'</span>'
+      +   (n.published_at > weekAgo ? '<span class="news-new">NEW</span>' : '')
+      +   '<span class="news-title">'+escapeHtml(n.title)+'</span>'
+      + '</button>'
+      + (open ? '<div class="news-body">'+escapeHtml(n.body||"").replace(/\n/g,"<br>")
+        + (can ? '<div class="news-admin"><button type="button" class="gd-link" data-action="news-edit" data-id="'+escapeHtml(n.id)+'">編集</button><button type="button" class="gd-link danger-text" data-action="news-delete" data-id="'+escapeHtml(n.id)+'">削除</button></div>' : '')
+        + '</div>' : '')
+      + '</div>';
+  });
+  html += '</div>';
+  var foot = [];
+  if(items.length > 3) foot.push('<button type="button" class="gd-link" data-action="news-all">'+(news.all ? '閉じる' : 'すべて見る（'+items.length+'件）')+'</button>');
+  if(can) foot.push('<button type="button" class="gd-link" data-action="news-edit">＋ お知らせを追加</button>');
+  if(foot.length) html += '<div class="gd-more">'+foot.join("")+'</div>';
+  return html;
+}
+function openNewsEditor(item){
+  var d = item ? new Date(item.published_at) : new Date();
+  var dv = d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+  openSheet('<h2 class="mincho">'+(item ? 'お知らせを編集' : 'お知らせを追加')+'</h2>'
+    + '<form id="newsForm">'
+    + '<div class="field"><label>日付</label><input type="date" name="date" value="'+dv+'" required></div>'
+    + '<div class="field"><label>題名</label><input type="text" name="title" value="'+escapeHtml(item ? item.title : "")+'" required></div>'
+    + '<div class="field"><label>本文</label><textarea name="body" rows="6">'+escapeHtml(item ? item.body||"" : "")+'</textarea></div>'
+    + '<div class="sheet-actions"><button type="button" class="btn ghost" data-close-sheet>キャンセル</button><button type="submit" class="btn primary">'+(item ? '更新する' : '公開する')+'</button></div>'
+    + '</form>');
+  var form = document.getElementById("newsForm");
+  var cancel = form.querySelector("[data-close-sheet]");
+  if(cancel) cancel.addEventListener("click", closeSheet);
+  form.addEventListener("submit", async function(e){
+    e.preventDefault();
+    if(!realMaster()) return;
+    var fd = new FormData(form);
+    var title = String(fd.get("title")||"").trim();
+    if(!title){ toast("題名を入力してください"); return; }
+    var now = new Date();
+    var day = String(fd.get("date")||"");
+    // 日付を選んだ日の今の時刻で公開日にする（同じ日の中でも新しい順に並ぶように）
+    var pub = day ? new Date(day+"T"+String(now.getHours()).padStart(2,"0")+":"+String(now.getMinutes()).padStart(2,"0")+":"+String(now.getSeconds()).padStart(2,"0")).toISOString() : now.toISOString();
+    var row = {title:title, body:String(fd.get("body")||""), published_at:pub, updated_at:now.toISOString()};
+    if(item) row.id = item.id; else row.created_by = cloud.user.id;
+    try{
+      var r = await sb.from("oshikatsu_news").upsert(row);
+      if(r.error) throw r.error;
+      closeSheet();
+      toast(item ? "お知らせを更新しました" : "お知らせを公開しました");
+      await loadNews();
+      render();
+    }catch(err){ console.warn("news save failed", err); toast("保存できませんでした"); }
+  });
+}
+async function deleteNews(id){
+  if(!realMaster() || !confirm("このお知らせを削除しますか？")) return;
+  try{
+    var r = await sb.from("oshikatsu_news").delete().eq("id", id);
+    if(r.error) throw r.error;
+    news.items = news.items.filter(function(n){ return n.id!==id; });
+    try{ localStorage.setItem(NEWS_CACHE, JSON.stringify(news.items)); }catch(e){}
+    toast("お知らせを削除しました");
+    render();
+  }catch(e){ console.warn("news delete failed", e); toast("削除できませんでした"); }
+}
+
 /* マイページのタイトルの右：マスターだけ、表示を確認するプランを切り替える */
 function planPreviewSwitchHtml(){
   if(!realMaster()) return '';
@@ -5363,6 +5499,7 @@ function billingSectionHtml(){
 }
 function renderOshiPage(){
   var html = '<div class="page-head page-head-row"><h1 class="mincho">マイページ</h1>'+planPreviewSwitchHtml()+'</div>';
+  html += newsSectionHtml();
   html += accountSectionHtml();
   html += billingSectionHtml();
   // ユーザー管理はマスターだけ（ログアウトの上）
@@ -5374,6 +5511,7 @@ function renderOshiPage(){
   html += '<p class="legal-links"><a href="privacy.html">プライバシーポリシー</a></p>';
   document.getElementById("main").innerHTML = html;
   bindBackupImport();
+  markNewsSeen();
 }
 /* 推しを非表示／表示に切り替える。お気に入りの推しを隠したときは、
    表示中のほかの推しをお気に入りにする。 */
@@ -5461,6 +5599,7 @@ var PLAN_FEATURES = [
   {id:"multiPhoto",     label:"写真を複数登録",           note:"1件に2枚以上"},
   {id:"multiOshi",      label:"推しを複数登録",           note:"2人目以降"},
   {id:"calendarExport", label:"Googleカレンダーに追加",   note:""},
+  {id:"setlist",        label:"セットリスト",             note:"LIVE"},
   {id:"backup",         label:"バックアップ",             note:"ドライブ・ファイル"},
   {id:"restore",        label:"削除された記録を探す",     note:""}
 ];
@@ -5660,6 +5799,7 @@ function render(){
   refreshHeaderLogo();
 
   applyFeatureGates();
+  updateNewsDot();
   document.querySelectorAll("nav.tabs button").forEach(function(b){
     b.classList.toggle("active", b.getAttribute("data-view")===state.view || (state.view==="admin" && b.getAttribute("data-view")==="oshi"));
   });
@@ -5932,6 +6072,104 @@ function recordPhotosFieldHtml(type, labelText){
     + '</div>';
 }
 
+/* セットリスト（LIVE）：曲名を1行ずつ。左のつまみを押したまま上下に動かすと並べ替え、×で削除。
+   複数行の文字を貼り付けると、1行ずつの曲に分ける。記録には setlist（曲名の配列）として持つ */
+function setlistFieldHtml(){
+  return '<div class="field"><label>セットリスト（任意）</label>'
+    + '<ol class="setlist-edit" id="setlistEdit"></ol>'
+    + '<button type="button" class="add-rec-oshi-btn" id="setlistAddBtn">＋ 曲を追加</button>'
+    + '<p class="ck-photos-hint">曲名をまとめて貼り付けると、1行ずつ分けて入ります。</p>'
+    + '</div>';
+}
+function bindSetlistField(form, rec){
+  var list = form.querySelector("#setlistEdit");
+  if(!list) return null;
+  var songs = (rec && Array.isArray(rec.setlist)) ? rec.setlist.slice() : [];
+  function readInputs(){
+    songs = Array.prototype.map.call(list.querySelectorAll("input"), function(i){ return i.value; });
+  }
+  function draw(focusIdx){
+    list.innerHTML = songs.map(function(t, i){
+      return '<li class="setlist-row" data-i="'+i+'">'
+        + '<span class="setlist-grip" aria-label="並べ替え" title="上下にドラッグして並べ替え"><svg viewBox="0 0 24 24"><path d="M5 8h14M5 12h14M5 16h14"/></svg></span>'
+        + '<span class="setlist-no">'+(i+1)+'</span>'
+        + '<input type="text" value="'+escapeHtml(t)+'" placeholder="曲名" aria-label="'+(i+1)+'曲目">'
+        + '<button type="button" class="setlist-del" data-i="'+i+'" aria-label="この曲を削除">×</button>'
+        + '</li>';
+    }).join("");
+    if(focusIdx!=null){ var inp = list.querySelectorAll("input")[focusIdx]; if(inp) inp.focus(); }
+  }
+  draw();
+  form.querySelector("#setlistAddBtn").addEventListener("click", function(){
+    readInputs(); songs.push(""); draw(songs.length-1);
+  });
+  list.addEventListener("click", function(e){
+    var d = e.target.closest(".setlist-del");
+    if(!d) return;
+    readInputs(); songs.splice(Number(d.getAttribute("data-i")), 1); draw();
+  });
+  // 複数行を貼り付けたら、1行ずつの曲に分ける
+  list.addEventListener("paste", function(e){
+    var inp = e.target.closest("input");
+    var text = (e.clipboardData || window.clipboardData).getData("text") || "";
+    var lines = text.split(/\r?\n/).map(function(l){ return l.replace(/^\s*(?:\d+[.)．、:：]?|M\d+[.:：]?|EN\d*[.:：]?)\s*/i, "").trim(); }).filter(Boolean);
+    if(!inp || lines.length<2) return;
+    e.preventDefault();
+    readInputs();
+    var idx = Number(inp.closest(".setlist-row").getAttribute("data-i"));
+    var head = songs[idx] ? [songs[idx]] : [];
+    songs.splice.apply(songs, [idx, 1].concat(head.concat(lines)));
+    draw(idx + head.length + lines.length - 1);
+  });
+  // つまみを押したまま上下に動かして並べ替え
+  list.addEventListener("pointerdown", function(e){
+    var grip = e.target.closest(".setlist-grip");
+    if(!grip || (e.button!==undefined && e.button!==0)) return;
+    e.preventDefault();
+    readInputs();
+    var row = grip.closest(".setlist-row"), from = Number(row.getAttribute("data-i")), to = from, startY = e.clientY;
+    try{ grip.setPointerCapture(e.pointerId); }catch(err){}
+    row.classList.add("dragging");
+    function onMove(ev){
+      row.style.transform = "translateY("+(ev.clientY-startY)+"px)";
+      var rows = Array.prototype.slice.call(list.querySelectorAll(".setlist-row"));
+      to = from;
+      rows.forEach(function(r, k){
+        if(r===row) return;
+        var b = r.getBoundingClientRect(), mid = b.top + b.height/2;
+        if(k<from && ev.clientY < mid) to = Math.min(to, k);
+        if(k>from && ev.clientY > mid) to = Math.max(to, k);
+      });
+    }
+    function onUp(){
+      grip.removeEventListener("pointermove", onMove);
+      grip.removeEventListener("pointerup", onUp);
+      grip.removeEventListener("pointercancel", onUp);
+      row.classList.remove("dragging");
+      row.style.transform = "";
+      if(to!==from){ var v = songs.splice(from, 1)[0]; songs.splice(to, 0, v); }
+      draw();
+    }
+    grip.addEventListener("pointermove", onMove);
+    grip.addEventListener("pointerup", onUp);
+    grip.addEventListener("pointercancel", onUp);
+  });
+  return {values:function(){ readInputs(); return songs.map(function(t){ return t.trim(); }).filter(Boolean); }};
+}
+// セットリストを見る（LIVEの「…」メニューから）
+function openSetlistSheet(r){
+  var songs = Array.isArray(r.setlist) ? r.setlist : [];
+  openSheet('<h2 class="mincho">セットリスト</h2>'
+    + '<p class="setlist-meta">'+escapeHtml(r.title||"")+(r.date ? '<span>'+escapeHtml(r.date.replace(/-/g,"."))+'</span>' : '')+'</p>'
+    + '<ol class="setlist-view">'+songs.map(function(t){ return '<li>'+escapeHtml(t)+'</li>'; }).join("")+'</ol>'
+    + '<div class="setlist-actions"><button type="button" class="btn ghost" id="setlistCopyBtn">コピー</button>'
+    + '<button type="button" class="btn primary" id="setlistEditBtn">編集する</button></div>');
+  document.getElementById("setlistCopyBtn").addEventListener("click", function(){
+    var text = (r.title||"")+"\n"+songs.map(function(t, i){ return (i+1)+". "+t; }).join("\n");
+    (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(function(){ toast("セットリストをコピーしました"); }, function(){ toast("コピーできませんでした"); });
+  });
+  document.getElementById("setlistEditBtn").addEventListener("click", function(){ closeSheet(); openRecordSheet("live", r); });
+}
 function recordFormHtml(type,rec){
   var info = labelForType(type);
   var today = new Date().toISOString().slice(0,10);
@@ -5984,14 +6222,15 @@ function recordFormHtml(type,rec){
       + '</div>';
     fields += '<div class="field"><label>座席・ブロック（任意）</label><input type="text" name="seat" value="'+(rec?escapeHtml(rec.seat||""):"")+'"></div>';
     fields += '<div class="field"><label>オンラインチケットURL（任意）</label><input type="text" name="ticketUrl" inputmode="url" autocomplete="off" value="'+(rec?escapeHtml(rec.ticketUrl||""):"")+'"></div>';
-    fields += '<div class="field"><label>チケット代（任意）</label><input type="number" name="price" min="0" value="'+(rec?rec.price||"":"")+'" placeholder="0"></div>';
+    fields += '<div class="field"><label>チケット代（任意）</label><input type="number" name="price" min="0" value="'+(rec?rec.price||"":"")+'" placeholder="円で入力（例：7000）"></div>';
+    if(canUse("setlist")) fields += setlistFieldHtml();
   } else if(type==="cheki"){
     fields += recordPhotosFieldHtml("cheki", "チェキ写真（任意）");
     fields += '<div class="field"><label>イベント名</label><input type="text" name="title" value="'+(rec?escapeHtml(rec.title||""):"")+'" required></div>';
     // 枚数と写真はまとめて登録できる（チェキ記録タブでは1枚ずつ表示する）
     fields += '<div class="field row2">'
       + '<div><label>枚数</label><input type="number" name="count" min="1" value="'+(rec?chekiUnits(rec):1)+'"></div>'
-      + '<div><label>合計金額（任意）</label><input type="number" name="price" min="0" value="'+(rec?rec.price||"":"")+'" placeholder="0"></div>'
+      + '<div><label>合計金額（任意）</label><input type="number" name="price" min="0" value="'+(rec?rec.price||"":"")+'" placeholder="円で入力（例：7000）"></div>'
       + '</div>';
     fields += '<div class="field"><label>話した内容・会話メモ（任意）</label><input type="text" name="content" value="'+(rec?escapeHtml(rec.content||""):"")+'"></div>';
   } else {
@@ -6000,7 +6239,7 @@ function recordFormHtml(type,rec){
     fields += '<div class="field"><label>ONLINE物販URL（任意）</label><input type="text" name="shopUrl" inputmode="url" autocomplete="off" value="'+(rec?escapeHtml(rec.shopUrl||""):"")+'"></div>';
     fields += '<div class="field"><label>商品名</label><input type="text" name="item" value="'+(rec?escapeHtml(rec.item||""):"")+'" required></div>';
     fields += '<div class="field row2">'
-      + '<div><label>単価（任意）</label><input type="number" name="price" min="0" value="'+(rec?rec.price||"":"")+'" placeholder="0"></div>'
+      + '<div><label>単価（任意）</label><input type="number" name="price" min="0" value="'+(rec?rec.price||"":"")+'" placeholder="円で入力（例：7000）"></div>'
       + '<div><label>数量（任意）</label><input type="number" name="qty" min="1" value="'+(rec?rec.qty||1:1)+'"></div>'
       + '</div>';
   }
@@ -6759,11 +6998,14 @@ function bindRecordForm(type,existingRec){
     l.addEventListener("click", function(e){ DrivePhotos.requireConnection(e); }, true);
   });
 
+  var setlistCtl = type==="live" ? bindSetlistField(form, existingRec) : null;
   form.addEventListener("submit", async function(e){
     e.preventDefault();
     var fd = new FormData(form);
     var rec = { id: existingRec ? existingRec.id : uuid() };
     fd.forEach(function(v,k){ rec[k]=v; });
+    // セットリスト（欄を使えないプランでは、登録済みのものをそのまま残す）
+    if(type==="live") rec.setlist = setlistCtl ? setlistCtl.values() : ((existingRec && existingRec.setlist) || []);
     // チェキの作成元（LIVE・物販のチェキボタンで作ったもの）は編集しても残す
     if(type==="cheki" && existingRec && existingRec.source) rec.source = existingRec.source;
     if(rec.ticketUrl!==undefined){
@@ -7628,6 +7870,15 @@ function onAppClick(e){
     toast("お支払いの機能は準備中です（"+BILLING_TBD+"）");
     return;
   }
+  if(action==="news-toggle"){ var nid = el.getAttribute("data-id"); news.open[nid] = !news.open[nid]; render(); return; }
+  if(action==="news-all"){ news.all = !news.all; render(); return; }
+  if(action==="news-edit"){
+    if(!realMaster()) return;
+    var nitem = el.getAttribute("data-id") ? news.items.find(function(n){ return n.id===el.getAttribute("data-id"); }) : null;
+    openNewsEditor(nitem);
+    return;
+  }
+  if(action==="news-delete"){ deleteNews(el.getAttribute("data-id")); return; }
   if(action==="goto-admin"){ if(isMaster()){ adminUsers = null; state.view = "admin"; render(); window.scrollTo(0,0); } return; }
   if(action==="goto-mypage"){ state.view = "oshi"; render(); window.scrollTo(0,0); return; }
   if(action==="toggle-feature"){ if(isMaster()) toggleFeature(el.getAttribute("data-plan"), el.getAttribute("data-feature")); return; }
@@ -7762,11 +8013,18 @@ function onAppClick(e){
       var host = u; try{ host = new URL(u).hostname.replace(/^www\./, ""); }catch(err){}
       items.push('<a class="photo-menu-item" href="'+escapeHtml(u)+'" target="_blank" rel="noopener noreferrer">配信を見る'+(su.length>1 ? '（'+(i+1)+'）' : '')+'<span class="host">'+escapeHtml(host)+'</span></a>');
     });
+    if(canUse("setlist") && Array.isArray(lr.setlist) && lr.setlist.length) items.push('<button type="button" class="photo-menu-item" data-action="view-setlist" data-id="'+lr.id+'">セットリスト（'+lr.setlist.length+'曲）</button>');
     if(canUse("calendarExport")) items.push('<a class="photo-menu-item" href="'+escapeHtml(googleCalendarUrl(lr))+'" target="_blank" rel="noopener noreferrer">Googleカレンダーに追加</a>');
     if(!items.length){ toast("チケット・配信のURLは登録されていません"); return; }
     lmenu.innerHTML = items.join("");
     lmenu.setAttribute("data-for", "live:"+el.getAttribute("data-id"));
     openPopoverNear(el, lmenu);
+    return;
+  }
+  if(action==="view-setlist"){
+    document.getElementById("streamMenu").style.display = "none";
+    var slr = state.live.find(function(r){ return r.id===el.getAttribute("data-id"); });
+    if(slr) openSetlistSheet(slr);
     return;
   }
   if(action==="stream-menu"){
@@ -7903,6 +8161,7 @@ document.addEventListener("DOMContentLoaded", function(){
   sheetBg.addEventListener("click", function(e){ if(e.target===sheetBg) closeSheet(); });
 
   var streamMenu = document.getElementById("streamMenu");
+  streamMenu.addEventListener("click", onAppClick);   // メニューは #app の外にあるので、ここでもボタンの操作を受ける
   document.addEventListener("click", function(e){
     if(!e.target.closest("#streamMenu") && !e.target.closest('[data-action="stream-menu"]') && !e.target.closest('[data-action="live-menu"]')) streamMenu.style.display = "none";
     else if(e.target.closest("#streamMenu a")) streamMenu.style.display = "none";
