@@ -439,6 +439,7 @@
     animation:up .22s ease;
   }
   @keyframes up{from{transform:translateY(16px);opacity:0;}to{transform:translateY(0);opacity:1;}}
+  .sheet.sheet-tall{height:88vh;}
   .sheet-handle{width:36px;height:4px;background:var(--line-strong);border-radius:99px;margin:10px auto 14px;}
   .sheet h2{font-size:17px;margin:0 0 14px;color:var(--heading);}
   .field{margin-bottom:13px;}
@@ -6027,6 +6028,7 @@ function render(){
 /* ============ sheets (forms) ============ */
 var sheetBg = null, sheetEl = null;
 function openSheet(html){
+  sheetEl.classList.remove("sheet-tall");
   sheetEl.innerHTML = '<div class="sheet-handle"></div>'+html;
   sheetBg.classList.add("show");
 }
@@ -7534,6 +7536,8 @@ function bindRecordForm(type,existingRec){
   // セトリの画面で保存したときに、LIVEの画面の必須の欄が空なら、そちらを開いて知らせる
   if(paneTabs.length) form.addEventListener("invalid", function(){ showPane("main"); }, true);
   window.__showRecPane = paneTabs.length ? showPane : null;
+  // 2つの画面を切り替えても大きさが変わらないよう、画面の高さをそろえる
+  if(paneTabs.length){ var sheetBox = document.getElementById("sheet"); if(sheetBox) sheetBox.classList.add("sheet-tall"); }
   form.addEventListener("submit", async function(e){
     e.preventDefault();
     var fd = new FormData(form);
