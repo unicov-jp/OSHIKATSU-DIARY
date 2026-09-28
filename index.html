@@ -950,12 +950,39 @@
   .catalog-add[hidden]{display:none;}
   .catalog-list{margin-top:12px;background:var(--card);border:1px solid var(--line);border-radius:6px;overflow:hidden;}
   .catalog-row{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;border:none;padding:12px 14px;font-family:inherit;color:var(--text);cursor:pointer;}
-  .catalog-row-pen{opacity:.6;}
-  .catalog-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;}
-  .catalog-head > div{min-width:0;}
-  .catalog-head h1{overflow-wrap:anywhere;}
-  .catalog-edit-btn{flex:none;display:inline-flex;align-items:center;gap:5px;margin-top:4px;border:1px solid var(--line-strong);background:var(--card);color:var(--heading);border-radius:99px;padding:6px 12px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;}
-  .catalog-edit-btn svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.8;}
+  /* アーティストの画面：上はアルバムジャケット風、下はランキング */
+  .cat-hero{position:relative;overflow:hidden;border-radius:22px;padding:22px 20px 18px;color:#fff;background:linear-gradient(135deg, rgba(0,0,0,.30), rgba(0,0,0,.05) 55%, rgba(255,255,255,.38)), var(--accent);box-shadow:0 18px 30px -18px rgba(33,28,23,.65);}
+  .cat-hero::after{content:"";position:absolute;right:-44px;top:-44px;width:170px;height:170px;border-radius:50%;background:rgba(255,255,255,.13);pointer-events:none;}
+  .cat-hero small{position:relative;font-size:10.5px;letter-spacing:.22em;opacity:.85;}
+  .cat-hero h1{position:relative;font-size:30px;font-weight:800;line-height:1.2;margin:6px 0 14px;color:#fff;overflow-wrap:anywhere;padding-right:70px;}
+  .cat-hero-stats{position:relative;display:flex;gap:20px;}
+  .cat-hero-stats div{font-size:10.5px;opacity:.9;}
+  .cat-hero-stats b{display:block;font-size:21px;font-weight:900;line-height:1.1;}
+  .cat-hero-edit{position:absolute;right:14px;bottom:14px;z-index:1;display:inline-flex;align-items:center;gap:5px;border:none;border-radius:99px;padding:7px 13px;background:rgba(255,255,255,.22);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);color:#fff;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;}
+  .cat-hero-edit svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.9;}
+  .cat-search{display:flex;align-items:center;gap:8px;margin-top:16px;background:var(--paper);border-radius:14px;padding:0 14px;box-shadow:0 1px 0 var(--line);border:1px solid transparent;}
+  .cat-search:focus-within{border-color:var(--accent);}
+  .cat-search svg{flex:none;width:16px;height:16px;stroke:var(--ink-soft);fill:none;stroke-width:2;}
+  .cat-search input{flex:1;min-width:0;border:none;background:transparent;padding:13px 0;font-size:15px;font-family:inherit;color:var(--text);}
+  .cat-search input:focus{outline:none;}
+  .cat-seg{display:flex;background:var(--card);border-radius:12px;padding:3px;margin:16px 0 12px;}
+  .cat-seg button{flex:1;border:none;background:transparent;border-radius:9px;padding:8px 4px;font-size:12px;font-weight:700;color:var(--ink-soft);cursor:pointer;font-family:inherit;}
+  .cat-seg button.on{background:var(--paper);color:var(--heading);box-shadow:0 1px 3px rgba(33,28,23,.12);}
+  .cat-rank{background:var(--paper);border-radius:16px;padding:4px 14px;box-shadow:0 1px 0 var(--line);}
+  .cat-rank .catalog-empty{padding:14px 0;}
+  .cat-r{display:flex;align-items:center;gap:12px;width:100%;padding:11px 0;border:none;background:none;text-align:left;cursor:pointer;font-family:inherit;color:var(--text);}
+  .cat-r + .cat-r{border-top:1px solid var(--line);}
+  .cat-r[hidden]{display:none;}
+  .cat-r-n{flex:none;width:26px;height:26px;border-radius:8px;background:var(--card);font-size:12px;font-weight:900;display:flex;align-items:center;justify-content:center;color:var(--heading);}
+  .cat-r.g1 .cat-r-n{background:#D9B24C;color:#fff;}
+  .cat-r.g2 .cat-r-n{background:#A8AFB5;color:#fff;}
+  .cat-r.g3 .cat-r-n{background:#B98559;color:#fff;}
+  .cat-r-b{flex:1;min-width:0;}
+  .cat-r-b b{display:block;font-size:14.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--heading);}
+  .cat-bar{display:block;height:5px;border-radius:9px;background:var(--card);margin-top:6px;overflow:hidden;}
+  .cat-bar i{display:block;height:100%;border-radius:9px;background:linear-gradient(90deg, var(--accent), var(--accent-soft));}
+  .cat-r-c{flex:none;min-width:22px;text-align:right;font-size:14px;font-weight:900;color:var(--accent);}
+  .cat-r-c.z{font-size:11px;font-weight:700;color:var(--ink-soft);}
   .catalog-note{font-size:11.5px;color:var(--ink-soft);line-height:1.7;margin:10px 2px 0;}
   .catalog-sheet-note{font-size:12px;color:var(--ink-soft);line-height:1.7;margin:-4px 0 0;}
   .catalog-row + .catalog-row{border-top:1px solid var(--line);}
@@ -5644,7 +5671,7 @@ async function deleteNews(id){
 /* ============ アーティスト・曲の登録一覧（マイページから） ============
    アーティストごとに曲を見て、検索・登録できる。登録した曲はセットリストの入力候補と「曲を探す」に出る。
    一覧には、登録したものに加えて、推しのグループ（グループのない推しは人物名）とセットリストで使ったものも出す。 */
-var catalogView = {artist:null};
+var catalogView = {artist:null, sort:"sung"};
 function catalogArtistList(){
   var map = {};
   function key(n){ return (n||"").trim().toLowerCase(); }
@@ -5699,19 +5726,39 @@ function renderCatalogPage(){
       + '</div>';
   } else {
     var songs = catalogSongsOf(a);
+    var sung = songs.reduce(function(t, x){ return t + x.n; }, 0), lives = countArtistUse(a);
+    var sort = catalogView.sort || "sung";
+    var shown = songs.slice();
+    if(sort==="kana") shown.sort(function(x, y){ return x.title.localeCompare(y.title, "ja"); });
+    else if(sort==="unused") shown = shown.filter(function(x){ return !x.n; });
+    else shown.sort(function(x, y){ return y.n - x.n || x.title.localeCompare(y.title, "ja"); });
+    var max = songs.reduce(function(m, x){ return Math.max(m, x.n); }, 0) || 1;
+    var pen = '<svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>';
     html += '<button type="button" class="catalog-back" data-action="catalog-back"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>アーティスト一覧</button>'
-      + '<div class="page-head catalog-head"><div><h1 class="mincho">'+escapeHtml(a)+'</h1><p>'+songs.length+'曲</p></div>'
-      +   '<button type="button" class="catalog-edit-btn" data-action="catalog-edit-artist"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>編集</button></div>'
-      + '<div class="catalog-search"><input type="search" id="catalogQ" placeholder="曲を検索・登録" autocomplete="off"></div>'
+      // 上部：アルバムジャケット風の見出し
+      + '<div class="cat-hero">'
+      +   '<small>ARTIST</small>'
+      +   '<h1 class="mincho">'+escapeHtml(a)+'</h1>'
+      +   '<div class="cat-hero-stats"><div><b>'+songs.length+'</b>曲</div><div><b>'+sung+'</b>回歌唱</div><div><b>'+lives+'</b>LIVE</div></div>'
+      +   '<button type="button" class="cat-hero-edit" data-action="catalog-edit-artist">'+pen+'編集</button>'
+      + '</div>'
+      + '<div class="cat-search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4-4"/></svg><input type="search" id="catalogQ" placeholder="曲を検索・登録" autocomplete="off"></div>'
       + '<button type="button" class="btn ghost block catalog-add" id="catalogAddSong" hidden></button>'
-      + '<div class="catalog-list" id="catalogList">'
-      + (songs.length ? songs.map(function(x){
-          return '<button type="button" class="catalog-row song" data-action="catalog-edit-song" data-t="'+escapeHtml(x.title)+'" data-q="'+escapeHtml(x.title.toLowerCase())+'">'
-            + '<span class="catalog-row-name">'+escapeHtml(x.title)+'</span>'
-            + '<span class="catalog-row-sub">'+(x.n ? x.n+'回' : '未使用')+'</span>'
-            + '<svg class="catalog-row-pen" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>'
+      // 下部：ランキング
+      + '<div class="cat-seg" role="group" aria-label="並べ方">'
+      +   [["sung","よく歌う順"],["kana","あいうえお順"],["unused","未使用"]].map(function(o){
+            return '<button type="button" class="'+(sort===o[0]?'on':'')+'" data-action="catalog-sort" data-sort="'+o[0]+'" aria-pressed="'+(sort===o[0]?'true':'false')+'">'+o[1]+'</button>';
+          }).join("")
+      + '</div>'
+      + '<div class="cat-rank" id="catalogList">'
+      + (shown.length ? shown.map(function(x, i){
+          var medal = sort==="sung" && x.n && i<3 ? ' g'+(i+1) : '';
+          return '<button type="button" class="catalog-row cat-r'+medal+'" data-action="catalog-edit-song" data-t="'+escapeHtml(x.title)+'" data-q="'+escapeHtml(x.title.toLowerCase())+'">'
+            + '<span class="cat-r-n">'+(i+1)+'</span>'
+            + '<span class="cat-r-b"><b>'+escapeHtml(x.title)+'</b><span class="cat-bar"><i style="width:'+Math.round(x.n/max*100)+'%"></i></span></span>'
+            + '<span class="cat-r-c'+(x.n ? '' : ' z')+'">'+(x.n ? x.n : '未使用')+'</span>'
             + '</button>';
-        }).join("") : '<p class="catalog-empty">まだ曲がありません。上の欄に曲名を入れて登録できます。</p>')
+        }).join("") : '<p class="catalog-empty">'+(sort==="unused" && songs.length ? 'まだ歌っていない曲はありません。' : 'まだ曲がありません。上の欄に曲名を入れて登録できます。')+'</p>')
       + '</div>'
       + '<p class="catalog-note">曲を押すと、曲名・アーティストの変更と削除ができます。変更はLIVE記録のセトリにも反映されます。</p>';
   }
@@ -8891,6 +8938,7 @@ function onAppClick(e){
   if(action==="catalog-open"){ catalogView.artist = null; state.view = "catalog"; render(); window.scrollTo(0,0); return; }
   if(action==="catalog-artist"){ catalogView.artist = el.getAttribute("data-name"); render(); window.scrollTo(0,0); return; }
   if(action==="catalog-back"){ catalogView.artist = null; render(); window.scrollTo(0,0); return; }
+  if(action==="catalog-sort"){ catalogView.sort = el.getAttribute("data-sort") || "sung"; render(); return; }
   if(action==="catalog-edit-artist"){ if(catalogView.artist) openCatalogArtistSheet(catalogView.artist); return; }
   if(action==="catalog-edit-song"){ if(catalogView.artist) openCatalogSongSheet(el.getAttribute("data-t")||"", catalogView.artist); return; }
   if(action==="goto-admin"){ if(isMaster()){ adminUsers = null; state.view = "admin"; render(); window.scrollTo(0,0); } return; }
