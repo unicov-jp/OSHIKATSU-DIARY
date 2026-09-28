@@ -7536,8 +7536,8 @@ function bindRecordForm(type,existingRec){
   // セトリの画面で保存したときに、LIVEの画面の必須の欄が空なら、そちらを開いて知らせる
   if(paneTabs.length) form.addEventListener("invalid", function(){ showPane("main"); }, true);
   window.__showRecPane = paneTabs.length ? showPane : null;
-  // 2つの画面を切り替えても大きさが変わらないよう、画面の高さをそろえる
-  if(paneTabs.length){ var sheetBox = document.getElementById("sheet"); if(sheetBox) sheetBox.classList.add("sheet-tall"); }
+  // LIVE・チェキ・物販の入力画面は、どれも同じ高さにする（LIVEの2つの画面を切り替えても大きさが変わらない）
+  var sheetBox = document.getElementById("sheet"); if(sheetBox) sheetBox.classList.add("sheet-tall");
   form.addEventListener("submit", async function(e){
     e.preventDefault();
     var fd = new FormData(form);
