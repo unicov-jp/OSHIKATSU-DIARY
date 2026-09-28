@@ -884,6 +884,54 @@
   .setlist-view li.mc .n,.setlist-view li.se .n{color:var(--ink-soft);font-size:11px;}
   .setlist-actions{display:flex;gap:8px;}
   .setlist-actions .btn{flex:1;}
+  /* ---- セトリ入力のデザイン（sl2）：線を減らして、1枚のカードの中に一覧と入力バーをまとめる ---- */
+  .sl2{gap:14px;}
+  .sl2 .setlist-block{border:none;border-radius:14px;padding:12px 12px 10px;background:var(--card);box-shadow:0 1px 0 var(--line), 0 8px 20px -16px rgba(33,28,23,.45);}
+  .sl2 .setlist-block-head{gap:6px;margin-bottom:6px;padding-bottom:8px;border-bottom:1px solid var(--line);}
+  .sl2-order{flex:none;width:22px;height:22px;border-radius:50%;background:var(--heading);color:var(--bg);font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;}
+  .field .sl2 .setlist-artist,.sl2 .setlist-artist{width:auto;border:none;border-radius:0;background:transparent;padding:4px 2px;font-size:16px;font-family:"Shippori Mincho",serif;font-weight:800;color:var(--heading);}
+  .sl2 .setlist-artist:focus{outline:none;box-shadow:inset 0 -2px 0 var(--accent);}
+  .sl2 .setlist-mini{border:none;background:transparent;width:30px;height:30px;border-radius:50%;color:var(--ink-soft);display:flex;align-items:center;justify-content:center;}
+  .sl2 .setlist-mini svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;}
+  .sl2 .setlist-mini:not(:disabled):active{background:var(--line);}
+  .sl2 .setlist-edit{gap:0;margin:0 0 10px;}
+  .sl2 .setlist-row{border:none;border-radius:0;background:transparent;padding:2px 0;gap:8px;}
+  .sl2 .setlist-row + .setlist-row{border-top:1px solid var(--line);}
+  .sl2 .setlist-row.compact{min-height:44px;}
+  .sl2 .setlist-grip{width:22px;color:var(--line-strong);}
+  .sl2 .setlist-no{min-width:24px;height:24px;border-radius:50%;background:var(--accent-soft);color:var(--accent);font-size:11.5px;font-weight:800;display:flex;align-items:center;justify-content:center;text-align:center;}
+  .sl2 .setlist-row.mc,.sl2 .setlist-row.se{background:transparent;}
+  .sl2 .setlist-row.mc .setlist-no,.sl2 .setlist-row.se .setlist-no{background:transparent;border:1px solid var(--line-strong);color:var(--ink-soft);font-size:9.5px;border-radius:6px;min-width:28px;height:20px;}
+  .sl2 .setlist-label{font-size:14.5px;}
+  .sl2 .setlist-label b{font-weight:700;color:var(--heading);}
+  .sl2 .setlist-label.ex{font-style:normal;}
+  .sl2 .setlist-del{color:var(--line-strong);font-size:15px;}
+  .sl2 .setlist-row.editing{box-shadow:none;background:var(--paper);border-radius:10px;padding:6px 4px;border:1px solid var(--accent);}
+  .field .sl2 .setlist-row.editing input,.sl2 .setlist-row.editing input{border:none;background:transparent;}
+  .sl2 .setlist-row.editing .setlist-song-title{font-weight:700;}
+  .sl2 .setlist-done{border-radius:50%;}
+  .sl2 .setlist-quick-row{gap:0;margin-top:0;background:var(--paper);border:1.5px solid var(--line-strong);border-radius:99px;padding:3px;align-items:center;transition:border-color .15s ease;}
+  .sl2 .setlist-quick-row:focus-within{border-color:var(--accent);}
+  .sl2 .setlist-quick-row.other{border-color:var(--accent);}
+  .sl2 .setlist-sa{flex:none;max-width:38%;border:none;background:var(--line);color:var(--heading);border-radius:99px;padding:7px 8px 7px 12px;font-size:12px;}
+  .sl2 .setlist-sa.other{background:var(--accent);color:var(--on-accent);}
+  .field .sl2 .setlist-quick,.sl2 .setlist-quick{width:auto;flex:1;min-width:0;border:none;background:transparent;border-radius:0;padding:8px 10px;font-size:15px;}
+  .sl2 .setlist-quick:focus{outline:none;}
+  .sl2 .setlist-quick-row .setlist-find{flex:none;width:34px;height:34px;border:none;background:transparent;color:var(--ink-soft);border-radius:50%;}
+  .sl2 .setlist-quick-add{flex:none;width:36px;height:36px;padding:0;border-radius:50%;display:flex;align-items:center;justify-content:center;}
+  .sl2 .setlist-quick-add svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2.4;}
+  .sl2 .setlist-sa-reset{display:block;margin:6px 0 0 12px;text-decoration:none;font-size:11.5px;}
+  .sl2 .setlist-chips{margin:10px 0 8px;gap:6px;}
+  .sl2 .setlist-chip{border:none;background:var(--accent-soft);color:var(--heading);font-weight:600;padding:6px 12px;}
+  .sl2 .setlist-chip::before{content:"＋";color:var(--accent);font-weight:800;margin-right:4px;}
+  .sl2 .setlist-chip-note{padding:2px 4px;}
+  .sl2 .setlist-add-row{gap:6px;justify-content:flex-start;}
+  .sl2 .setlist-add{flex:none;border:1px solid var(--line-strong);border-radius:99px;padding:5px 12px;font-size:11.5px;background:transparent;color:var(--ink-soft);}
+  .sl2 .setlist-add.bulk{margin-left:auto;border-color:transparent;color:var(--accent);text-decoration:underline;padding:5px 4px;}
+  .sl2 .setlist-bulk textarea{border-radius:12px;border-width:1px;}
+  .sl2-add-artist{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;margin-top:12px;border:1px dashed var(--line-strong);background:transparent;border-radius:14px;padding:12px;font-size:13px;font-weight:700;color:var(--ink-soft);cursor:pointer;font-family:inherit;}
+  .sl2-add-artist svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2.2;}
+  .sl2-hint{font-size:11px;color:var(--ink-soft);line-height:1.7;margin:8px 2px 0;}
   /* LIVE記録を編集／セトリ記録を編集 の切り替え */
   .rec-pane-tabs{display:flex;gap:0;margin:0 0 16px;border-bottom:1px solid var(--line-strong);}
   .rec-pane-tab{flex:1;border:none;background:none;padding:10px 4px 9px;font-family:"Shippori Mincho",serif;font-size:15.5px;font-weight:700;color:var(--ink-soft);cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-1px;}
@@ -6464,9 +6512,9 @@ function openSongPicker(opts){
 }
 function setlistFieldHtml(){
   return '<div class="field"><label>セットリスト（任意）</label>'
-    + '<div class="setlist-blocks" id="setlistEdit"></div>'
-    + '<button type="button" class="add-rec-oshi-btn" id="setlistAddArtistBtn">＋ アーティストを追加（対バン）</button>'
-    + '<p class="ck-photos-hint">曲名を入れてEnter（または「追加」）で次々に足せます。下の候補を押しても入ります。ほかのアーティストの曲は、先に「曲のアーティスト」でアーティストを選ぶと、その曲が候補に出ます（「曲名／アーティスト名」と入れても分かれます）。入れた曲は押すと直せ、左のつまみで並べ替えられます。</p>'
+    + '<div class="setlist-blocks sl2" id="setlistEdit"></div>'
+    + '<button type="button" class="sl2-add-artist" id="setlistAddArtistBtn"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>アーティストを追加（対バン）</button>'
+    + '<p class="sl2-hint">曲名を入れてEnterで追加。ほかのアーティストの曲は、左のアーティスト名を押して選びます。曲は押すと直せ、左端のつまみで並べ替えられます。</p>'
     + '</div>';
 }
 /* セットリストの入力：アーティストの枠ごとに、下の入力欄で曲名を打ってEnter／候補を押すと追加する。
@@ -6609,26 +6657,25 @@ function bindSetlistField(form, rec, defaultArtists){
           var no = 0;
           return '<div class="setlist-block" data-b="'+bi+'">'
             + '<div class="setlist-block-head">'
-            +   '<input type="text" class="setlist-artist" list="setlistArtistOptions" value="'+escapeHtml(b.artist)+'" placeholder="アーティスト名" aria-label="アーティスト名" autocomplete="off">'
-            +   '<button type="button" class="setlist-mini" data-sl-move="'+bi+'" data-dir="-1" aria-label="上へ"'+(bi===0?' disabled':'')+'>▲</button>'
-            +   '<button type="button" class="setlist-mini" data-sl-move="'+bi+'" data-dir="1" aria-label="下へ"'+(bi===blocks.length-1?' disabled':'')+'>▼</button>'
-            +   '<button type="button" class="setlist-del" data-sl-del-block="'+bi+'" aria-label="このアーティストを削除">×</button>'
+            +   '<span class="sl2-order">'+(bi+1)+'</span>'
+            +   '<input type="text" class="setlist-artist" list="setlistArtistOptions" value="'+escapeHtml(b.artist)+'" placeholder="出演アーティスト名" aria-label="出演アーティスト名" autocomplete="off">'
+            +   (blocks.length>1 ? '<button type="button" class="setlist-mini" data-sl-move="'+bi+'" data-dir="-1" aria-label="出演順を上へ"'+(bi===0?' disabled':'')+'><svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg></button>'
+            +   '<button type="button" class="setlist-mini" data-sl-move="'+bi+'" data-dir="1" aria-label="出演順を下へ"'+(bi===blocks.length-1?' disabled':'')+'><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>' : '')
+            +   '<button type="button" class="setlist-mini" data-sl-del-block="'+bi+'" aria-label="このアーティストを削除"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>'
             + '</div>'
             + (b.items.length ? '<ol class="setlist-edit">'+b.items.map(function(it, ii){ if(it.t==="song") no++; return rowHtml(b, bi, it, ii, no); }).join("")+'</ol>' : '')
             + (b.bulk
                 ? '<div class="setlist-bulk"><textarea class="setlist-bulk-text" rows="6" placeholder="1行に1曲ずつ入れるか、貼り付けてください&#10;例）&#10;SE：Overture&#10;1. 曲名&#10;MC&#10;2. 曲名／アーティスト名">'+escapeHtml(b.bulkText||"")+'</textarea>'
                   + '<div class="setlist-bulk-actions"><button type="button" class="btn ghost" data-sl-bulk-cancel="1">やめる</button><button type="button" class="btn primary" data-sl-bulk-add="1">取り込む</button></div></div>'
-                : '<div class="setlist-sa-row"><span class="setlist-sa-cap">曲のアーティスト</span>'
-                  + '<button type="button" class="setlist-sa'+(b.sa ? ' other' : '')+'" data-sl-sa="1">'+escapeHtml(b.sa || b.artist || "出演アーティスト")+'<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>'
-                  + (b.sa ? '<button type="button" class="setlist-sa-reset" data-sl-sa-reset="1">出演アーティストに戻す</button>' : '')
-                  + '</div>'
-                  + '<div class="setlist-quick-row">'
-                  + '<input type="text" class="setlist-quick" value="'+escapeHtml(b.q||"")+'" placeholder="'+escapeHtml((b.sa ? b.sa+"の" : "")+"曲名を入れてEnter")+'" enterkeyhint="enter" autocomplete="off" aria-label="追加する曲名">'
+                : '<div class="setlist-quick-row'+(b.sa ? ' other' : '')+'">'
+                  + '<button type="button" class="setlist-sa'+(b.sa ? ' other' : '')+'" data-sl-sa="1" title="曲のアーティストを選ぶ" aria-label="曲のアーティスト：'+escapeHtml(b.sa || b.artist || "出演アーティスト")+'">'+escapeHtml(b.sa || b.artist || "出演者")+'<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>'
+                  + '<input type="text" class="setlist-quick" value="'+escapeHtml(b.q||"")+'" placeholder="曲名を入れてEnter" enterkeyhint="enter" autocomplete="off" aria-label="追加する曲名">'
                   + '<button type="button" class="setlist-find" data-sl-find-new="1" aria-label="曲を探す" title="曲を探す"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.3-4.3"/></svg></button>'
-                  + '<button type="button" class="setlist-quick-add" data-sl-quick-add="1">追加</button>'
+                  + '<button type="button" class="setlist-quick-add" data-sl-quick-add="1" aria-label="追加"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>'
                   + '</div>'
+                  + (b.sa ? '<button type="button" class="setlist-sa-reset" data-sl-sa-reset="1">'+escapeHtml(b.sa)+'の曲を入れています ・ 出演アーティストに戻す</button>' : '')
                   + '<div class="setlist-chips">'+chipsHtml(b, bi)+'</div>'
-                  + '<div class="setlist-add-row"><button type="button" class="setlist-add" data-sl-add="mc">＋ MC</button><button type="button" class="setlist-add" data-sl-add="se">＋ SE</button><button type="button" class="setlist-add" data-sl-bulk="1">まとめて入力</button></div>')
+                  + '<div class="setlist-add-row"><button type="button" class="setlist-add" data-sl-add="mc">＋ MC</button><button type="button" class="setlist-add" data-sl-add="se">＋ SE</button><button type="button" class="setlist-add bulk" data-sl-bulk="1">まとめて入力</button></div>')
             + '</div>';
         }).join("");
     if(focus){
