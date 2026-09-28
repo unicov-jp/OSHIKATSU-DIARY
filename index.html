@@ -960,6 +960,12 @@
   .cat-hero-stats b{display:block;font-size:21px;font-weight:900;line-height:1.1;}
   .cat-hero-edit{position:absolute;right:14px;bottom:14px;z-index:1;display:inline-flex;align-items:center;gap:5px;border:none;border-radius:99px;padding:7px 13px;background:rgba(255,255,255,.22);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);color:#fff;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;}
   .cat-hero-edit svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.9;}
+  .cat-hero.has-img{background-color:var(--accent);background-size:cover;background-position:center;}
+  .cat-hero.has-img::after{display:none;}
+  .cat-hero.has-img h1,.cat-hero.has-img .cat-hero-stats{text-shadow:0 1px 8px rgba(0,0,0,.45);}
+  .cat-hero-img{position:absolute;right:12px;top:12px;z-index:1;width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.22);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;cursor:pointer;color:#fff;}
+  .cat-hero-img svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.8;}
+  .cat-img-clear{display:block;margin:4px 0 0;}
   .cat-search{display:flex;align-items:center;gap:8px;margin-top:16px;background:var(--paper);border-radius:14px;padding:0 14px;box-shadow:0 1px 0 var(--line);border:1px solid transparent;}
   .cat-search:focus-within{border-color:var(--accent);}
   .cat-search svg{flex:none;width:16px;height:16px;stroke:var(--ink-soft);fill:none;stroke-width:2;}
@@ -983,6 +989,11 @@
   .cat-bar i{display:block;height:100%;border-radius:9px;background:linear-gradient(90deg, var(--accent), var(--accent-soft));}
   .cat-r-c{flex:none;min-width:22px;text-align:right;font-size:14px;font-weight:900;color:var(--accent);}
   .cat-r-c.z{font-size:11px;font-weight:700;color:var(--ink-soft);}
+  .cat-artist-pick{display:flex;align-items:center;gap:8px;width:100%;text-align:left;border:1px solid var(--line-strong);border-radius:3px;background:var(--paper);padding:10px 11px;font-size:16px;color:var(--text);font-family:inherit;cursor:pointer;}
+  .cat-artist-pick span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .cat-artist-pick svg{flex:none;width:18px;height:18px;stroke:var(--ink-soft);fill:none;stroke-width:2;}
+  .song-picker-item.cur .t{color:var(--accent);}
+  .song-picker-item.cur .a{color:var(--accent);font-weight:700;}
   .catalog-note{font-size:11.5px;color:var(--ink-soft);line-height:1.7;margin:10px 2px 0;}
   .catalog-sheet-note{font-size:12px;color:var(--ink-soft);line-height:1.7;margin:-4px 0 0;}
   .catalog-row + .catalog-row{border-top:1px solid var(--line);}
@@ -3215,6 +3226,7 @@ var DrivePhotos = (function(){
     });
     state.oshis.forEach(function(o){ add(o.photo); add(o.photoOriginal); if(Array.isArray(o.gallery)) o.gallery.forEach(add); });
     add(state.headerLogo);
+    (state.artists||[]).forEach(function(a){ add(a.image); });   // アーティストの背景画像
     // 削除した記録（まだクラウドへ送っていないもの）の写真も残す
     Object.keys(cloud.tomb||{}).forEach(function(k){ var d = cloud.tomb[k] && cloud.tomb[k].data; if(d){ add(d.photo); if(Array.isArray(d.photos)) d.photos.forEach(add); } });
     return ids;
@@ -5734,9 +5746,11 @@ function renderCatalogPage(){
     else shown.sort(function(x, y){ return y.n - x.n || x.title.localeCompare(y.title, "ja"); });
     var max = songs.reduce(function(m, x){ return Math.max(m, x.n); }, 0) || 1;
     var pen = '<svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>';
+    var heroImg = catalogArtistImage(a);
     html += '<button type="button" class="catalog-back" data-action="catalog-back"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>アーティスト一覧</button>'
       // 上部：アルバムジャケット風の見出し
-      + '<div class="cat-hero">'
+      + '<div class="cat-hero'+(heroImg ? ' has-img' : '')+'"'+(heroImg ? ' style="'+DrivePhotos.bgStyle(heroImg, CAT_HERO_GRAD)+'"' : '')+'>'
+      +   '<label class="cat-hero-img" title="背景画像を設定" aria-label="背景画像を設定"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.4"/><path d="M8 6l1-2h6l1 2"/></svg><input type="file" id="catalogHeroInput" accept="image/*" hidden></label>'
       +   '<small>ARTIST</small>'
       +   '<h1 class="mincho">'+escapeHtml(a)+'</h1>'
       +   '<div class="cat-hero-stats"><div><b>'+songs.length+'</b>曲</div><div><b>'+sung+'</b>回歌唱</div><div><b>'+lives+'</b>LIVE</div></div>'
@@ -5764,6 +5778,7 @@ function renderCatalogPage(){
   }
   html += '<button type="button" class="btn ghost block" data-action="goto-mypage" style="margin-top:18px;">マイページへ戻る</button>';
   main.innerHTML = html;
+  bindCatalogHero(a);
   // 検索：打つたびに一覧を絞り込み、同じ名前が無ければ「登録」ボタンを出す
   var q = document.getElementById("catalogQ"), addBtn = document.getElementById(a ? "catalogAddSong" : "catalogAddArtist");
   function filter(){
@@ -5786,6 +5801,40 @@ function renderCatalogPage(){
     else { registerArtist(v); toast("「"+v+"」を登録しました"); catalogView.artist = v; }
     render();
     var nq = document.getElementById("catalogQ"); if(nq) nq.focus();
+  });
+}
+
+/* アーティストの画面の見出しの背景画像（アーティストの登録に image として持つ。画像は Google ドライブへ） */
+var CAT_HERO_GRAD = "linear-gradient(180deg, rgba(0,0,0,.10), rgba(0,0,0,.58))";
+function catalogArtistEntry(name){
+  var k = nameKey(name);
+  return (state.artists||[]).find(function(x){ return nameKey(x.name)===k; }) || null;
+}
+function catalogArtistImage(name){ var e = catalogArtistEntry(name); return e && e.image || ""; }
+function bindCatalogHero(name){
+  var input = document.getElementById("catalogHeroInput");
+  if(!name || !input) return;
+  var label = input.closest("label");
+  // 画像を選ぶ前に、Googleドライブへ接続しておく
+  label.addEventListener("click", function(e){ if(e.target===input) return; DrivePhotos.requireConnection(e); }, true);
+  input.addEventListener("change", async function(){
+    var f = input.files && input.files[0];
+    input.value = "";
+    if(!f) return;
+    if(f.type.indexOf("image/")!==0){ toast("画像ファイルを選択してください"); return; }
+    toast("背景画像を保存しています…");
+    try{
+      var blob = await resizeImageToBlob(f, 1280, 0.85);
+      var ref = await DrivePhotos.uploadBlob(blob, "artist_"+Date.now()+".jpg");
+      if(!DrivePhotos.isRef(ref)){ toast("Googleドライブに接続してから選んでください"); return; }
+      registerArtist(name, true);
+      var e = catalogArtistEntry(name);
+      if(!e) return;
+      e.image = ref;
+      saveLocal();
+      toast("背景画像を設定しました");
+      if(state.view==="catalog" && nameKey(catalogView.artist)===nameKey(name)) render();
+    }catch(err){ console.warn("artist image failed", err); toast("画像の読み込みに失敗しました"); }
   });
 }
 
@@ -5835,7 +5884,12 @@ function countSongUse(title, artist){
 }
 function dedupeCatalog(){
   var seenA = {}, seenS = {};
-  state.artists = (state.artists||[]).filter(function(a){ var k = nameKey(a.name); if(!k || seenA[k]) return false; seenA[k] = true; return true; });
+  state.artists = (state.artists||[]).filter(function(a){
+    var k = nameKey(a.name);
+    if(!k) return false;
+    if(seenA[k]){ if(a.image && !seenA[k].image) seenA[k].image = a.image; return false; }   // 背景画像は残す
+    seenA[k] = a; return true;
+  });
   state.songs = (state.songs||[]).filter(function(x){ var k = nameKey(x.title)+"\u0000"+nameKey(x.artist); if(!nameKey(x.title) || seenS[k]) return false; seenS[k] = true; return true; });
 }
 function renameCatalogArtist(from, to){
@@ -5912,9 +5966,6 @@ function deleteCatalogSong(title, artist){
     return ch;
   });
 }
-function catalogArtistDatalist(){
-  return '<datalist id="catalogArtistOptions">'+setlistArtistOptions().map(function(v){ return '<option value="'+escapeHtml(v)+'">'; }).join("")+'</datalist>';
-}
 function openCatalogArtistSheet(name){
   var used = countArtistUse(name), oshiKind = oshiArtistKind(name);
   var songsN = catalogSongsOf(name).length;
@@ -5926,6 +5977,7 @@ function openCatalogArtistSheet(name){
     +   (oshiKind==="group" ? '<br>推しのグループ名も同じ名前に変わります。' : '')
     +   '<br>すでにある名前にすると、そのアーティストにまとめます。'
     + '</p>'
+    + (catalogArtistImage(name) ? '<button type="button" class="gd-link danger-text cat-img-clear" id="catalogArtistImgClear">背景画像を外す</button>' : '')
     + '<div class="sheet-actions">'
     +   '<button type="button" class="btn danger" id="catalogArtistDel">削除</button>'
     +   '<button type="submit" class="btn primary">保存する</button>'
@@ -5942,6 +5994,15 @@ function openCatalogArtistSheet(name){
       toast("「"+to+"」に変更しました");
     }
     catalogView.artist = to;
+    closeSheet(); render();
+  });
+  var imgClear = document.getElementById("catalogArtistImgClear");
+  if(imgClear) imgClear.addEventListener("click", function(){
+    var e = catalogArtistEntry(name);
+    if(!e || !confirm("背景画像を外しますか？")) return;
+    delete e.image;
+    saveLocal();
+    toast("背景画像を外しました");
     closeSheet(); render();
   });
   document.getElementById("catalogArtistDel").addEventListener("click", function(){
@@ -5963,7 +6024,8 @@ function openCatalogSongSheet(title, artist){
   openSheet('<h2 class="mincho">曲を編集</h2>'
     + '<form id="catalogSongForm">'
     + '<div class="field"><label>曲名</label><input type="text" name="title" value="'+escapeHtml(title)+'" required autocomplete="off"></div>'
-    + '<div class="field"><label>アーティスト</label><input type="text" name="artist" value="'+escapeHtml(artist)+'" list="catalogArtistOptions" autocomplete="off">'+catalogArtistDatalist()+'</div>'
+    + '<div class="field"><label>アーティスト</label><input type="hidden" name="artist" value="'+escapeHtml(artist)+'">'
+    +   '<button type="button" class="cat-artist-pick" id="catalogSongArtist"><span>'+(artist ? escapeHtml(artist) : '（未設定）')+'</span><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button></div>'
     + '<p class="catalog-sheet-note">'+(used ? '変更すると、'+used+'件のLIVE記録のセトリも直します。' : 'まだLIVE記録のセトリでは使われていません。')+'</p>'
     + '<div class="sheet-actions">'
     +   '<button type="button" class="btn danger" id="catalogSongDel">削除</button>'
@@ -5971,6 +6033,14 @@ function openCatalogSongSheet(title, artist){
     + '</div>'
     + '</form>');
   var form = document.getElementById("catalogSongForm");
+  // アーティストは一覧から選ぶ（検索・新しい名前もここで）
+  document.getElementById("catalogSongArtist").addEventListener("click", function(){
+    var cur = form.querySelector("[name=artist]").value;
+    openArtistPicker({title:"アーティストを選ぶ", current:cur, onPick:function(name){
+      form.querySelector("[name=artist]").value = name;
+      document.querySelector("#catalogSongArtist span").textContent = name || "（未設定）";
+    }});
+  });
   form.addEventListener("submit", function(e){
     e.preventDefault();
     var fd = new FormData(form);
@@ -6795,8 +6865,8 @@ function openArtistPicker(opts){
   var wrap = document.createElement("div");
   wrap.id = "songPicker";
   wrap.className = "song-picker-bg";
-  wrap.innerHTML = '<div class="song-picker" role="dialog" aria-label="曲のアーティストを選ぶ">'
-    + '<div class="song-picker-head"><b>曲のアーティストを選ぶ</b><button type="button" class="song-picker-close" aria-label="閉じる">×</button></div>'
+  wrap.innerHTML = '<div class="song-picker" role="dialog" aria-label="'+escapeHtml(opts.title || "曲のアーティストを選ぶ")+'">'
+    + '<div class="song-picker-head"><b>'+escapeHtml(opts.title || "曲のアーティストを選ぶ")+'</b><button type="button" class="song-picker-close" aria-label="閉じる">×</button></div>'
     + '<input type="search" class="song-picker-q" placeholder="アーティスト名で検索" autocomplete="off">'
     + '<div class="song-picker-list"></div>'
     + '</div>';
@@ -6811,7 +6881,8 @@ function openArtistPicker(opts){
     var html = '';
     if(opts.self) html += '<button type="button" class="song-picker-item" data-name=""><span class="t">'+escapeHtml(opts.self)+'</span><span class="a">（出演アーティスト）</span></button>';
     html += hits.filter(function(a){ return a.name!==opts.self; }).map(function(a){
-      return '<button type="button" class="song-picker-item" data-name="'+escapeHtml(a.name)+'"><span class="t">'+escapeHtml(a.name)+'</span><span class="a"></span><span class="c">'+a.songs+'曲</span></button>';
+      var cur = opts.current && norm(opts.current)===norm(a.name);
+      return '<button type="button" class="song-picker-item'+(cur ? ' cur' : '')+'" data-name="'+escapeHtml(a.name)+'"><span class="t">'+escapeHtml(a.name)+'</span><span class="a">'+(cur ? '選択中' : '')+'</span><span class="c">'+a.songs+'曲</span></button>';
     }).join("");
     if(v && !exact) html += '<button type="button" class="song-picker-item new" data-name="'+escapeHtml(v)+'"><span class="t">＋ 「'+escapeHtml(v)+'」を使う</span><span class="a">新しいアーティスト</span></button>';
     box.innerHTML = html || '<p class="song-picker-empty">アーティスト名を入れてください</p>';
