@@ -898,7 +898,12 @@
   .sl2 .setlist-row{border:none;border-radius:0;background:transparent;padding:2px 0;gap:8px;}
   .sl2 .setlist-row + .setlist-row{border-top:1px solid var(--line);}
   .sl2 .setlist-row.compact{min-height:44px;}
-  .sl2 .setlist-grip{width:22px;color:var(--line-strong);}
+  .sl2 .setlist-grip{width:34px;height:40px;margin-left:-6px;color:var(--ink-soft);}
+  .sl2 .setlist-row.compact{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}
+  .sl2 .setlist-edit.sorting .setlist-row{transition:transform .16s ease;}
+  .sl2 .setlist-edit.sorting .setlist-row.dragging{transition:none;position:relative;z-index:5;background:var(--paper);border-radius:12px;box-shadow:0 12px 24px -10px rgba(33,28,23,.45);border-top-color:transparent;}
+  .sl2 .setlist-edit.sorting .setlist-row.dragging + .setlist-row{border-top-color:transparent;}
+  .sl2 .setlist-edit.sorting .setlist-row.dragging .setlist-grip{color:var(--accent);cursor:grabbing;}
   .sl2 .setlist-no{min-width:24px;height:24px;border-radius:50%;background:var(--accent-soft);color:var(--accent);font-size:11.5px;font-weight:800;display:flex;align-items:center;justify-content:center;text-align:center;}
   .sl2 .setlist-row.mc,.sl2 .setlist-row.se{background:transparent;}
   .sl2 .setlist-row.mc .setlist-no,.sl2 .setlist-row.se .setlist-no{background:transparent;border:1px solid var(--line-strong);color:var(--ink-soft);font-size:9.5px;border-radius:6px;min-width:28px;height:20px;}
@@ -956,7 +961,6 @@
   .cat-list-head h1{font-size:26px;margin:4px 0 8px;color:var(--heading);}
   .cat-list-stats{display:flex;gap:16px;font-size:11.5px;color:var(--ink-soft);}
   .cat-list-stats b{font-size:18px;font-weight:900;color:var(--heading);margin-right:2px;}
-  .cat-list-head p{font-size:11.5px;color:var(--ink-soft);margin-top:8px;line-height:1.6;}
   .cat-tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px;}
   .cat-tiles .catalog-empty{grid-column:1/-1;background:var(--paper);border-radius:14px;}
   .cat-tile{position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;align-items:flex-start;aspect-ratio:3/2;padding:10px 12px;border:none;border-radius:18px;text-align:left;cursor:pointer;font-family:inherit;color:#fff;
@@ -967,8 +971,6 @@
   .cat-tile.empty{background:var(--paper);color:var(--heading);box-shadow:0 1px 0 var(--line);border:1px solid var(--line);}
   .cat-tile-mark{position:absolute;right:-6px;top:-18px;font-family:"Shippori Mincho",serif;font-size:86px;font-weight:800;line-height:1;color:rgba(255,255,255,.2);pointer-events:none;}
   .cat-tile.empty .cat-tile-mark{color:var(--tile, var(--accent));opacity:.16;}
-  .cat-tile-tag{position:absolute;left:12px;top:12px;font-size:10px;font-weight:700;letter-spacing:.08em;padding:3px 8px;border-radius:99px;background:rgba(255,255,255,.25);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);}
-  .cat-tile.empty .cat-tile-tag{background:var(--accent-soft);color:var(--accent);}
   .cat-tile-name{position:relative;max-width:100%;font-size:16px;font-weight:900;line-height:1.25;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
   .cat-tile:not(.empty) .cat-tile-name,.cat-tile:not(.empty) .cat-tile-sub{text-shadow:0 1px 6px rgba(0,0,0,.35);}
   .cat-tile-sub{position:relative;font-size:11px;margin-top:3px;opacity:.9;}
@@ -1027,7 +1029,6 @@
   .cat-artist-pick svg{flex:none;width:18px;height:18px;stroke:var(--ink-soft);fill:none;stroke-width:2;}
   .song-picker-item.cur .t{color:var(--accent);}
   .song-picker-item.cur .a{color:var(--accent);font-weight:700;}
-  .catalog-note{font-size:11.5px;color:var(--ink-soft);line-height:1.7;margin:10px 2px 0;}
   .catalog-sheet-note{font-size:12px;color:var(--ink-soft);line-height:1.7;margin:-4px 0 0;}
   .catalog-row + .catalog-row{border-top:1px solid var(--line);}
   .catalog-row[hidden]{display:none;}
@@ -5761,7 +5762,7 @@ function renderCatalogPage(){
     var totalSongs = list.reduce(function(t, x){ return t + x.songs; }, 0), totalSung = list.reduce(function(t, x){ return t + x.sung; }, 0);
     html += '<div class="cat-list-head"><small>ARTISTS &amp; SONGS</small><h1 class="mincho">アーティスト・曲</h1>'
       +   '<div class="cat-list-stats"><span><b>'+list.length+'</b>組</span><span><b>'+totalSongs+'</b>曲</span><span><b>'+totalSung+'</b>回歌唱</span></div>'
-      +   '<p>曲を登録しておくと、セットリストの入力で候補に出ます。</p></div>'
+      + '</div>'
       + '<div class="cat-search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4-4"/></svg><input type="search" id="catalogQ" placeholder="アーティストを検索・登録" autocomplete="off"></div>'
       + '<button type="button" class="btn ghost block catalog-add" id="catalogAddArtist" hidden></button>'
       + '<div class="cat-tiles" id="catalogList">'
@@ -5771,7 +5772,6 @@ function renderCatalogPage(){
           var initial = Array.from(x.name.trim())[0] || "";
           return '<button type="button" class="cat-tile'+(img ? ' has-img' : (x.songs ? '' : ' empty'))+'" data-action="catalog-artist" data-name="'+escapeHtml(x.name)+'" data-q="'+escapeHtml(x.name.toLowerCase())+'" style="'+style+'">'
             + (img ? '' : '<span class="cat-tile-mark" aria-hidden="true">'+escapeHtml(initial)+'</span>')
-            + (oshiArtistKind(x.name) ? '<span class="cat-tile-tag">推し</span>' : '')
             + '<span class="cat-tile-name">'+escapeHtml(x.name)+'</span>'
             + '<span class="cat-tile-sub">'+(x.songs ? x.songs+'曲'+(x.sung ? ' ・ '+x.sung+'回' : '') : 'まだ曲がありません')+'</span>'
             + '</button>';
@@ -5814,8 +5814,7 @@ function renderCatalogPage(){
             + '<span class="cat-r-c'+(x.n ? '' : ' z')+'">'+(x.n ? x.n : '未使用')+'</span>'
             + '</button>';
         }).join("") : '<p class="catalog-empty">'+(sort==="unused" && songs.length ? 'まだ歌っていない曲はありません。' : 'まだ曲がありません。上の欄に曲名を入れて登録できます。')+'</p>')
-      + '</div>'
-      + '<p class="catalog-note">曲を押すと、曲名・アーティストの変更と削除ができます。変更はLIVE記録のセトリにも反映されます。</p>';
+      + '</div>';
   }
   html += '<button type="button" class="btn ghost block" data-action="goto-mypage" style="margin-top:18px;">マイページへ戻る</button>';
   main.innerHTML = html;
@@ -6960,7 +6959,7 @@ function setlistFieldHtml(){
   return '<div class="field"><label>セットリスト（任意）</label>'
     + '<div class="setlist-blocks sl2" id="setlistEdit"></div>'
     + '<button type="button" class="sl2-add-artist" id="setlistAddArtistBtn"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>アーティストを追加（対バン）</button>'
-    + '<p class="sl2-hint">曲名を入れてEnterで追加。ほかのアーティストの曲は、左のアーティスト名を押して選びます。曲は押すと直せ、左端のつまみで並べ替えられます。</p>'
+    + '<p class="sl2-hint">曲名を入れてEnterで追加。ほかのアーティストの曲は、左のアーティスト名を押して選びます。曲は押すと直せ、左端のつまみをドラッグするか、曲を長押ししてから動かすと並べ替えられます。</p>'
     + '</div>';
 }
 /* セットリストの入力：アーティストの枠ごとに、下の入力欄で曲名を打ってEnter／候補を押すと追加する。
@@ -7286,43 +7285,112 @@ function bindSetlistField(form, rec, defaultArtists){
     addItems(bi, lines);
     toast(lines.length+"行を取り込みました");
   });
-  // つまみを押したまま上下に動かして、同じアーティストの中で並べ替え
-  box.addEventListener("pointerdown", function(e){
-    var grip = e.target.closest(".setlist-grip");
-    if(!grip || (e.button!==undefined && e.button!==0)) return;
-    e.preventDefault();
+  /* 並べ替え（同じアーティストの中）：左のつまみを押したまま、または行を長押ししてから上下に動かす。
+     動かしている間はほかの行がよけて入る位置を見せ、画面の端に近づくと自動でスクロールする */
+  function scrollParentOf(el){
+    for(var n = el.parentElement; n && n!==document.body; n = n.parentElement){
+      var oy = getComputedStyle(n).overflowY;
+      if((oy==="auto" || oy==="scroll") && n.scrollHeight > n.clientHeight) return n;
+    }
+    return document.scrollingElement || document.documentElement;
+  }
+  function beginDrag(row, pointerId, clientY){
     readInputs();
-    var list = grip.closest(".setlist-edit"), bi = Number(grip.closest(".setlist-block").getAttribute("data-b"));
-    var row = grip.closest(".setlist-row"), from = Number(row.getAttribute("data-i")), to = from, startY = e.clientY, moved = false;
-    try{ grip.setPointerCapture(e.pointerId); }catch(err){}
+    var list = row.closest(".setlist-edit"), bi = Number(row.closest(".setlist-block").getAttribute("data-b"));
+    var rows = Array.prototype.slice.call(list.querySelectorAll(".setlist-row"));
+    var from = rows.indexOf(row), to = from;
+    if(from<0) return;
+    var sc = scrollParentOf(list), isDoc = sc===document.scrollingElement || sc===document.documentElement;
+    var scTop0 = sc.scrollTop, py0 = clientY + scTop0, lastY = clientY;
+    var centers = rows.map(function(r){ var b = r.getBoundingClientRect(); return b.top + b.height/2 + scTop0; });
+    var rh = row.getBoundingClientRect().height;
+    var raf = 0, speed = 0;
+    list.classList.add("sorting");
     row.classList.add("dragging");
-    function onMove(ev){
-      if(Math.abs(ev.clientY-startY)>4) moved = true;
-      row.style.transform = "translateY("+(ev.clientY-startY)+"px)";
+    suppressClick = true;
+    if(navigator.vibrate){ try{ navigator.vibrate(12); }catch(err){} }
+    function update(){
+      var dy = lastY + sc.scrollTop - py0;
+      row.style.transform = "translateY("+dy+"px)";
+      var c = centers[from] + dy;
       to = from;
-      Array.prototype.forEach.call(list.querySelectorAll(".setlist-row"), function(r, k){
+      for(var k=0;k<rows.length;k++){
+        if(k>from && centers[k] < c) to = k;
+        if(k<from && centers[k] > c && to===from) to = k;
+      }
+      rows.forEach(function(r, k){
         if(r===row) return;
-        var bb = r.getBoundingClientRect(), mid = bb.top + bb.height/2;
-        if(k<from && ev.clientY < mid) to = Math.min(to, k);
-        if(k>from && ev.clientY > mid) to = Math.max(to, k);
+        var shift = (from<to && k>from && k<=to) ? -rh : (to<from && k>=to && k<from) ? rh : 0;
+        r.style.transform = shift ? "translateY("+shift+"px)" : "";
       });
     }
-    function onUp(){
-      grip.removeEventListener("pointermove", onMove);
-      grip.removeEventListener("pointerup", onUp);
-      grip.removeEventListener("pointercancel", onUp);
+    function tick(){
+      if(!speed){ raf = 0; return; }
+      sc.scrollTop += speed;
+      update();
+      raf = requestAnimationFrame(tick);
+    }
+    function onMove(ev){
+      if(ev.pointerId!==pointerId) return;
+      ev.preventDefault();
+      lastY = ev.clientY;
+      var top = isDoc ? 0 : sc.getBoundingClientRect().top, bottom = isDoc ? window.innerHeight : sc.getBoundingClientRect().bottom, edge = 70;
+      // 端に向かって動かしたときだけスクロールする（端の近くの行をつかんだだけでは動かさない）
+      speed = (lastY < top+edge && lastY < clientY-12) ? -Math.ceil((top+edge-lastY)/6)
+        : (lastY > bottom-edge && lastY > clientY+12) ? Math.ceil((lastY-bottom+edge)/6) : 0;
+      if(speed && !raf) raf = requestAnimationFrame(tick);
+      update();
+    }
+    function onTouchMove(ev){ ev.preventDefault(); }   // 動かしている間は画面をスクロールさせない
+    function onUp(ev){
+      if(ev.pointerId!==pointerId) return;
+      if(ev.type==="pointerup"){ lastY = ev.clientY; update(); }   // 指を離した位置で入る場所を決める
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+      document.removeEventListener("touchmove", onTouchMove);
+      if(raf) cancelAnimationFrame(raf);
+      speed = 0;
+      list.classList.remove("sorting");
       row.classList.remove("dragging");
-      row.style.transform = "";
-      if(moved) suppressClick = true;
+      rows.forEach(function(r){ r.style.transform = ""; });
       var items = blocks[bi].items;
       if(to!==from){ var v = items.splice(from, 1)[0]; items.splice(to, 0, v); editing = null; }
       draw();
       setTimeout(function(){ suppressClick = false; }, 300);
     }
-    grip.addEventListener("pointermove", onMove);
-    grip.addEventListener("pointerup", onUp);
-    grip.addEventListener("pointercancel", onUp);
+    window.addEventListener("pointermove", onMove, {passive:false});
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    document.addEventListener("touchmove", onTouchMove, {passive:false});
+  }
+  box.addEventListener("pointerdown", function(e){
+    if(e.button!==undefined && e.button!==0) return;
+    var row = e.target.closest(".setlist-row");
+    if(!row || row.classList.contains("editing") || row.closest(".setlist-edit").classList.contains("sorting")) return;
+    // つまみ：すぐに動かせる
+    if(e.target.closest(".setlist-grip")){
+      e.preventDefault();
+      beginDrag(row, e.pointerId, e.clientY);
+      return;
+    }
+    // 行の長押し（タッチ）：0.35秒そのまま押すと動かせる。先に指が動いたら画面のスクロール
+    if(e.pointerType==="mouse" || e.target.closest("button, input")) return;
+    var pid = e.pointerId, sx = e.clientX, sy = e.clientY, lastY = e.clientY;
+    var timer = setTimeout(function(){ cancel(); beginDrag(row, pid, lastY); }, 350);
+    function onMove(ev){ if(ev.pointerId!==pid) return; lastY = ev.clientY; if(Math.abs(ev.clientX-sx)>8 || Math.abs(ev.clientY-sy)>8) cancel(); }
+    function cancel(){
+      clearTimeout(timer);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", cancel);
+      window.removeEventListener("pointercancel", cancel);
+    }
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", cancel);
+    window.addEventListener("pointercancel", cancel);
   });
+  // 長押しで出る文字選択・メニューを出さない
+  box.addEventListener("contextmenu", function(e){ if(e.target.closest(".setlist-row.compact")) e.preventDefault(); });
   return {
     values:function(){
       readInputs();
