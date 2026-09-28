@@ -6175,7 +6175,20 @@ function openSetlistSheet(r){
     var text = (r.title||"")+"\n"+songs.map(function(t, i){ return (i+1)+". "+t; }).join("\n");
     (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(function(){ toast("セットリストをコピーしました"); }, function(){ toast("コピーできませんでした"); });
   });
-  document.getElementById("setlistEditBtn").addEventListener("click", function(){ closeSheet(); openRecordSheet("live", r); });
+  document.getElementById("setlistEditBtn").addEventListener("click", function(){ closeSheet(); openSetlistEditor(r); });
+}
+// LIVEの編集画面を開き、セットリストの欄までスクロールする（曲がなければ1行目を用意して入力できる状態にする）
+function openSetlistEditor(r){
+  openRecordSheet("live", r);
+  setTimeout(function(){
+    var list = document.getElementById("setlistEdit");
+    if(!list) return;
+    if(!list.querySelector("input")){ var add = document.getElementById("setlistAddBtn"); if(add) add.click(); }
+    var field = list.closest(".field");
+    if(field) field.scrollIntoView({block:"center", behavior:"smooth"});
+    var inp = list.querySelector("input");
+    if(inp) setTimeout(function(){ inp.focus(); }, 350);
+  }, 80);
 }
 function recordFormHtml(type,rec){
   var info = labelForType(type);
@@ -8021,7 +8034,11 @@ function onAppClick(e){
       var host = u; try{ host = new URL(u).hostname.replace(/^www\./, ""); }catch(err){}
       items.push('<a class="photo-menu-item" href="'+escapeHtml(u)+'" target="_blank" rel="noopener noreferrer">配信を見る'+(su.length>1 ? '（'+(i+1)+'）' : '')+'<span class="host">'+escapeHtml(host)+'</span></a>');
     });
-    if(canUse("setlist") && Array.isArray(lr.setlist) && lr.setlist.length) items.push('<button type="button" class="photo-menu-item" data-action="view-setlist" data-id="'+lr.id+'">セットリスト（'+lr.setlist.length+'曲）</button>');
+    // セットリストはいつも出す（未登録なら「セットリストを登録」で編集画面のセットリストの欄を開く）
+    if(canUse("setlist")){
+      var hasSl = Array.isArray(lr.setlist) && lr.setlist.length;
+      items.push('<button type="button" class="photo-menu-item" data-action="view-setlist" data-id="'+lr.id+'">'+(hasSl ? 'セットリスト（'+lr.setlist.length+'曲）' : 'セットリストを登録')+'</button>');
+    }
     if(canUse("calendarExport")) items.push('<a class="photo-menu-item" href="'+escapeHtml(googleCalendarUrl(lr))+'" target="_blank" rel="noopener noreferrer">Googleカレンダーに追加</a>');
     if(!items.length){ toast("チケット・配信のURLは登録されていません"); return; }
     lmenu.innerHTML = items.join("");
@@ -8032,7 +8049,9 @@ function onAppClick(e){
   if(action==="view-setlist"){
     document.getElementById("streamMenu").style.display = "none";
     var slr = state.live.find(function(r){ return r.id===el.getAttribute("data-id"); });
-    if(slr) openSetlistSheet(slr);
+    if(!slr) return;
+    if(Array.isArray(slr.setlist) && slr.setlist.length) openSetlistSheet(slr);
+    else openSetlistEditor(slr);
     return;
   }
   if(action==="stream-menu"){
