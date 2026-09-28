@@ -955,6 +955,37 @@
   .catalog-add[hidden]{display:none;}
   .catalog-list{margin-top:12px;background:var(--card);border:1px solid var(--line);border-radius:6px;overflow:hidden;}
   .catalog-row{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;border:none;padding:12px 14px;font-family:inherit;color:var(--text);cursor:pointer;}
+  /* 音楽アプリで聴く */
+  .listen-btn{flex:none;width:34px;height:34px;border:none;background:transparent;border-radius:50%;color:var(--accent);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0;}
+  .listen-btn svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.6;}
+  .listen-btn svg path{fill:currentColor;stroke:none;}
+  .listen-btn:active{background:var(--accent-soft);}
+  .setlist-view li{align-items:center;}
+  .setlist-view li .st{flex:1;min-width:0;}
+  .setlist-view li .listen-btn{width:30px;height:30px;margin:-2px 0;}
+  .cat-r-main{display:flex;align-items:center;gap:12px;flex:1;min-width:0;padding:0;border:none;background:none;text-align:left;cursor:pointer;font-family:inherit;color:var(--text);}
+  .cat-r .listen-btn{margin-left:2px;margin-right:-6px;}
+  .music-ic{flex:none;width:30px;height:30px;border-radius:9px;color:#fff;font-weight:900;font-size:14px;display:inline-flex;align-items:center;justify-content:center;font-family:"Zen Kaku Gothic New",sans-serif;}
+  .music-ic svg{width:18px;height:18px;stroke:#fff;fill:none;stroke-width:1.8;}
+  .music-ic svg .f{fill:#fff;stroke:none;}
+  .listen-q{font-size:14px;font-weight:700;color:var(--heading);margin:2px 2px 10px;overflow-wrap:anywhere;}
+  .listen-q span{font-weight:500;color:var(--ink-soft);font-size:12.5px;}
+  .listen-apps{display:flex;flex-direction:column;background:var(--paper);border-radius:14px;overflow:hidden;border:1px solid var(--line);}
+  .listen-app{display:flex;align-items:center;gap:12px;padding:12px 14px;color:var(--text);text-decoration:none;font-weight:700;font-size:14.5px;}
+  .listen-app + .listen-app{border-top:1px solid var(--line);}
+  .listen-app span:not(.music-ic){flex:1;}
+  .listen-app svg{width:16px;height:16px;stroke:var(--ink-soft);fill:none;stroke-width:2;}
+  .listen-app:active{background:var(--accent-soft);}
+  .listen-note{font-size:11px;color:var(--ink-soft);margin:8px 2px 0;}
+  .music-app-list{display:flex;flex-direction:column;background:var(--paper);border-radius:14px;border:1px solid var(--line);overflow:hidden;}
+  .music-app-row{display:flex;align-items:center;gap:12px;padding:12px 14px;cursor:pointer;position:relative;}
+  .music-app-row + .music-app-row{border-top:1px solid var(--line);}
+  .music-app-name{flex:1;font-weight:700;font-size:14.5px;}
+  .music-app-row input{position:absolute;opacity:0;pointer-events:none;}
+  .music-app-check{flex:none;width:24px;height:24px;border-radius:50%;border:2px solid var(--line-strong);display:flex;align-items:center;justify-content:center;}
+  .music-app-row input:checked + .music-app-check{background:var(--accent);border-color:var(--accent);}
+  .music-app-row input:checked + .music-app-check::after{content:"";width:10px;height:6px;border-left:2.5px solid #fff;border-bottom:2.5px solid #fff;transform:rotate(-45deg) translate(1px,-1px);}
+  .music-app-row input:focus-visible + .music-app-check{outline:2px solid var(--accent);outline-offset:2px;}
   /* アーティスト一覧：タイル */
   .cat-list-head{margin:4px 0 14px;}
   .cat-list-head small{font-size:10px;letter-spacing:.3em;color:var(--accent);font-weight:700;}
@@ -1562,6 +1593,7 @@ var state = {
   calendarDesc:"",       // Googleカレンダーの予定の説明の形（空なら標準の説明）
   chekiView:"gallery",   // チェキ記録の表示方法（gallery / album / binder / calendar / swipe）
   weekStart:0,           // カレンダーの週の始まり（0 = 日曜・1 = 月曜・6 = 土曜）
+  musicApps:null,        // 「聴く」ボタンに出す音楽アプリ（null = すべて）
   homeOrder:null,        // ホームのカードの並び（["gallery","map","chart"] の順番。null なら標準）
   chekiFav:false,        // チェキ記録を「お気に入り」だけにするか（ON/OFF）
   chekiBinderPage:0,     // バインダー表示のページ
@@ -2035,6 +2067,7 @@ function applyStored(data){
   state.chekiView = data.chekiView||"gallery";
   state.weekStart = normWeekStart(data.weekStart);
   state.homeOrder = Array.isArray(data.homeOrder) ? data.homeOrder : null;
+  state.musicApps = normMusicApps(data.musicApps);
 }
 function snapshotData(){
   return {
@@ -2043,7 +2076,8 @@ function snapshotData(){
     activeOshiId:state.activeOshiId, headerLogo:state.headerLogo, calendarTitle:state.calendarTitle||"", calendarDesc:state.calendarDesc||"",
     chekiView:state.chekiView||"gallery",
     weekStart:state.weekStart||0,
-    homeOrder:state.homeOrder||null
+    homeOrder:state.homeOrder||null,
+    musicApps:state.musicApps||null
   };
 }
 function hasContent(data){
@@ -2139,6 +2173,7 @@ function localRowMap(){
   if(state.chekiView && state.chekiView!=="gallery") settingsData.chekiView = state.chekiView;
   if(state.weekStart) settingsData.weekStart = state.weekStart;
   if(state.homeOrder && state.homeOrder.join(",")!==HOME_SECTIONS.join(",")) settingsData.homeOrder = state.homeOrder;
+  if(state.musicApps) settingsData.musicApps = state.musicApps;
   m["settings:main"] = {kind:"settings", id:"main", data:settingsData};
   return m;
 }
@@ -2252,6 +2287,7 @@ function putIntoState(kind, data){
     state.chekiView = data.chekiView||"gallery";
     state.weekStart = normWeekStart(data.weekStart);
     state.homeOrder = Array.isArray(data.homeOrder) ? data.homeOrder : null;
+    state.musicApps = normMusicApps(data.musicApps);
     return;
   }
   var arr = kind==="oshi" ? state.oshis : kind==="artist" ? state.artists : kind==="song" ? state.songs : state[kind];
@@ -2371,6 +2407,7 @@ function mergeGuestData(guest){
   if((!state.chekiView || state.chekiView==="gallery") && guest.chekiView) state.chekiView = guest.chekiView;
   if(!state.homeOrder && Array.isArray(guest.homeOrder)) state.homeOrder = guest.homeOrder;
   if(!state.weekStart && guest.weekStart) state.weekStart = normWeekStart(guest.weekStart);
+  if(!state.musicApps && guest.musicApps) state.musicApps = normMusicApps(guest.musicApps);
 }
 
 /* アカウント欄の表示用に、ログイン方法（メール/Google）の情報を持っておく */
@@ -3433,6 +3470,11 @@ function googleStorageRowsHtml(){
     +   '<button type="button" class="account-row-btn" data-action="week-start-menu">変更</button>'
     +   weekStartMenuHtml()
     + '</div>'
+    + (canUse("setlist") ? '<div class="account-row">'
+    +   '<span class="account-row-label">音楽アプリ</span>'
+    +   '<span class="account-row-value'+(enabledMusicApps().length ? '' : ' muted')+'">'+escapeHtml(musicAppsSummary())+'<small class="account-row-sub">曲の「聴く」ボタン</small></span>'
+    +   '<button type="button" class="account-row-btn" data-action="music-apps">変更</button>'
+    + '</div>' : '')
     + (!canUse("backup") ? '' : '<div class="account-row">'
     +   '<span class="account-row-label">バックアップ</span>'
     +   '<span class="account-row-value'+(last?'':' muted')+'">'+(last ? fmtDateTime(last).slice(5) : 'なし')+'<small class="account-row-sub">毎日自動</small></span>'
@@ -5800,11 +5842,14 @@ function renderCatalogPage(){
       + '<div class="cat-rank" id="catalogList">'
       + (shown.length ? shown.map(function(x, i){
           var medal = sort==="sung" && x.n && i<3 ? ' g'+(i+1) : '';
-          return '<button type="button" class="catalog-row cat-r'+medal+'" data-action="catalog-edit-song" data-t="'+escapeHtml(x.title)+'" data-q="'+escapeHtml(x.title.toLowerCase())+'">'
-            + '<span class="cat-r-n">'+(i+1)+'</span>'
-            + '<span class="cat-r-b"><b>'+escapeHtml(x.title)+'</b><span class="cat-bar"><i style="width:'+Math.round(x.n/max*100)+'%"></i></span></span>'
-            + '<span class="cat-r-c'+(x.n ? '' : ' z')+'">'+(x.n ? x.n : '未使用')+'</span>'
-            + '</button>';
+          return '<div class="catalog-row cat-r'+medal+'" data-t="'+escapeHtml(x.title)+'" data-q="'+escapeHtml(x.title.toLowerCase())+'">'
+            + '<button type="button" class="cat-r-main" data-action="catalog-edit-song" data-t="'+escapeHtml(x.title)+'">'
+            +   '<span class="cat-r-n">'+(i+1)+'</span>'
+            +   '<span class="cat-r-b"><b>'+escapeHtml(x.title)+'</b><span class="cat-bar"><i style="width:'+Math.round(x.n/max*100)+'%"></i></span></span>'
+            +   '<span class="cat-r-c'+(x.n ? '' : ' z')+'">'+(x.n ? x.n : '未使用')+'</span>'
+            + '</button>'
+            + listenBtnHtml(x.title, a)
+            + '</div>';
         }).join("") : '<p class="catalog-empty">'+(sort==="unused" && songs.length ? 'まだ歌っていない曲はありません。' : 'まだ曲がありません。上の欄に曲名を入れて登録できます。')+'</p>')
       + '</div>';
   }
@@ -7404,6 +7449,82 @@ function bindSetlistField(form, rec, defaultArtists){
   };
 }
 // セットリストを見る（LIVEの「…」メニューから）
+/* ============ 音楽アプリで聴く ============
+   曲の「聴く」ボタンから、音楽アプリの検索結果（曲名＋アーティスト名）を開く。ログインやAPIの登録は不要。
+   スマホにアプリが入っていればアプリで開く。出すアプリはマイページで選ぶ（state.musicApps。null = すべて） */
+var MUSIC_APPS = [
+  {id:"amazon",  label:"Amazon Music",  short:"am", color:"#25D1DA", url:function(q){ return "https://music.amazon.co.jp/search/"+encodeURIComponent(q); }},
+  {id:"spotify", label:"Spotify",       short:"S", color:"#1DB954", url:function(q){ return "https://open.spotify.com/search/"+encodeURIComponent(q); }},
+  {id:"apple",   label:"Apple Music",   icon:"<svg viewBox=\"0 0 24 24\"><path d=\"M9 17V6l10-2v11\"/><circle cx=\"6.5\" cy=\"17\" r=\"2.5\"/><circle cx=\"16.5\" cy=\"15\" r=\"2.5\"/></svg>", color:"#FA2D48", url:function(q){ return "https://music.apple.com/jp/search?term="+encodeURIComponent(q); }},
+  {id:"ytmusic", label:"YouTube Music", icon:"<svg viewBox=\"0 0 24 24\"><circle cx=\"12\" cy=\"12\" r=\"7.5\"/><path class=\"f\" d=\"M10.2 9l5 3-5 3z\"/></svg>", color:"#FF0033", url:function(q){ return "https://music.youtube.com/search?q="+encodeURIComponent(q); }},
+  {id:"youtube", label:"YouTube",       icon:"<svg viewBox=\"0 0 24 24\"><path class=\"f\" d=\"M9 7.5l8 4.5-8 4.5z\"/></svg>", color:"#282828", url:function(q){ return "https://www.youtube.com/results?search_query="+encodeURIComponent(q); }}
+];
+function normMusicApps(v){
+  if(!Array.isArray(v)) return null;
+  return MUSIC_APPS.map(function(a){ return a.id; }).filter(function(id){ return v.indexOf(id)>=0; });
+}
+function enabledMusicApps(){
+  var ids = state.musicApps;
+  return MUSIC_APPS.filter(function(a){ return !ids || ids.indexOf(a.id)>=0; });
+}
+var LISTEN_ICON = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M10 8.5l5.5 3.5-5.5 3.5z"/></svg>';
+function listenBtnHtml(title, artist){
+  if(!enabledMusicApps().length) return '';
+  return '<button type="button" class="listen-btn" data-action="listen" data-lt="'+escapeHtml(title)+'" data-la="'+escapeHtml(artist||"")+'" title="音楽アプリで聴く" aria-label="「'+escapeHtml(title)+'」を音楽アプリで聴く">'+LISTEN_ICON+'</button>';
+}
+function musicAppIcon(a){ return '<span class="music-ic" style="background:'+a.color+'">'+(a.icon || escapeHtml(a.short))+'</span>'; }
+// 聴くアプリを選ぶ（1つだけ選んでいるときはすぐ開く）
+function openListen(title, artist){
+  var apps = enabledMusicApps();
+  if(!apps.length){ toast("マイページで音楽アプリを選んでください"); return; }
+  var q = (title + (artist ? " " + artist : "")).trim();
+  if(apps.length===1){ window.open(apps[0].url(q), "_blank", "noopener"); return; }
+  var old = document.getElementById("listenPicker");
+  if(old) old.remove();
+  var wrap = document.createElement("div");
+  wrap.id = "listenPicker";
+  wrap.className = "song-picker-bg";
+  wrap.innerHTML = '<div class="song-picker listen-picker" role="dialog" aria-label="音楽アプリで聴く">'
+    + '<div class="song-picker-head"><b>音楽アプリで聴く</b><button type="button" class="song-picker-close" aria-label="閉じる">×</button></div>'
+    + '<p class="listen-q">'+escapeHtml(title)+(artist ? '<span>／'+escapeHtml(artist)+'</span>' : '')+'</p>'
+    + '<div class="listen-apps">'+apps.map(function(a){
+        return '<a class="listen-app" href="'+escapeHtml(a.url(q))+'" target="_blank" rel="noopener">'+musicAppIcon(a)+'<span>'+escapeHtml(a.label)+'</span><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></a>';
+      }).join("")+'</div>'
+    + '<p class="listen-note">アプリの検索結果が開きます。</p>'
+    + '</div>';
+  document.body.appendChild(wrap);
+  function close(){ wrap.remove(); }
+  wrap.querySelector(".song-picker-close").addEventListener("click", close);
+  wrap.addEventListener("click", function(e){ if(e.target===wrap || e.target.closest(".listen-app")) setTimeout(close, 0); });
+}
+// マイページ：「聴く」ボタンに出す音楽アプリを選ぶ
+function openMusicAppsSheet(){
+  var cur = enabledMusicApps().map(function(a){ return a.id; });
+  openSheet('<h2 class="mincho">音楽アプリ</h2>'
+    + '<p class="catalog-sheet-note" style="margin:0 0 12px;">セトリやアーティストの画面の曲にある「聴く」ボタンから開くアプリを選びます（いくつでも）。</p>'
+    + '<div class="music-app-list">'+MUSIC_APPS.map(function(a){
+        var on = cur.indexOf(a.id)>=0;
+        return '<label class="music-app-row">'+musicAppIcon(a)+'<span class="music-app-name">'+escapeHtml(a.label)+'</span>'
+          + '<input type="checkbox" value="'+a.id+'"'+(on ? ' checked' : '')+'><span class="music-app-check" aria-hidden="true"></span></label>';
+      }).join("")+'</div>'
+    + '<div class="sheet-actions"><button type="button" class="btn ghost" data-close-sheet>キャンセル</button><button type="button" class="btn primary" id="musicAppsSave">保存する</button></div>');
+  var sheet = document.getElementById("sheet");
+  sheet.querySelector("[data-close-sheet]").addEventListener("click", closeSheet);
+  document.getElementById("musicAppsSave").addEventListener("click", function(){
+    var ids = Array.prototype.map.call(sheet.querySelectorAll(".music-app-row input:checked"), function(i){ return i.value; });
+    state.musicApps = normMusicApps(ids);
+    saveLocal();
+    closeSheet();
+    render();
+    toast(ids.length ? "音楽アプリを"+ids.length+"つ選びました" : "「聴く」ボタンを出さないようにしました");
+  });
+}
+function musicAppsSummary(){
+  var apps = enabledMusicApps();
+  if(!apps.length) return "なし";
+  if(apps.length===MUSIC_APPS.length) return "すべて";
+  return apps.map(function(a){ return a.label; }).join("・");
+}
 function openSetlistSheet(r){
   var sls = recSetlists(r);
   var html = sls.map(function(b){
@@ -7414,14 +7535,18 @@ function openSetlistSheet(r){
           if(it.t==="mc" || it.t==="se") return '<li class="'+it.t+'"><span class="n">'+(it.t==="se" ? "SE" : "MC")+'</span>'+escapeHtml(it.note||"")+'</li>';
           no++;
           var sa = songArtist(it, b);
-          return '<li><span class="n">'+no+'</span><span class="st">'+escapeHtml(it.title)+(sa ? '<span class="sa">／'+escapeHtml(sa)+'</span>' : '')+'</span></li>';
+          return '<li><span class="n">'+no+'</span><span class="st">'+escapeHtml(it.title)+(sa ? '<span class="sa">／'+escapeHtml(sa)+'</span>' : '')+'</span>'+listenBtnHtml(it.title, sa)+'</li>';
         }).join("")+'</ul></div>';
   }).join("");
   openSheet('<h2 class="mincho">セットリスト</h2>'
     + '<p class="setlist-meta">'+escapeHtml(r.title||"")+(r.date ? '<span>'+escapeHtml(r.date.replace(/-/g,"."))+'</span>' : '')+'</p>'
-    + html
+    + '<div id="setlistViewBody">'+html+'</div>'
     + '<div class="setlist-actions"><button type="button" class="btn ghost" id="setlistCopyBtn">コピー</button>'
     + '<button type="button" class="btn primary" id="setlistEditBtn">編集する</button></div>');
+  document.getElementById("setlistViewBody").addEventListener("click", function(e){
+    var lb = e.target.closest(".listen-btn");
+    if(lb) openListen(lb.getAttribute("data-lt")||"", lb.getAttribute("data-la")||"");
+  });
   document.getElementById("setlistCopyBtn").addEventListener("click", function(){
     var text = (r.title||"") + "\n" + sls.map(function(b){
       var no = 0;
@@ -9164,6 +9289,8 @@ function onAppClick(e){
   if(action==="catalog-open"){ catalogView.artist = null; state.view = "catalog"; render(); window.scrollTo(0,0); return; }
   if(action==="catalog-artist"){ catalogView.artist = el.getAttribute("data-name"); render(); window.scrollTo(0,0); return; }
   if(action==="catalog-back"){ catalogView.artist = null; render(); window.scrollTo(0,0); return; }
+  if(action==="listen"){ openListen(el.getAttribute("data-lt")||"", el.getAttribute("data-la")||""); return; }
+  if(action==="music-apps"){ openMusicAppsSheet(); return; }
   if(action==="catalog-sort"){ catalogView.sort = el.getAttribute("data-sort") || "sung"; render(); return; }
   if(action==="catalog-edit-artist"){ if(catalogView.artist) openCatalogArtistSheet(catalogView.artist); return; }
   if(action==="catalog-edit-song"){ if(catalogView.artist) openCatalogSongSheet(el.getAttribute("data-t")||"", catalogView.artist); return; }
