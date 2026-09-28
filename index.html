@@ -769,6 +769,24 @@
   .ck-thumb .top{position:absolute;left:0;right:0;bottom:0;background:var(--accent);color:var(--on-accent);font-size:10px;font-weight:700;text-align:center;line-height:1.7;}
   .ck-thumb.dragging{z-index:5;opacity:.9;box-shadow:0 10px 22px -8px rgba(33,28,23,.55);transition:none;cursor:grabbing;}
   .ck-thumb.drop-to{outline:2px dashed var(--accent);outline-offset:2px;}
+  /* マイページのタイトルの右：マスター用のプラン切り替え */
+  .page-head-row{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+  .plan-preview{display:flex;border:1px solid var(--accent);border-radius:99px;overflow:hidden;flex:none;}
+  .plan-preview button{border:none;background:var(--paper);color:var(--accent);font-size:11.5px;font-weight:700;padding:6px 10px;cursor:pointer;font-family:inherit;}
+  .plan-preview button + button{border-left:1px solid var(--accent);}
+  .plan-preview button.on{background:var(--accent);color:var(--on-accent);}
+  .preview-bar{position:fixed;left:50%;transform:translateX(-50%);top:calc(8px + var(--safe-t));z-index:60;display:flex;align-items:center;gap:10px;background:#211C17;color:#FFFFFF;font-size:12px;font-weight:700;padding:7px 8px 7px 14px;border-radius:99px;box-shadow:0 6px 16px -6px rgba(0,0,0,.5);white-space:nowrap;}
+  .preview-bar[hidden]{display:none;}
+  .preview-bar button{border:none;background:#FFFFFF;color:#211C17;font-size:11px;font-weight:700;padding:4px 10px;border-radius:99px;cursor:pointer;font-family:inherit;}
+  /* アプリ課金 */
+  .plan-badge{display:inline-block;padding:2px 10px;border-radius:99px;font-size:12px;border:1px solid var(--line-strong);}
+  .plan-badge.plan-master{background:#211C17;color:#FFFFFF;border-color:#211C17;}
+  .plan-badge.plan-paid{background:var(--accent);color:var(--on-accent);border-color:var(--accent);}
+  .billing-actions{gap:8px;}
+  .billing-actions .btn{flex:1;padding:9px 10px;font-size:13px;}
+  .btn.danger-text{color:#B23A3A;}
+  .billing-note{font-size:11px;color:var(--ink-soft);line-height:1.7;margin:8px 2px 0;}
+  .billing-note a{color:var(--accent);}
   /* ユーザー管理 */
   .btn.admin-entry{margin-top:22px;display:flex;align-items:center;justify-content:center;gap:8px;border-color:var(--accent);color:var(--accent);background:var(--card);font-weight:700;}
   .btn.admin-entry svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.6;}
@@ -2156,6 +2174,7 @@ function leaveUserMode(){
   clearTimeout(cloud.timer);
   access = {plan:null, features:{paid:{}, free:{}}, loaded:false};
   adminUsers = null;
+  setPreviewPlan(null);
   DrivePhotos.forget();
   cloud.user = null;
   cloud.hashes = {};
@@ -3657,7 +3676,7 @@ function accountSectionHtml(){
     : (canUnlinkGoogle ? '<button type="button" class="account-row-btn" data-action="unlink-google">解除</button>' : '');
   return '<div class="section-label">アカウント</div>'
     + '<div class="account-list">'
-    +   (access.plan ? '<div class="account-row"><span class="account-row-label">プラン</span><span class="account-row-value">'+PLAN_LABEL[access.plan]+'</span></div>' : '')
+
     +   '<div class="account-row">'
     +     '<span class="account-row-label">Google認証</span>'
     +     '<span class="account-row-value'+(hasGoogle?'':' muted')+'">'+(hasGoogle?'連携済み':'未連携')+'</span>'
@@ -5301,9 +5320,51 @@ function applyOshiOrder(ids){
   renderTopChipMenu();
 }
 /* マイページ：アカウント・ログアウト（推しの一覧は「推しの管理」ページへ） */
+/* マイページのタイトルの右：マスターだけ、表示を確認するプランを切り替える */
+function planPreviewSwitchHtml(){
+  if(!realMaster()) return '';
+  var cur = effectivePlan();
+  return '<div class="plan-preview" role="group" aria-label="表示を確認するプラン">'
+    + ["master","paid","free"].map(function(p){
+        return '<button type="button" class="'+(cur===p?'on':'')+'" data-action="preview-plan" data-plan="'+p+'" aria-pressed="'+(cur===p?'true':'false')+'">'+PLAN_LABEL[p]+'</button>';
+      }).join("")
+    + '</div>';
+}
+/* アプリ課金（決済は Stripe を予定。未定の値は ●●● で表示） */
+var BILLING_TBD = "●●●";
+function billingSectionHtml(){
+  if(!cloud.user) return '';
+  var plan = effectivePlan() || "free";
+  var rows = '<div class="account-row"><span class="account-row-label">現在のプラン</span>'
+    +   '<span class="account-row-value"><b class="plan-badge plan-'+plan+'">'+PLAN_LABEL[plan]+'</b></span></div>';
+  if(plan==="master"){
+    rows += '<div class="account-row"><span class="account-row-value muted">マスターは課金なしで、すべての機能を使えます。</span></div>';
+  } else {
+    rows += '<div class="account-row"><span class="account-row-label">有料プランの料金</span><span class="account-row-value">月額 '+BILLING_TBD+'円（税込）</span></div>';
+    if(plan==="paid"){
+      rows += '<div class="account-row"><span class="account-row-label">次回の更新日</span><span class="account-row-value">'+BILLING_TBD+'</span></div>'
+        + '<div class="account-row"><span class="account-row-label">お支払い方法</span><span class="account-row-value">'+BILLING_TBD+'</span></div>'
+        + '<div class="account-row billing-actions">'
+        +   '<button type="button" class="btn ghost" data-action="billing-manage">お支払いの管理</button>'
+        +   '<button type="button" class="btn ghost danger-text" data-action="billing-cancel">解約する</button>'
+        + '</div>';
+    } else {
+      rows += '<div class="account-row billing-actions"><button type="button" class="btn primary block" data-action="billing-upgrade">有料プランにする</button></div>';
+    }
+  }
+  // 有料プランだけで使える機能（有料はON・無料はOFFのもの）
+  var only = PLAN_FEATURES.filter(function(f){ return (access.features.paid||{})[f.id]!==false && (access.features.free||{})[f.id]===false; });
+  var perks = plan==="master" ? '' : '<p class="billing-note">有料プランで使える機能：'+(only.length ? only.map(function(f){ return escapeHtml(f.label); }).join("・") : BILLING_TBD)+'</p>';
+  return '<div class="section-label">アプリ課金</div>'
+    + '<div class="account-list">'+rows+'</div>'
+    + perks
+    + '<p class="billing-note">お支払いは Stripe（オンライン決済サービス）で行います。カード情報は本アプリには保存されません。<br>'
+    + '<a href="#" data-action="billing-legal">特定商取引法に基づく表記</a>（'+BILLING_TBD+'）</p>';
+}
 function renderOshiPage(){
-  var html = '<div class="page-head"><h1 class="mincho">マイページ</h1></div>';
+  var html = '<div class="page-head page-head-row"><h1 class="mincho">マイページ</h1>'+planPreviewSwitchHtml()+'</div>';
   html += accountSectionHtml();
+  html += billingSectionHtml();
   // ユーザー管理はマスターだけ（ログアウトの上）
   if(isMaster()){
     html += '<button type="button" class="btn block admin-entry" data-action="goto-admin">'
@@ -5405,15 +5466,31 @@ var PLAN_FEATURES = [
 ];
 var ACCESS_KEY = "oshikatsu_access_v1:";
 var access = {plan:null, features:{paid:{}, free:{}}, loaded:false};
+var PREVIEW_KEY = "oshikatsu_plan_preview_v1";
 function accessKey(){ return ACCESS_KEY + (cloud.user ? cloud.user.id : ""); }
+// マスターだけ：表示を確認するためのプランの切り替え（この画面を開いている間だけ。データや権限は変えない）
+function previewPlan(){
+  if(access.plan!=="master") return null;
+  try{ var v = sessionStorage.getItem(PREVIEW_KEY); return (v==="paid" || v==="free") ? v : null; }catch(e){ return null; }
+}
+function setPreviewPlan(plan){
+  try{
+    if(plan==="paid" || plan==="free") sessionStorage.setItem(PREVIEW_KEY, plan);
+    else sessionStorage.removeItem(PREVIEW_KEY);
+  }catch(e){}
+}
+// 画面で使うプラン（マスターが切り替え中なら、そのプラン）
+function effectivePlan(){ return previewPlan() || access.plan; }
+// 本当にマスターか（切り替え中でも true。ユーザー管理の書き込みや切り替えボタンに使う）
+function realMaster(){ return access.plan==="master"; }
 function restoreAccess(){
   var a = readStored(accessKey());
   access = (a && a.features) ? {plan:a.plan||null, features:a.features, loaded:false} : {plan:null, features:{paid:{}, free:{}}, loaded:false};
 }
-function isMaster(){ return access.plan==="master"; }
+function isMaster(){ return effectivePlan()==="master"; }
 // その機能を使えるか（マスター・種類が分からないときは使える）
 function canUse(feature){
-  var plan = access.plan;
+  var plan = effectivePlan();
   if(!plan || plan==="master") return true;
   var f = access.features[plan] || {};
   return f[feature]!==false;
@@ -5447,6 +5524,19 @@ function applyFeatureGates(){
   });
   if(tabFeature[state.view] && !canUse(tabFeature[state.view])) state.view = "home";
   if(state.view==="admin" && !isMaster()) state.view = "oshi";
+  // 切り替え中は、画面の上に「○○の表示を確認中」を出す
+  var pv = previewPlan(), bar = document.getElementById("previewBar");
+  if(pv){
+    if(!bar){
+      bar = document.createElement("div");
+      bar.id = "previewBar";
+      bar.className = "preview-bar";
+      bar.addEventListener("click", onAppClick);   // 画面の外（body）に置くので、ここでも押した操作を受ける
+      document.body.appendChild(bar);
+    }
+    bar.innerHTML = '<span>「'+PLAN_LABEL[pv]+'」の表示を確認中</span><button type="button" data-action="preview-plan" data-plan="master">マスターに戻す</button>';
+    bar.hidden = false;
+  } else if(bar){ bar.hidden = true; }
 }
 
 /* ユーザー管理（マスターだけ）：種類ごとの機能のON/OFFと、ユーザーの種類の変更 */
@@ -5503,6 +5593,7 @@ async function setUserPlan(userId, plan, sel){
   var u = (adminUsers||[]).find(function(x){ return x.user_id===userId; });
   if(!u || u.plan===plan) return;
   var me = cloud.user && userId===cloud.user.id;
+  if(!realMaster()) return;
   if(me && plan!=="master"){
     var masters = adminUsers.filter(function(x){ return x.plan==="master"; }).length;
     if(masters<=1){ toast("マスターが1人もいなくなるため変更できません"); sel.value = u.plan; return; }
@@ -5521,6 +5612,7 @@ async function setUserPlan(userId, plan, sel){
   }
 }
 async function toggleFeature(plan, feature){
+  if(!realMaster()) return;
   var cur = (access.features[plan]||{})[feature]!==false;
   var next = !cur;
   access.features[plan] = access.features[plan] || {};
@@ -7523,6 +7615,19 @@ function onAppClick(e){
   var action = el.getAttribute("data-action");
 
   if(action==="add-oshi"){ openOshiSheet(null); return; }
+  if(action==="preview-plan"){
+    if(!realMaster()) return;
+    var pp = el.getAttribute("data-plan");
+    setPreviewPlan(pp==="master" ? null : pp);
+    render();
+    toast(pp==="master" ? "マスターの表示に戻しました" : "「"+PLAN_LABEL[pp]+"」の表示に切り替えました（確認用）");
+    return;
+  }
+  if(action==="billing-upgrade" || action==="billing-manage" || action==="billing-cancel" || action==="billing-legal"){
+    e.preventDefault();
+    toast("お支払いの機能は準備中です（"+BILLING_TBD+"）");
+    return;
+  }
   if(action==="goto-admin"){ if(isMaster()){ adminUsers = null; state.view = "admin"; render(); window.scrollTo(0,0); } return; }
   if(action==="goto-mypage"){ state.view = "oshi"; render(); window.scrollTo(0,0); return; }
   if(action==="toggle-feature"){ if(isMaster()) toggleFeature(el.getAttribute("data-plan"), el.getAttribute("data-feature")); return; }
