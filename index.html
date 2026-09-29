@@ -1083,6 +1083,11 @@
   .plan-switch.on{background:var(--accent);border-color:var(--accent);}
   .plan-switch.on i{left:20px;}
   .admin-email{font-size:13px;}
+  .admin-filter{display:flex;background:var(--card);border-radius:12px;padding:3px;margin-bottom:10px;}
+  .admin-filter button{flex:1;display:flex;align-items:center;justify-content:center;gap:5px;border:none;background:transparent;border-radius:9px;padding:8px 2px;font-size:12px;font-weight:700;color:var(--ink-soft);cursor:pointer;font-family:inherit;}
+  .admin-filter button span{font-size:10.5px;font-weight:900;min-width:18px;padding:1px 5px;border-radius:99px;background:rgba(33,28,23,.08);}
+  .admin-filter button.on{background:var(--paper);color:var(--heading);box-shadow:0 1px 3px rgba(33,28,23,.12);}
+  .admin-filter button.on span{background:var(--accent);color:var(--on-accent);}
   .admin-plan{flex:none;border:1px solid var(--line-strong);border-radius:8px;padding:6px 8px;background:var(--paper);font-family:inherit;font-size:13px;color:var(--text);}
   .ck-photos-hint{font-size:11px;color:var(--ink-soft);margin:6px 0 0;}
   .ck-thumb.add{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;border-style:dashed;color:var(--accent);font-size:11px;font-weight:700;font-family:inherit;}
@@ -6448,7 +6453,8 @@ function applyFeatureGates(){
 }
 
 /* ユーザー管理（マスターだけ）：種類ごとの機能のON/OFFと、ユーザーの種類の変更 */
-var adminUsers = null, adminLoading = false;
+var adminUsers = null, adminLoading = false, adminFilter = "all";
+var ADMIN_PLAN_ORDER = {master:1, paid:2, free:3};
 function renderAdminPage(){
   var html = '<div class="page-head"><h1 class="mincho">ユーザー管理</h1><p>アカウントの種類ごとに使える機能を決め、ユーザーの種類を変更します。マスターはすべての機能を使えます。</p></div>';
   html += '<div class="section-label">機能の設定</div>'
@@ -6467,7 +6473,21 @@ function renderAdminPage(){
     html += '<p class="rs-note">ユーザーを読み込んでいます…</p>';
     loadAdminUsers();
   } else {
-    html += '<div class="account-list">' + adminUsers.map(function(u){
+    // マスター → 有料 → 無料 の順（同じ種類の中は登録順）。上のボタンで種類を絞り込む
+    var counts = {all:adminUsers.length, master:0, paid:0, free:0};
+    adminUsers.forEach(function(u){ if(counts[u.plan]!=null) counts[u.plan]++; });
+    var shown = adminUsers.map(function(u, i){ return {u:u, i:i}; })
+      .filter(function(x){ return adminFilter==="all" || x.u.plan===adminFilter; })
+      .sort(function(a, b){ return (ADMIN_PLAN_ORDER[a.u.plan]||9) - (ADMIN_PLAN_ORDER[b.u.plan]||9) || a.i - b.i; })
+      .map(function(x){ return x.u; });
+    html += '<div class="admin-filter" role="group" aria-label="種類で絞り込む">'
+      + [["all","すべて"],["master","マスター"],["paid","有料"],["free","無料"]].map(function(o){
+          var on = adminFilter===o[0];
+          return '<button type="button" class="'+(on?'on':'')+'" data-action="admin-filter" data-f="'+o[0]+'" aria-pressed="'+(on?'true':'false')+'">'+o[1]+'<span>'+counts[o[0]]+'</span></button>';
+        }).join("")
+      + '</div>';
+    if(!shown.length) html += '<p class="rs-note">この種類のユーザーはいません。</p>';
+    else html += '<div class="account-list">' + shown.map(function(u){
       var me = cloud.user && u.user_id===cloud.user.id;
       return '<div class="account-row"><span class="account-row-value admin-email">'+escapeHtml(u.email||u.user_id)+(me?'<small class="account-row-sub">あなた</small>':'')+'</span>'
         + '<select class="admin-plan" data-user="'+escapeHtml(u.user_id)+'" aria-label="アカウントの種類">'
@@ -6512,7 +6532,8 @@ async function setUserPlan(userId, plan, sel){
     if(r.error) throw r.error;
     u.plan = plan;
     toast((u.email||"ユーザー")+" を「"+PLAN_LABEL[plan]+"」にしました");
-    if(me){ await loadAccess(); render(); }
+    if(me) await loadAccess();
+    render();   // 並び順と件数を直す
   }catch(e){
     console.warn("plan update failed", e);
     sel.value = u.plan;
@@ -9297,6 +9318,7 @@ function onAppClick(e){
   if(action==="catalog-sort"){ catalogView.sort = el.getAttribute("data-sort") || "sung"; render(); return; }
   if(action==="catalog-edit-artist"){ if(catalogView.artist) openCatalogArtistSheet(catalogView.artist); return; }
   if(action==="catalog-edit-song"){ if(catalogView.artist) openCatalogSongSheet(el.getAttribute("data-t")||"", catalogView.artist); return; }
+  if(action==="admin-filter"){ adminFilter = el.getAttribute("data-f") || "all"; render(); return; }
   if(action==="goto-admin"){ if(isMaster()){ adminUsers = null; state.view = "admin"; render(); window.scrollTo(0,0); } return; }
   if(action==="goto-mypage"){ state.view = "oshi"; render(); window.scrollTo(0,0); return; }
   if(action==="toggle-feature"){ if(isMaster()) toggleFeature(el.getAttribute("data-plan"), el.getAttribute("data-feature")); return; }
