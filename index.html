@@ -5674,9 +5674,10 @@ function updateNewsDot(){
 }
 function newsDate(iso){ var d = new Date(iso); return isNaN(d) ? "" : d.getFullYear()+"."+String(d.getMonth()+1).padStart(2,"0")+"."+String(d.getDate()).padStart(2,"0"); }
 function newsSectionHtml(){
+  // NEWS はすべてのプランに出す（お知らせが無いときも欄は出す）。追加・編集・削除はマスターだけ
+  if(!cloud.user) return '';
   var can = isMaster() && realMaster();
   var items = news.items;
-  if(!items.length && !can) return '';
   var shown = news.all ? items : items.slice(0, 3);
   var weekAgo = new Date(Date.now()-7*24*3600*1000).toISOString();
   var html = '<div class="section-label">NEWS</div><div class="news-list">';
