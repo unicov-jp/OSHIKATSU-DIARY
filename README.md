@@ -324,5 +324,6 @@ LIVE記録の入力画面は、上の「LIVE記録を編集／セトリ記録を
   4. unicov-jp 側で GitHub と Vercel の連携をつなぎ直す。
   5. claude.ai の Connectors で Supabase を切断→接続し直し、unicov-jp を選ぶ。新しいセッションから有効。
 - **Stripe による課金**（保留）：画面はでき、未定の値は「●●●」で表示している。「有料プランにする」などのボタンは「準備中」と出るだけ。
+  - 課金状況によるプランの自動切り替えも保留：Stripe の Webhook を Vercel の `/api/stripe-webhook` で受け、署名を確かめてから `oshikatsu_profiles.plan` を書き換える（支払い済み・お試し中 = 有料、解約・期限切れ = 無料、支払い失敗は猶予期間のあと無料、マスターは自動で変えない）。Stripe の秘密鍵・Webhook の署名用の鍵・Supabase のサービスロールキーを Vercel の環境変数に置き、Stripe の顧客IDや次回更新日を持つ列を足す SQL が要る。
 - **特定商取引法に基づく表記のページ**（保留）：課金を始めるときに必要。Stripe と一緒に再開する。
 - 曲名の自動取り込み（iTunes 検索API）は取りやめ。
