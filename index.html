@@ -965,6 +965,7 @@
   .setlist-view li .listen-btn{width:30px;height:30px;margin:-2px 0;}
   .cat-r-main{display:flex;align-items:center;gap:12px;flex:1;min-width:0;padding:0;border:none;background:none;text-align:left;cursor:pointer;font-family:inherit;color:var(--text);}
   .cat-r .listen-btn{margin-left:2px;margin-right:-6px;}
+  .cat-r-main.view{cursor:default;}
   .music-ic{flex:none;width:30px;height:30px;border-radius:9px;color:#fff;font-weight:900;font-size:14px;display:inline-flex;align-items:center;justify-content:center;font-family:"Zen Kaku Gothic New",sans-serif;}
   .music-ic svg{width:18px;height:18px;stroke:#fff;fill:none;stroke-width:1.8;}
   .music-ic svg .f{fill:#fff;stroke:none;}
@@ -2236,7 +2237,7 @@ async function pushChanges(uid){
     items.push({key:k, hash:null, row:{user_id:uid, kind:k.slice(0,p), id:k.slice(p+1), data:keep, deleted:true}});
   });
   // 一度にたくさん消そうとしているときは、送る前に確認する（端末の不具合でクラウドの記録を消さないため）
-  var dels = items.filter(function(it){ return it.hash===null; });
+  var dels = items.filter(function(it){ return it.hash===null && !CATALOG_KINDS[it.row.kind]; });   // アーティスト・曲は共有の辞書へ移したときに消すので数えない
   if(dels.length > CLOUD_MASS_DELETE){
     var okDel = confirm("クラウドの記録を"+dels.length+"件まとめて削除しようとしています。\n"
       + "ご自身で削除した場合は「OK」を押してください。\n"
@@ -2471,10 +2472,12 @@ async function enterUserMode(user){
   loadLocal();
   state.ready = true;
   render();
-  loadAccess();
+  var accessReady = loadAccess();
   loadNews();
   await syncNow();
   if(!cloud.user || cloud.user.id!==user.id) return;
+  // アーティスト・曲の共有辞書（プランを読み込んでから。マスターの端末から背景画像を移すため）
+  accessReady.then(function(){ loadSharedCatalog(); });
 
   var guest = readStored(GUEST_KEY);
   if(hasContent(guest)){
@@ -5754,6 +5757,284 @@ async function deleteNews(id){
   }catch(e){ console.warn("news delete failed", e); toast("削除できませんでした"); }
 }
 
+/* ============ アーティスト・曲の共有辞書（Supabase） ============
+   アーティスト・曲は全ユーザーで共有する（oshikatsu_artists / oshikatsu_songs）。背景画像は Storage の oshikatsu-artists に置く。
+   追加はだれでもできる。名前の変更・削除、背景画像の設定・変更・削除はマスターだけ（Supabase の行レベルセキュリティでも止める）。
+   マスターが名前を変えると oshikatsu_catalog_renames に残し、各ユーザーのアプリが自分のLIVE記録のセトリに同じ変更を当てる。
+   これまで各ユーザーの記録にあった登録（state.artists / state.songs）は、読み込んだときにこちらへ移す（画像はマスターの端末から）。
+   SQL（20260929000000_oshikatsu_shared_catalog.sql）を実行する前は、これまでどおり自分の登録を使う。 */
+var SHARED_BUCKET = "oshikatsu-artists";
+var SHARED_CACHE_KEY = "oshikatsu_shared_catalog_v1";
+var shared = {artists:[], songs:[], renames:[], ready:false, cached:false, unsupported:false, loading:null};
+(function(){
+  try{
+    var c = JSON.parse(localStorage.getItem(SHARED_CACHE_KEY)||"null");
+    if(c){ shared.artists = c.artists||[]; shared.songs = c.songs||[]; shared.renames = c.renames||[]; shared.cached = true; }
+  }catch(e){}
+})();
+function saveSharedCache(){
+  try{ localStorage.setItem(SHARED_CACHE_KEY, JSON.stringify({artists:shared.artists.filter(function(a){ return !a.pending; }), songs:shared.songs.filter(function(s){ return !s.pending; }), renames:shared.renames})); }catch(e){}
+}
+// 共有の辞書を使うか（一度でも読み込めていれば使う。SQL未実行なら自分の登録）
+function catalogUseShared(){ return !shared.unsupported && (shared.ready || shared.cached); }
+function catalogCanWrite(){ return catalogUseShared() && !!sb && !!cloud.user; }
+function catArtists(){ return catalogUseShared() ? shared.artists : (state.artists||[]); }
+function catSongs(){ return catalogUseShared() ? shared.songs : (state.songs||[]); }
+// 名前の変更・削除、背景画像はマスターだけ（プランの表示確認中は付けない）
+function canEditCatalog(){ return catalogCanWrite() && isMaster() && realMaster(); }
+function rowToArtist(r){ return {id:r.id, name:r.name, image:r.image_path||"", imagePos:r.image_pos||""}; }
+function rowToSong(r){ return {id:r.id, title:r.title, artist:r.artist||""}; }
+function songKey(t, a){ return nameKey(t)+"\u0000"+nameKey(a); }
+// 背景画像のURL（Storage の公開URL。移す前のドライブの画像にも対応）
+function catalogImageUrl(img){
+  if(!img) return "";
+  if(DrivePhotos.isRef(img)) return DrivePhotos.cachedUrl(img) || "";
+  var base = ((appConfig && appConfig.supabaseUrl) || "").replace(/\/+$/, "");
+  return base + "/storage/v1/object/public/" + SHARED_BUCKET + "/" + String(img).split("/").map(encodeURIComponent).join("/");
+}
+function catalogBgStyle(img, grad){
+  if(DrivePhotos.isRef(img)) return DrivePhotos.bgStyle(img, grad);
+  return 'background-image:'+grad+', url('+catalogImageUrl(img)+');';
+}
+function isMissingTable(e){ return !!e && (e.code==="42P01" || e.code==="PGRST205" || /does not exist|schema cache/i.test(e.message||"")); }
+async function fetchAllRows(table, cols){
+  var out = [], from = 0, size = 1000;
+  for(;;){
+    var r = await sb.from(table).select(cols).order("created_at", {ascending:true}).range(from, from+size-1);
+    if(r.error) throw r.error;
+    var rows = r.data || [];
+    out = out.concat(rows);
+    if(rows.length < size) return out;
+    from += size;
+  }
+}
+async function loadSharedCatalog(){
+  if(!sb || !cloud.user) return;
+  if(shared.loading) return shared.loading;
+  shared.loading = (async function(){
+    try{
+      var arts = await fetchAllRows("oshikatsu_artists", "id,name,image_path,image_pos,created_at");
+      var songs = await fetchAllRows("oshikatsu_songs", "id,title,artist,created_at");
+      var rens = await fetchAllRows("oshikatsu_catalog_renames", "id,kind,from_title,from_artist,to_title,to_artist,created_at");
+      var before = JSON.stringify([shared.artists, shared.songs]);
+      shared.artists = arts.map(rowToArtist);
+      shared.songs = songs.map(rowToSong);
+      shared.renames = rens.sort(function(a, b){ return a.id - b.id; });
+      shared.ready = true; shared.unsupported = false;
+      saveSharedCache();
+      var changed = applyCatalogRenames();
+      if(changed) saveLocal();
+      await migrateLocalCatalog();
+      if(changed || before!==JSON.stringify([shared.artists, shared.songs])) render();
+    }catch(e){
+      console.warn("shared catalog load failed", e);
+      if(isMissingTable(e)){ shared.unsupported = true; render(); }
+    }finally{ shared.loading = null; }
+  })();
+  return shared.loading;
+}
+// マスターが変えた名前を、自分のLIVE記録のセトリに当てる（何度当てても同じ結果になる）
+function applyCatalogRenames(){
+  var changed = false;
+  shared.renames.forEach(function(x){
+    if(x.kind==="artist"){ if(applyArtistRenameToRecords(x.from_artist, x.to_artist, false)) changed = true; }
+    else if(applySongRenameToRecords(x.from_title, x.from_artist, x.to_title, x.to_artist)) changed = true;
+  });
+  return changed;
+}
+// これまで自分の記録にあった登録を共有の辞書へ移す。移せたものは自分の記録から消す（同じ名前は1つにまとまる）
+var migratingCatalog = false;
+async function migrateLocalCatalog(){
+  if(migratingCatalog || !catalogCanWrite()) return;
+  var arts = (state.artists||[]).slice(), songs = (state.songs||[]).slice();
+  if(!arts.length && !songs.length) return;
+  migratingCatalog = true;
+  var keepA = [], keepS = [];
+  try{
+    for(var i=0;i<songs.length;i++){
+      try{ await sharedEnsureSong(songs[i].title, songs[i].artist); }catch(e){ keepS.push(songs[i]); }
+    }
+    for(var j=0;j<arts.length;j++){
+      var a = arts[j];
+      try{
+        var sa = await sharedEnsureArtist(a.name);
+        // 背景画像はマスターの端末から移す（共有の方にまだ画像が無いときだけ）。ドライブにつながっていなければ次の機会に
+        if(sa && a.image && !sa.image && realMaster()){
+          if(!DrivePhotos.connected()){ keepA.push(a); continue; }
+          var blob = await DrivePhotos.blobOf(a.image);
+          await sharedSetArtistImage(sa, blob, a.imagePos);
+        }
+      }catch(e){ console.warn("catalog migrate failed", a.name, e); keepA.push(a); }
+    }
+  }finally{
+    migratingCatalog = false;
+  }
+  var moved = (arts.length - keepA.length) + (songs.length - keepS.length);
+  var ids = {};
+  arts.concat(songs).forEach(function(x){ ids[x.id] = true; });
+  keepA.concat(keepS).forEach(function(x){ delete ids[x.id]; });
+  state.artists = (state.artists||[]).filter(function(x){ return !ids[x.id]; });
+  state.songs = (state.songs||[]).filter(function(x){ return !ids[x.id]; });
+  if(moved){ saveLocal(); render(); }
+}
+async function sharedEnsureArtist(name){
+  name = (name||"").trim();
+  if(!name) return null;
+  var k = nameKey(name);
+  var hit = shared.artists.find(function(a){ return nameKey(a.name)===k; });
+  if(hit && !hit.pending) return hit;
+  if(!hit){ hit = {id:"tmp-"+uuid(), name:name, image:"", imagePos:"", pending:true}; shared.artists.push(hit); }
+  var r = await sb.from("oshikatsu_artists").insert({name:name}).select("id,name,image_path,image_pos").single();
+  var row = r.data;
+  if(r.error){
+    if(r.error.code!=="23505"){ shared.artists = shared.artists.filter(function(x){ return x!==hit; }); throw r.error; }
+    var g = await sb.from("oshikatsu_artists").select("id,name,image_path,image_pos").eq("name_key", k).limit(1);
+    if(g.error || !g.data || !g.data[0]){ shared.artists = shared.artists.filter(function(x){ return x!==hit; }); throw (g.error || r.error); }
+    row = g.data[0];
+  }
+  Object.assign(hit, rowToArtist(row));
+  delete hit.pending;
+  saveSharedCache();
+  return hit;
+}
+async function sharedEnsureSong(title, artist){
+  title = (title||"").trim(); artist = (artist||"").trim();
+  if(!title) return null;
+  var k = songKey(title, artist);
+  var hit = shared.songs.find(function(s){ return songKey(s.title, s.artist)===k; });
+  if(hit && !hit.pending) return hit;
+  if(!hit){ hit = {id:"tmp-"+uuid(), title:title, artist:artist, pending:true}; shared.songs.push(hit); }
+  var r = await sb.from("oshikatsu_songs").insert({title:title, artist:artist}).select("id,title,artist").single();
+  var row = r.data;
+  if(r.error){
+    if(r.error.code!=="23505"){ shared.songs = shared.songs.filter(function(x){ return x!==hit; }); throw r.error; }
+    var g = await sb.from("oshikatsu_songs").select("id,title,artist").eq("title_key", nameKey(title)).eq("artist_key", nameKey(artist)).limit(1);
+    if(g.error || !g.data || !g.data[0]){ shared.songs = shared.songs.filter(function(x){ return x!==hit; }); throw (g.error || r.error); }
+    row = g.data[0];
+  }
+  Object.assign(hit, rowToSong(row));
+  delete hit.pending;
+  if(artist) await sharedEnsureArtist(artist);
+  saveSharedCache();
+  return hit;
+}
+async function sharedLogRename(row){
+  var r = await sb.from("oshikatsu_catalog_renames").insert(row);
+  if(r.error) throw r.error;
+}
+// 曲の名前・アーティストを変える。同じ曲がすでにあれば、そちらにまとめる（こちらは消す）
+async function sharedMoveSong(s, title, artist){
+  var k = songKey(title, artist);
+  var other = shared.songs.find(function(x){ return x!==s && songKey(x.title, x.artist)===k; });
+  if(other){
+    var d = await sb.from("oshikatsu_songs").delete().eq("id", s.id);
+    if(d.error) throw d.error;
+    shared.songs = shared.songs.filter(function(x){ return x!==s; });
+    return other;
+  }
+  var u = await sb.from("oshikatsu_songs").update({title:title, artist:artist, updated_at:new Date().toISOString()}).eq("id", s.id);
+  if(u.error) throw u.error;
+  s.title = title; s.artist = artist;
+  return s;
+}
+async function sharedRemoveImage(path){
+  if(!path || DrivePhotos.isRef(path)) return;
+  try{ await sb.storage.from(SHARED_BUCKET).remove([path]); }catch(e){ console.warn("image remove failed", e); }
+}
+async function sharedSetArtistImage(artist, blob, pos){
+  if(!artist || String(artist.id).indexOf("tmp-")===0) artist = await sharedEnsureArtist(artist ? artist.name : "");
+  var path = artist.id + "/" + Date.now() + ".jpg";
+  var up = await sb.storage.from(SHARED_BUCKET).upload(path, blob, {contentType:"image/jpeg", cacheControl:"31536000", upsert:false});
+  if(up.error) throw up.error;
+  var p = /^\d{1,3}(\.\d+)?% \d{1,3}(\.\d+)?%$/.test(pos||"") ? pos : null;
+  var u = await sb.from("oshikatsu_artists").update({image_path:path, image_pos:p, updated_at:new Date().toISOString()}).eq("id", artist.id);
+  if(u.error){ await sharedRemoveImage(path); throw u.error; }
+  var old = artist.image;
+  artist.image = path; artist.imagePos = p || "";
+  saveSharedCache();
+  if(old && old!==path) sharedRemoveImage(old);
+  return artist;
+}
+async function sharedSetImagePos(artist, pos){
+  var u = await sb.from("oshikatsu_artists").update({image_pos:pos, updated_at:new Date().toISOString()}).eq("id", artist.id);
+  if(u.error) throw u.error;
+  artist.imagePos = pos;
+  saveSharedCache();
+}
+async function sharedClearImage(artist){
+  var old = artist.image;
+  var u = await sb.from("oshikatsu_artists").update({image_path:null, image_pos:null, updated_at:new Date().toISOString()}).eq("id", artist.id);
+  if(u.error) throw u.error;
+  artist.image = ""; artist.imagePos = "";
+  saveSharedCache();
+  sharedRemoveImage(old);
+}
+// マスター：アーティスト名を変える（すでにある名前なら、そのアーティストにまとめる）
+async function sharedRenameArtist(from, to){
+  var fk = nameKey(from), tk = nameKey(to);
+  var src = shared.artists.find(function(a){ return nameKey(a.name)===fk; });
+  var dst = shared.artists.find(function(a){ return nameKey(a.name)===tk && a!==src; });
+  var songs = shared.songs.filter(function(s){ return nameKey(s.artist)===fk; });
+  for(var i=0;i<songs.length;i++) await sharedMoveSong(songs[i], songs[i].title, to);
+  if(src && dst){
+    if(src.image && !dst.image){
+      var u = await sb.from("oshikatsu_artists").update({image_path:src.image, image_pos:src.imagePos||null, updated_at:new Date().toISOString()}).eq("id", dst.id);
+      if(u.error) throw u.error;
+      dst.image = src.image; dst.imagePos = src.imagePos;
+      src.image = "";
+    }
+    var d = await sb.from("oshikatsu_artists").delete().eq("id", src.id);
+    if(d.error) throw d.error;
+    shared.artists = shared.artists.filter(function(a){ return a!==src; });
+    if(src.image) sharedRemoveImage(src.image);
+  } else if(src){
+    var r = await sb.from("oshikatsu_artists").update({name:to, updated_at:new Date().toISOString()}).eq("id", src.id);
+    if(r.error) throw r.error;
+    src.name = to;
+  } else if(!dst){
+    await sharedEnsureArtist(to);
+  }
+  await sharedLogRename({kind:"artist", from_artist:from.trim(), to_artist:to});
+  saveSharedCache();
+}
+// マスター：アーティストを削除する（そのアーティストの曲と背景画像も）
+async function sharedDeleteArtist(name){
+  var k = nameKey(name);
+  var songs = shared.songs.filter(function(s){ return nameKey(s.artist)===k && String(s.id).indexOf("tmp-")!==0; });
+  if(songs.length){
+    var ds = await sb.from("oshikatsu_songs").delete().in("id", songs.map(function(s){ return s.id; }));
+    if(ds.error) throw ds.error;
+  }
+  shared.songs = shared.songs.filter(function(s){ return nameKey(s.artist)!==k; });
+  var a = shared.artists.find(function(x){ return nameKey(x.name)===k; });
+  if(a){
+    var d = await sb.from("oshikatsu_artists").delete().eq("id", a.id);
+    if(d.error) throw d.error;
+    shared.artists = shared.artists.filter(function(x){ return x!==a; });
+    sharedRemoveImage(a.image);
+  }
+  saveSharedCache();
+}
+// マスター：曲名・アーティストを変える
+async function sharedEditSong(title, artist, nt, na){
+  var s = shared.songs.find(function(x){ return songKey(x.title, x.artist)===songKey(title, artist); });
+  if(s) await sharedMoveSong(s, nt, na);
+  else await sharedEnsureSong(nt, na);
+  if(na) await sharedEnsureArtist(na);
+  await sharedLogRename({kind:"song", from_title:title.trim(), from_artist:artist.trim(), to_title:nt, to_artist:na});
+  saveSharedCache();
+}
+// マスター：曲を削除する
+async function sharedDeleteSong(title, artist){
+  var s = shared.songs.find(function(x){ return songKey(x.title, x.artist)===songKey(title, artist); });
+  if(s && String(s.id).indexOf("tmp-")!==0){
+    var d = await sb.from("oshikatsu_songs").delete().eq("id", s.id);
+    if(d.error) throw d.error;
+  }
+  shared.songs = shared.songs.filter(function(x){ return x!==s; });
+  saveSharedCache();
+}
+
 /* ============ アーティスト・曲の登録一覧（マイページから） ============
    アーティストごとに曲を見て、検索・登録できる。登録した曲はセットリストの入力候補と「曲を探す」に出る。
    一覧には、登録したものに加えて、推しのグループ（グループのない推しは人物名）とセットリストで使ったものも出す。 */
@@ -5768,7 +6049,7 @@ function catalogArtistList(){
     if(!map[k]) map[k] = {name:name, id:null, songs:0, sung:0};
     if(reg) map[k].id = reg.id;
   }
-  (state.artists||[]).forEach(function(a){ add(a.name, a); });
+  catArtists().forEach(function(a){ add(a.name, a); });
   state.oshis.forEach(function(o){ var gs = oshiGroupsList(o); if(gs.length) gs.forEach(function(g){ add(g.name); }); else add(o.name); });
   state.live.forEach(function(r){ recSetlists(r).forEach(function(b){ add(b.artist); }); });
   setlistSongCatalog().forEach(function(x){
@@ -5808,7 +6089,7 @@ function renderCatalogPage(){
       + '<div class="cat-tiles" id="catalogList">'
       + (list.length ? list.map(function(x){
           var img = catalogArtistImage(x.name), color = catalogArtistColor(x.name);
-          var style = '--tile:'+escapeHtml(color)+';' + (img ? 'background-position:'+catalogArtistImagePos(x.name)+';'+DrivePhotos.bgStyle(img, CAT_TILE_GRAD) : '');
+          var style = '--tile:'+escapeHtml(color)+';' + (img ? 'background-position:'+catalogArtistImagePos(x.name)+';'+catalogBgStyle(img, CAT_TILE_GRAD) : '');
           var initial = Array.from(x.name.trim())[0] || "";
           return '<button type="button" class="cat-tile'+(img ? ' has-img' : (x.songs ? '' : ' empty'))+'" data-action="catalog-artist" data-name="'+escapeHtml(x.name)+'" data-q="'+escapeHtml(x.name.toLowerCase())+'" style="'+style+'">'
             + (img ? '' : '<span class="cat-tile-mark" aria-hidden="true">'+escapeHtml(initial)+'</span>')
@@ -5827,15 +6108,15 @@ function renderCatalogPage(){
     else shown.sort(function(x, y){ return y.n - x.n || x.title.localeCompare(y.title, "ja"); });
     var max = songs.reduce(function(m, x){ return Math.max(m, x.n); }, 0) || 1;
     var pen = '<svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>';
-    var heroImg = catalogArtistImage(a);
+    var heroImg = catalogArtistImage(a), canEdit = canEditCatalog();
     html += '<button type="button" class="catalog-back" data-action="catalog-back"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>アーティスト一覧</button>'
       // 上部：アルバムジャケット風の見出し
-      + '<div class="cat-hero'+(heroImg ? ' has-img' : '')+'"'+(heroImg ? ' style="background-position:'+catalogArtistImagePos(a)+';'+DrivePhotos.bgStyle(heroImg, CAT_HERO_GRAD)+'"' : '')+'>'
-      +   '<label class="cat-hero-img" title="背景画像を設定" aria-label="背景画像を設定"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.4"/><path d="M8 6l1-2h6l1 2"/></svg><input type="file" id="catalogHeroInput" accept="image/*" hidden></label>'
+      + '<div class="cat-hero'+(heroImg ? ' has-img' : '')+'"'+(heroImg ? ' style="background-position:'+catalogArtistImagePos(a)+';'+catalogBgStyle(heroImg, CAT_HERO_GRAD)+'"' : '')+'>'
+      +   (canEdit ? '<label class="cat-hero-img" title="背景画像を設定" aria-label="背景画像を設定"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.4"/><path d="M8 6l1-2h6l1 2"/></svg><input type="file" id="catalogHeroInput" accept="image/*" hidden></label>' : '')
       +   '<small>ARTIST</small>'
       +   '<h1 class="mincho">'+escapeHtml(a)+'</h1>'
       +   '<div class="cat-hero-stats"><div><b>'+songs.length+'</b>曲</div><div><b>'+sung+'</b>回歌唱</div><div><b>'+lives+'</b>LIVE</div></div>'
-      +   '<button type="button" class="cat-hero-edit" data-action="catalog-edit-artist">'+pen+'編集</button>'
+      +   (canEdit ? '<button type="button" class="cat-hero-edit" data-action="catalog-edit-artist">'+pen+'編集</button>' : '')
       + '</div>'
       + '<div class="cat-search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4-4"/></svg><input type="search" id="catalogQ" placeholder="曲を検索・登録" autocomplete="off"></div>'
       + '<button type="button" class="btn ghost block catalog-add" id="catalogAddSong" hidden></button>'
@@ -5849,11 +6130,11 @@ function renderCatalogPage(){
       + (shown.length ? shown.map(function(x, i){
           var medal = sort==="sung" && x.n && i<3 ? ' g'+(i+1) : '';
           return '<div class="catalog-row cat-r'+medal+'" data-t="'+escapeHtml(x.title)+'" data-q="'+escapeHtml(x.title.toLowerCase())+'">'
-            + '<button type="button" class="cat-r-main" data-action="catalog-edit-song" data-t="'+escapeHtml(x.title)+'">'
+            + (canEdit ? '<button type="button" class="cat-r-main" data-action="catalog-edit-song" data-t="'+escapeHtml(x.title)+'">' : '<div class="cat-r-main view">')
             +   '<span class="cat-r-n">'+(i+1)+'</span>'
             +   '<span class="cat-r-b"><b>'+escapeHtml(x.title)+'</b><span class="cat-bar"><i style="width:'+Math.round(x.n/max*100)+'%"></i></span></span>'
             +   '<span class="cat-r-c'+(x.n ? '' : ' z')+'">'+(x.n ? x.n : '未使用')+'</span>'
-            + '</button>'
+            + (canEdit ? '</button>' : '</div>')
             + listenBtnHtml(x.title, a)
             + '</div>';
         }).join("") : '<p class="catalog-empty">'+(sort==="unused" && songs.length ? 'まだ歌っていない曲はありません。' : 'まだ曲がありません。上の欄に曲名を入れて登録できます。')+'</p>')
@@ -5887,14 +6168,14 @@ function renderCatalogPage(){
   });
 }
 
-/* アーティストの画面の見出しの背景画像（アーティストの登録に image として持つ。画像は Google ドライブへ） */
+/* アーティストの画面の見出しの背景画像（共有のアーティストに image_path として持つ。画像は Supabase Storage へ。設定はマスターだけ） */
 var CAT_HERO_GRAD = "linear-gradient(180deg, rgba(0,0,0,.42), rgba(0,0,0,.12) 38%, rgba(0,0,0,.15) 55%, rgba(0,0,0,.68))";
 var CAT_IMG_POS = "50% 30%";   // 位置を決めていない画像は、少し上寄り（集合写真の顔が切れにくい）
 function catalogArtistImagePos(name){ var e = catalogArtistEntry(name); return (e && /^\d{1,3}(\.\d+)?% \d{1,3}(\.\d+)?%$/.test(e.imagePos||"")) ? e.imagePos : CAT_IMG_POS; }
 function catalogArtistEntry(name){
   var k = nameKey(name);
   // PCとスマホで別々に登録した同じ名前のアーティストは、背景画像のある方を使う
-  var hits = (state.artists||[]).filter(function(x){ return nameKey(x.name)===k; });
+  var hits = catArtists().filter(function(x){ return nameKey(x.name)===k; });
   return hits.find(function(x){ return x.image; }) || hits[0] || null;
 }
 function catalogArtistImage(name){ var e = catalogArtistEntry(name); return e && e.image || ""; }
@@ -5913,9 +6194,9 @@ function catalogArtistColor(name){
 // 背景画像の表示位置を決める：見出しの形の枠の中で画像をドラッグする。一覧のタイルの見え方も一緒に出す
 async function openCatalogImagePos(name){
   var e = catalogArtistEntry(name);
-  if(!e || !e.image) return;
-  var url = DrivePhotos.cachedUrl(e.image);
-  if(!url){ try{ url = await DrivePhotos.localUrl(e.image); }catch(err){ toast("画像を読み込めませんでした"); return; } }
+  if(!e || !e.image || !canEditCatalog()) return;
+  var url = catalogImageUrl(e.image);
+  if(!url){ toast("画像を読み込めませんでした"); return; }
   var pos = catalogArtistImagePos(name).split(" ").map(parseFloat);
   var color = catalogArtistColor(name);
   openSheet('<h2 class="mincho">背景画像の表示位置</h2>'
@@ -5963,9 +6244,11 @@ async function openCatalogImagePos(name){
   hero.addEventListener("pointerup", end);
   hero.addEventListener("pointercancel", end);
   document.getElementById("catPosReset").addEventListener("click", function(){ pos = [50, 50]; apply(); });
-  document.getElementById("catPosSave").addEventListener("click", function(){
+  document.getElementById("catPosSave").addEventListener("click", async function(){
     var cur = catalogArtistEntry(name);
-    if(cur){ cur.imagePos = Math.round(pos[0])+"% "+Math.round(pos[1])+"%"; saveLocal(); }
+    if(!cur) return;
+    try{ await sharedSetImagePos(cur, Math.round(pos[0])+"% "+Math.round(pos[1])+"%"); }
+    catch(err){ console.warn("image pos failed", err); toast("保存できませんでした"); return; }
     closeSheet();
     toast("背景画像を設定しました");
     render();
@@ -5973,10 +6256,7 @@ async function openCatalogImagePos(name){
 }
 function bindCatalogHero(name){
   var input = document.getElementById("catalogHeroInput");
-  if(!name || !input) return;
-  var label = input.closest("label");
-  // 画像を選ぶ前に、Googleドライブへ接続しておく
-  label.addEventListener("click", function(e){ if(e.target===input) return; DrivePhotos.requireConnection(e); }, true);
+  if(!name || !input || !canEditCatalog()) return;
   input.addEventListener("change", async function(){
     var f = input.files && input.files[0];
     input.value = "";
@@ -5985,17 +6265,11 @@ function bindCatalogHero(name){
     toast("背景画像を保存しています…");
     try{
       var blob = await resizeImageToBlob(f, 1280, 0.85);
-      var ref = await DrivePhotos.uploadBlob(blob, "artist_"+Date.now()+".jpg");
-      if(!DrivePhotos.isRef(ref)){ toast("Googleドライブに接続してから選んでください"); return; }
-      registerArtist(name, true);
-      var e = catalogArtistEntry(name);
-      if(!e) return;
-      e.image = ref;
-      delete e.imagePos;
-      saveLocal();
+      var a = await sharedEnsureArtist(name);
+      await sharedSetArtistImage(a, blob, "");
       if(state.view==="catalog" && nameKey(catalogView.artist)===nameKey(name)) render();
       openCatalogImagePos(name);
-    }catch(err){ console.warn("artist image failed", err); toast("画像の読み込みに失敗しました"); }
+    }catch(err){ console.warn("artist image failed", err); toast("画像を保存できませんでした"); }
   });
 }
 
@@ -6043,43 +6317,49 @@ function countSongUse(title, artist){
   });
   return n;
 }
-function dedupeCatalog(){
-  var seenA = {}, seenS = {};
-  state.artists = (state.artists||[]).filter(function(a){
-    var k = nameKey(a.name);
-    if(!k) return false;
-    if(seenA[k]){ if(a.image && !seenA[k].image) seenA[k].image = a.image; return false; }   // 背景画像は残す
-    seenA[k] = a; return true;
-  });
-  state.songs = (state.songs||[]).filter(function(x){ var k = nameKey(x.title)+"\u0000"+nameKey(x.artist); if(!nameKey(x.title) || seenS[k]) return false; seenS[k] = true; return true; });
-}
-function renameCatalogArtist(from, to){
+// 自分のLIVE記録のセトリ（と、withOshi のときは推しのグループ名）で、アーティスト名を変える。変えたら true
+function applyArtistRenameToRecords(from, to, withOshi){
   var fk = nameKey(from);
   to = (to||"").trim();
-  if(!to || fk===nameKey(to) && from.trim()===to) return;
-  var hit = false;
-  (state.artists||[]).forEach(function(a){ if(nameKey(a.name)===fk){ a.name = to; hit = true; } });
-  if(!hit) state.artists.push({id:uuid(), name:to, createdAt:Date.now()});
-  (state.songs||[]).forEach(function(x){ if(nameKey(x.artist)===fk) x.artist = to; });
-  eachSetlistRec(function(bl){
+  if(!fk || !to) return false;
+  var n = eachSetlistRec(function(bl){
     var ch = false;
     bl.forEach(function(b){
-      if(nameKey(b.artist)===fk){ b.artist = to; ch = true; }
-      b.items.forEach(function(it){ if(it.t==="song" && it.artist && nameKey(it.artist)===fk){ it.artist = to; ch = true; } });
+      if(nameKey(b.artist)===fk && b.artist!==to){ b.artist = to; ch = true; }
+      b.items.forEach(function(it){ if(it.t==="song" && it.artist && nameKey(it.artist)===fk && it.artist!==to){ it.artist = to; ch = true; } });
     });
     return ch;
   });
+  var o = 0;
   // 推しのグループ名も同じ名前なら合わせて変える（同じアーティストのため）
-  state.oshis.forEach(function(o){
-    if(o.groups && o.groups.length) o.groups.forEach(function(g){ if(nameKey(g.name)===fk) g.name = to; });
-    else if(o.group && nameKey(o.group)===fk) o.group = to;
+  if(withOshi) state.oshis.forEach(function(os){
+    if(os.groups && os.groups.length) os.groups.forEach(function(g){ if(nameKey(g.name)===fk && g.name!==to){ g.name = to; o++; } });
+    else if(os.group && nameKey(os.group)===fk && os.group!==to){ os.group = to; o++; }
   });
-  dedupeCatalog();
+  return n>0 || o>0;
 }
-function deleteCatalogArtist(name){
+// 自分のLIVE記録のセトリで、曲名・曲のアーティストを変える。変えたら true
+function applySongRenameToRecords(title, artist, nt, na){
+  nt = (nt||"").trim(); na = (na||"").trim();
+  if(!nt) return false;
+  return eachSetlistRec(function(bl){
+    var ch = false;
+    bl.forEach(function(b){
+      b.items.forEach(function(it){
+        if(!songMatches(it, b, title, artist)) return;
+        var sameAsBlock = nameKey(na)===nameKey(b.artist);
+        if(it.title===nt && (sameAsBlock ? !it.artist : it.artist===na)) return;
+        it.title = nt;
+        if(sameAsBlock) delete it.artist; else it.artist = na;
+        ch = true;
+      });
+    });
+    return ch;
+  })>0;
+}
+// 自分のLIVE記録のセトリから、アーティストの出演と曲を取り除く
+function removeArtistFromRecords(name){
   var k = nameKey(name);
-  state.artists = (state.artists||[]).filter(function(a){ return nameKey(a.name)!==k; });
-  state.songs = (state.songs||[]).filter(function(x){ return nameKey(x.artist)!==k; });
   eachSetlistRec(function(bl){
     var ch = false;
     for(var i=bl.length-1;i>=0;i--){
@@ -6092,31 +6372,8 @@ function deleteCatalogArtist(name){
     return ch;
   });
 }
-function editCatalogSong(title, artist, nt, na){
-  nt = (nt||"").trim(); na = (na||"").trim();
-  if(!nt) return;
-  var hit = false;
-  (state.songs||[]).forEach(function(x){
-    if(nameKey(x.title)===nameKey(title) && nameKey(x.artist)===nameKey(artist)){ x.title = nt; x.artist = na; hit = true; }
-  });
-  if(!hit) state.songs.push({id:uuid(), title:nt, artist:na, createdAt:Date.now()});
-  if(na) registerArtist(na, true);
-  eachSetlistRec(function(bl){
-    var ch = false;
-    bl.forEach(function(b){
-      b.items.forEach(function(it){
-        if(!songMatches(it, b, title, artist)) return;
-        it.title = nt;
-        if(nameKey(na)===nameKey(b.artist)) delete it.artist; else it.artist = na;
-        ch = true;
-      });
-    });
-    return ch;
-  });
-  dedupeCatalog();
-}
-function deleteCatalogSong(title, artist){
-  state.songs = (state.songs||[]).filter(function(x){ return !(nameKey(x.title)===nameKey(title) && nameKey(x.artist)===nameKey(artist)); });
+// 自分のLIVE記録のセトリから、曲を取り除く
+function removeSongFromRecords(title, artist){
   eachSetlistRec(function(bl){
     var ch = false;
     bl.forEach(function(b){
@@ -6137,6 +6394,7 @@ function openCatalogArtistSheet(name){
     +   (used ? '変更すると、'+used+'件のLIVE記録のセトリも新しい名前になります。' : 'まだLIVE記録のセトリでは使われていません。')
     +   (oshiKind==="group" ? '<br>推しのグループ名も同じ名前に変わります。' : '')
     +   '<br>すでにある名前にすると、そのアーティストにまとめます。'
+    +   '<br>アーティスト・曲は全ユーザーで共有しています。変更はほかのユーザーの表示とセトリにも反映されます。'
     + '</p>'
     + (catalogArtistImage(name) ? '<div class="cat-img-links"><button type="button" class="gd-link" id="catalogArtistImgPos">背景画像の表示位置を調整</button><button type="button" class="gd-link danger-text" id="catalogArtistImgClear">背景画像を外す</button></div>' : '')
     + '<div class="sheet-actions">'
@@ -6145,12 +6403,15 @@ function openCatalogArtistSheet(name){
     + '</div>'
     + '</form>');
   var form = document.getElementById("catalogArtistForm");
-  form.addEventListener("submit", function(e){
+  form.addEventListener("submit", async function(e){
     e.preventDefault();
+    if(!canEditCatalog()) return;
     var to = String(new FormData(form).get("name")||"").trim();
     if(!to){ toast("アーティスト名を入力してください"); return; }
     if(to!==name.trim()){
-      renameCatalogArtist(name, to);
+      try{ await sharedRenameArtist(name, to); }
+      catch(err){ console.warn("artist rename failed", err); toast("変更できませんでした"); return; }
+      applyArtistRenameToRecords(name, to, true);
       saveLocal();
       toast("「"+to+"」に変更しました");
     }
@@ -6160,23 +6421,25 @@ function openCatalogArtistSheet(name){
   var imgPos = document.getElementById("catalogArtistImgPos");
   if(imgPos) imgPos.addEventListener("click", function(){ openCatalogImagePos(name); });
   var imgClear = document.getElementById("catalogArtistImgClear");
-  if(imgClear) imgClear.addEventListener("click", function(){
+  if(imgClear) imgClear.addEventListener("click", async function(){
     var e = catalogArtistEntry(name);
-    if(!e || !confirm("背景画像を外しますか？")) return;
-    delete e.image;
-    delete e.imagePos;
-    saveLocal();
+    if(!e || !confirm("背景画像を外しますか？（全ユーザーの表示から外れます）")) return;
+    try{ await sharedClearImage(e); }
+    catch(err){ console.warn("image clear failed", err); toast("外せませんでした"); return; }
     toast("背景画像を外しました");
     closeSheet(); render();
   });
-  document.getElementById("catalogArtistDel").addEventListener("click", function(){
+  document.getElementById("catalogArtistDel").addEventListener("click", async function(){
+    if(!canEditCatalog()) return;
     if(oshiKind==="person"){ toast("推しの名前のアーティストは、推しを編集・削除してください"); return; }
     var msg = "「"+name+"」を削除しますか？";
     if(songsN) msg += "\n登録している"+songsN+"曲も削除します。";
     if(used) msg += "\n"+used+"件のLIVE記録のセトリから、このアーティストの出演と曲を取り除きます。";
     if(oshiKind==="group") msg += "\n※推しのグループ名なので、アーティスト一覧には残ります。";
     if(!confirm(msg)) return;
-    deleteCatalogArtist(name);
+    try{ await sharedDeleteArtist(name); }
+    catch(err){ console.warn("artist delete failed", err); toast("削除できませんでした"); return; }
+    removeArtistFromRecords(name);
     saveLocal();
     toast("「"+name+"」を削除しました");
     catalogView.artist = null;
@@ -6205,23 +6468,29 @@ function openCatalogSongSheet(title, artist){
       document.querySelector("#catalogSongArtist span").textContent = name || "（未設定）";
     }});
   });
-  form.addEventListener("submit", function(e){
+  form.addEventListener("submit", async function(e){
     e.preventDefault();
+    if(!canEditCatalog()) return;
     var fd = new FormData(form);
     var nt = String(fd.get("title")||"").trim(), na = String(fd.get("artist")||"").trim();
     if(!nt){ toast("曲名を入力してください"); return; }
     if(nt!==title.trim() || na!==artist.trim()){
-      editCatalogSong(title, artist, nt, na);
+      try{ await sharedEditSong(title, artist, nt, na); }
+      catch(err){ console.warn("song edit failed", err); toast("変更できませんでした"); return; }
+      applySongRenameToRecords(title, artist, nt, na);
       saveLocal();
       toast("「"+nt+(na ? "／"+na : "")+"」に変更しました");
     }
     closeSheet(); render();
   });
-  document.getElementById("catalogSongDel").addEventListener("click", function(){
+  document.getElementById("catalogSongDel").addEventListener("click", async function(){
+    if(!canEditCatalog()) return;
     var msg = "「"+title+(artist ? "／"+artist : "")+"」を削除しますか？";
     if(used) msg += "\n"+used+"件のLIVE記録のセトリからも、この曲を取り除きます。";
     if(!confirm(msg)) return;
-    deleteCatalogSong(title, artist);
+    try{ await sharedDeleteSong(title, artist); }
+    catch(err){ console.warn("song delete failed", err); toast("削除できませんでした"); return; }
+    removeSongFromRecords(title, artist);
     saveLocal();
     toast("「"+title+"」を削除しました");
     closeSheet(); render();
@@ -6900,8 +7169,8 @@ function setlistArtistOptions(){
   function add(v){ v = (v||"").trim(); if(v && !seen[v]){ seen[v] = true; out.push(v); } }
   state.oshis.forEach(function(o){ oshiGroupsList(o).forEach(function(g){ add(g.name); }); if(!oshiGroupsList(o).length) add(o.name); });
   state.live.forEach(function(r){ recSetlists(r).forEach(function(b){ add(b.artist); b.items.forEach(function(it){ if(it.t==="song") add(it.artist); }); }); });
-  (state.artists||[]).forEach(function(a){ add(a.name); });
-  (state.songs||[]).forEach(function(x){ add(x.artist); });
+  catArtists().forEach(function(a){ add(a.name); });
+  catSongs().forEach(function(x){ add(x.artist); });
   return out.sort(function(a,b){ return a.localeCompare(b, "ja"); });
 }
 // 曲のアーティスト（未入力なら出演アーティスト）
@@ -6921,8 +7190,8 @@ function setlistSongCatalog(){
       });
     });
   });
-  // マイページで登録した曲（まだ歌っていない曲は 0回）
-  (state.songs||[]).forEach(function(x){
+  // 登録した曲（全ユーザーで共有。まだ歌っていない曲は 0回）
+  catSongs().forEach(function(x){
     var t = (x.title||"").trim(), a = (x.artist||"").trim();
     if(!t) return;
     var k = t.toLowerCase()+"\u0000"+a.toLowerCase();
@@ -6936,8 +7205,13 @@ function setlistSongCatalog(){
 function registerSong(title, artist){
   title = (title||"").trim(); artist = (artist||"").trim();
   if(!title) return false;
-  var dup = (state.songs||[]).some(function(x){ return (x.title||"").trim().toLowerCase()===title.toLowerCase() && (x.artist||"").trim().toLowerCase()===artist.toLowerCase(); });
+  var dup = catSongs().some(function(x){ return songKey(x.title, x.artist)===songKey(title, artist); });
   if(dup) return false;
+  if(catalogCanWrite()){
+    // 共有の辞書へ（画面にはすぐ出し、裏で送る）
+    sharedEnsureSong(title, artist).then(function(){ if(state.view==="catalog") render(); }).catch(function(e){ console.warn("song register failed", e); toast("曲を登録できませんでした"); render(); });
+    return true;
+  }
   state.songs.push({id:uuid(), title:title, artist:artist, createdAt:Date.now()});
   if(artist) registerArtist(artist, true);
   saveLocal();
@@ -6946,8 +7220,12 @@ function registerSong(title, artist){
 function registerArtist(name, quiet){
   name = (name||"").trim();
   if(!name) return false;
-  var dup = (state.artists||[]).some(function(a){ return (a.name||"").trim().toLowerCase()===name.toLowerCase(); });
+  var dup = catArtists().some(function(a){ return nameKey(a.name)===nameKey(name); });
   if(dup) return false;
+  if(catalogCanWrite()){
+    sharedEnsureArtist(name).then(function(){ if(state.view==="catalog") render(); }).catch(function(e){ console.warn("artist register failed", e); toast("アーティストを登録できませんでした"); render(); });
+    return true;
+  }
   state.artists.push({id:uuid(), name:name, createdAt:Date.now()});
   if(!quiet) saveLocal();
   return true;
@@ -9310,7 +9588,7 @@ function onAppClick(e){
     return;
   }
   if(action==="news-delete"){ deleteNews(el.getAttribute("data-id")); return; }
-  if(action==="catalog-open"){ catalogView.artist = null; state.view = "catalog"; render(); window.scrollTo(0,0); return; }
+  if(action==="catalog-open"){ catalogView.artist = null; state.view = "catalog"; render(); window.scrollTo(0,0); loadSharedCatalog(); return; }
   if(action==="catalog-artist"){ catalogView.artist = el.getAttribute("data-name"); render(); window.scrollTo(0,0); return; }
   if(action==="catalog-back"){ catalogView.artist = null; render(); window.scrollTo(0,0); return; }
   if(action==="listen"){ openListen(el.getAttribute("data-lt")||"", el.getAttribute("data-la")||""); return; }
