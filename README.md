@@ -313,3 +313,15 @@ LIVE記録の入力画面は、上の「LIVE記録を編集／セトリ記録を
 - 登録は記録の表に `kind: "artist"` / `"song"` の行として同期する（`supabase/migrations/20260928030000_oshikatsu_catalog_kinds.sql` で kind を追加）。SQLを実行するまでは、クラウドが受け付けないので送らずに端末に残し（`cloud.catalogUnsupported`）、ほかの記録の同期は止めない。実行後に開くと送る。
 - プランの機能の「セットリスト」がOFFのときは、この項目も隠す。
 
+
+## 残作業
+
+- **Supabase の組織の移行**（未着手）：「Marine Wallet」のプロジェクトを、個人の組織（minatani-01's Org）から推し活手帳と同じ **unicov-jp** の組織へ移す。移すと、Claude の Supabase 接続を unicov-jp だけにしても、推し活手帳と Marine Wallet の両方のセッションからプロジェクトが見えるようになる（今は接続が minatani-01's Org 側のため、推し活手帳のプロジェクトが Claude から見えない）。
+  1. Vercel の Marine Wallet の環境変数（Supabase 関係の変数名）を控える。
+  2. Marine Wallet の Project Settings → Integrations で GitHub と Vercel の連携を外す。
+  3. Project Settings → General → Transfer project で unicov-jp へ移す（URL と API キーは変わらない）。Vercel の環境変数が消えていたら入れ直して Redeploy。
+  4. unicov-jp 側で GitHub と Vercel の連携をつなぎ直す。
+  5. claude.ai の Connectors で Supabase を切断→接続し直し、unicov-jp を選ぶ。新しいセッションから有効。
+- **Stripe による課金**（保留）：画面はでき、未定の値は「●●●」で表示している。「有料プランにする」などのボタンは「準備中」と出るだけ。
+- **特定商取引法に基づく表記のページ**（保留）：課金を始めるときに必要。Stripe と一緒に再開する。
+- 曲名の自動取り込み（iTunes 検索API）は取りやめ。
