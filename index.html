@@ -5887,7 +5887,9 @@ var CAT_IMG_POS = "50% 30%";   // 位置を決めていない画像は、少し�
 function catalogArtistImagePos(name){ var e = catalogArtistEntry(name); return (e && /^\d{1,3}(\.\d+)?% \d{1,3}(\.\d+)?%$/.test(e.imagePos||"")) ? e.imagePos : CAT_IMG_POS; }
 function catalogArtistEntry(name){
   var k = nameKey(name);
-  return (state.artists||[]).find(function(x){ return nameKey(x.name)===k; }) || null;
+  // PCとスマホで別々に登録した同じ名前のアーティストは、背景画像のある方を使う
+  var hits = (state.artists||[]).filter(function(x){ return nameKey(x.name)===k; });
+  return hits.find(function(x){ return x.image; }) || hits[0] || null;
 }
 function catalogArtistImage(name){ var e = catalogArtistEntry(name); return e && e.image || ""; }
 // 一覧のタイルの色：推しのグループの色（無ければ推しの色）、それ以外はアプリの色
