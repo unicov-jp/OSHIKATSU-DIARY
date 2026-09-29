@@ -5829,9 +5829,17 @@ async function loadSharedCatalog(){
     }catch(e){
       console.warn("shared catalog load failed", e);
       if(isMissingTable(e)){ shared.unsupported = true; render(); }
+      else reportCatalogError("読み込み", e);
     }finally{ shared.loading = null; }
   })();
   return shared.loading;
+}
+// 共有の辞書でエラーが起きたとき、マスターにだけ内容を知らせる（原因を調べるため）
+function reportCatalogError(what, e){
+  var msg = (e && (e.message || e.error_description || e.error)) || String(e||"");
+  var code = e && (e.code || e.statusCode || e.status) ? "（"+(e.code || e.statusCode || e.status)+"）" : "";
+  shared.lastError = what+"："+msg+code;
+  if(realMaster()) toast("アーティスト・曲の"+what+"でエラー："+msg+code);
 }
 // マスターが変えた名前を、自分のLIVE記録のセトリに当てる（何度当てても同じ結果になる）
 function applyCatalogRenames(){
@@ -5849,10 +5857,10 @@ async function migrateLocalCatalog(){
   var arts = (state.artists||[]).slice(), songs = (state.songs||[]).slice();
   if(!arts.length && !songs.length) return;
   migratingCatalog = true;
-  var keepA = [], keepS = [];
+  var keepA = [], keepS = [], firstErr = null;
   try{
     for(var i=0;i<songs.length;i++){
-      try{ await sharedEnsureSong(songs[i].title, songs[i].artist); }catch(e){ keepS.push(songs[i]); }
+      try{ await sharedEnsureSong(songs[i].title, songs[i].artist); }catch(e){ keepS.push(songs[i]); firstErr = firstErr || e; }
     }
     for(var j=0;j<arts.length;j++){
       var a = arts[j];
@@ -5864,7 +5872,7 @@ async function migrateLocalCatalog(){
           var blob = await DrivePhotos.blobOf(a.image);
           await sharedSetArtistImage(sa, blob, a.imagePos);
         }
-      }catch(e){ console.warn("catalog migrate failed", a.name, e); keepA.push(a); }
+      }catch(e){ console.warn("catalog migrate failed", a.name, e); keepA.push(a); firstErr = firstErr || e; }
     }
   }finally{
     migratingCatalog = false;
@@ -5876,6 +5884,7 @@ async function migrateLocalCatalog(){
   state.artists = (state.artists||[]).filter(function(x){ return !ids[x.id]; });
   state.songs = (state.songs||[]).filter(function(x){ return !ids[x.id]; });
   if(moved){ saveLocal(); render(); }
+  if(firstErr) reportCatalogError("移行", firstErr);
 }
 async function sharedEnsureArtist(name){
   name = (name||"").trim();
